@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitLab Radar</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">R</span><span>GitLab Radar</span></div>
+      <nav class="nav" aria-label="Основная навигация">
+        <button class="nav-item active" data-page="dashboard"><span>01</span>Dashboard</button>
+        <button class="nav-item" data-page="projects"><span>02</span>Проекты</button>
+        <button class="nav-item" data-page="admin"><span>03</span>Admin</button>
+      </nav>
+      <p class="sidebar-note">Технологический обзор<br>проектов GitLab</p>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div><p class="kicker">Workspace</p><h1 id="page-title">Dashboard</h1></div>
+        <div class="connection"><span></span>GitLab connected</div>
+      </header>
+
+      <section id="dashboard" class="page active">
+        <div class="intro"><p>Сводка</p><h2>Портфель проектов</h2></div>
+        <div class="cards">
+          <article class="metric-card">
+            <div class="metric-icon">↗</div>
+            <p>Всего проектов</p>
+            <strong id="project-count">—</strong>
+            <span>Доступно для анализа</span>
+          </article>
+          <article class="placeholder-card">
+            <span>Следующий показатель</span>
+            <p>Здесь появится новая метрика радара.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="projects" class="page">
+        <div class="section-head">
+          <div class="intro"><p>Каталог</p><h2>Проекты</h2></div>
+          <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
+        </div>
+        <div class="projects-layout">
+          <div class="project-list" id="project-list"></div>
+          <aside class="project-detail" id="project-detail">
+            <p class="empty-state">Выберите проект, чтобы посмотреть детали.</p>
+          </aside>
+        </div>
+      </section>
+
+      <section id="admin" class="page">
+        <div class="intro"><p>Управление</p><h2>Сканирование GitLab</h2></div>
+        <div class="admin-grid">
+          <article class="scan-card">
+            <div class="scan-orbit"><span id="scan-dot"></span></div>
+            <div><p class="muted">Текущий статус</p><h3 id="scan-state">Ожидание</h3><p id="scan-description">Сканирование ещё не запускалось.</p></div>
+          </article>
+          <article class="scan-actions">
+            <button id="scan-button" class="primary-button">Запустить сканирование <span>→</span></button>
+            <p>Получит актуальный список Python-проектов из GitLab и обновит локальный snapshot.</p>
+          </article>
+        </div>
+      </section>
+
+      <div id="global-error" class="toast" hidden></div>
+    </main>
+  </div>
+</body>
+</html>

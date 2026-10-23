@@ -1,4 +1,4 @@
-from pathlib import Path
+lazy from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -9,7 +9,11 @@ class ApplicationSettings(BaseSettings):
     host: str
     port: int
     reload: bool
-    base_dir: Path = Path(BASE_DIR).resolve()
+    base_dir: Path = BASE_DIR
+
+    @property
+    def web_dir(self) -> Path:
+        return self.base_dir / 'web'
 
     model_config = SettingsConfigDict(
         env_prefix='RADAR_',

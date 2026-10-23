@@ -14,7 +14,7 @@ class ProjectService:
     def __init__(self) -> None:
         self.projects: list[Project] = []
 
-    def refresh_projects(self) -> None:
+    def refresh_projects(self) -> list[Project]:
         logger.info('Получение списка проектов из GitLab')
         gitlab_projects = gitlab_client.projects.list(
             min_access_level=AccessLevel.REPORTER,
@@ -26,6 +26,7 @@ class ProjectService:
         self.projects = [Project.model_validate(project.asdict()) for project in gitlab_projects]
         logger.info('Получено проектов: %d', len(self.projects))
         self.save_projects()
+        return self.projects
 
     def save_projects(self) -> None:
         projects_path = settings.application.base_dir / 'data' / 'projects.json'
