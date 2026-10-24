@@ -19,7 +19,13 @@ class CompanyRequirement(BaseModel):
     compliance_percentage: float
 
 
+class DependencyStatistics(BaseModel):
+    name: str
+    projects_count: int
+
+
 class Dashboard(BaseModel):
     projects_count: int
     package_managers: list[PackageManagerStatistics]
+    top_dependencies: list[DependencyStatistics]
     company_requirements: list[CompanyRequirement]

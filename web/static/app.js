@@ -1,5 +1,6 @@
 const API = {
   dashboard: '/api/dashboard/',
+  dependencies: '/api/dependency/',
   projects: '/api/project/',
   scan: '/api/scan/',
 };
@@ -7,19 +8,22 @@ const API = {
 const PAGE_TITLES = {
   dashboard: 'Dashboard',
   projects: 'Проекты',
+  dependencies: 'Зависимости',
   admin: 'Admin',
 };
 
 const state = {
   projects: [],
+  dependencies: [],
   selectedId: null,
   selectedSubprojectPath: null,
+  selectedDependency: null,
   scanState: null,
   pollTimer: null,
 };
 
 async function api(path, options = {}) {
-  const response = await fetch(path, options);
+  const response = await fetch(path, { cache: 'no-store', ...options });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.detail || `HTTP ${response.status}`);
@@ -50,6 +54,9 @@ function subprojectView(project, subproject, detected = true) {
     title: isRoot ? project.name : projectPathParts(subproject.path).at(-1),
     fullPath: isRoot ? project.path_with_namespace : `${project.path_with_namespace}/${subproject.path}`,
     packageManager: subproject.package_manager,
+    pythonVersion: subproject.python_version || null,
+    dependencies: subproject.dependencies || [],
+    optionalDependencies: subproject.optional_dependencies || [],
     isRoot,
     detected,
   };
@@ -60,7 +67,11 @@ function projectView(project) {
   const root = subprojects.find((subproject) => subproject.isRoot) || null;
   const monorepository = subprojects.length > 1;
   const fallback = subprojects.length === 0
-    ? subprojectView(project, { path: '.', package_manager: project.package_manager }, false)
+    ? subprojectView(
+      project,
+      { path: '.', package_manager: project.package_manager, dependencies: [], optional_dependencies: [] },
+      false,
+    )
     : null;
   return {
     project,
@@ -162,8 +173,40 @@ function appendProjectPath(container, value) {
 
 function packageManagerBadge(value) {
   const badge = element('span', 'status-badge', value || '—');
-  badge.classList.add(value === 'uv' ? 'compliant' : 'non-compliant');
+  const colorClass = value === 'uv' ? 'manager-uv' : value === 'pip' ? 'manager-pip' : 'manager-other';
+  badge.classList.add(colorClass);
   return badge;
+}
+
+function dependencyBadge(dependency) {
+  const badge = element('span', 'dependency-badge');
+  badge.append(element('strong', '', dependency.name));
+  if (dependency.version) badge.append(element('span', '', dependency.version));
+  return badge;
+}
+
+function dependencyGroup(title, dependencies) {
+  const group = element('section', 'dependency-group');
+  group.append(element('h4', '', title));
+  const items = element('div', 'dependency-badges');
+  dependencies.forEach((dependency) => items.append(dependencyBadge(dependency)));
+  group.append(items);
+  return group;
+}
+
+function appendProjectDependencies(container, subproject) {
+  const groups = [];
+  if (subproject.dependencies.length) {
+    groups.push(dependencyGroup('Основные', subproject.dependencies));
+  }
+  subproject.optionalDependencies.forEach((group) => {
+    if (group.dependencies.length) groups.push(dependencyGroup(`Опциональные · ${group.name}`, group.dependencies));
+  });
+
+  const content = element('div', 'project-dependencies');
+  if (groups.length) content.append(...groups);
+  else content.append(element('p', 'empty-state', 'Зависимости не найдены.'));
+  appendDetail(container, 'Используемые зависимости', content);
 }
 
 function renderProjectDetail(view, subproject) {
@@ -184,6 +227,8 @@ function renderProjectDetail(view, subproject) {
   appendProjectPath(detail, subproject.fullPath);
   appendDetail(detail, 'Основная ветка', project.default_branch);
   appendDetail(detail, 'Пакетный менеджер', packageManagerBadge(subproject.packageManager));
+  appendDetail(detail, 'Версия Python', subproject.pythonVersion || 'Не определена');
+  appendProjectDependencies(detail, subproject);
   appendDetail(detail, 'Последняя активность', formatDate(project.last_activity_at));
 
   const link = element('a', 'detail-link', 'Открыть в GitLab →');
@@ -218,6 +263,21 @@ function renderDashboard(dashboard) {
     row.append(label, track, element('b', '', item.projects_count));
     statistics.append(row);
   });
+
+  const topDependencies = document.querySelector('#top-dependencies');
+  topDependencies.replaceChildren();
+  dashboard.top_dependencies.forEach((item, index) => {
+    const row = element('div', 'dependency-top-row');
+    row.append(
+      element('span', 'dependency-rank', String(index + 1).padStart(2, '0')),
+      element('strong', '', item.name),
+      element('b', '', item.projects_count),
+    );
+    topDependencies.append(row);
+  });
+  if (!dashboard.top_dependencies.length) {
+    topDependencies.append(element('p', 'empty-state', 'Зависимости ещё не найдены.'));
+  }
 
   const requirements = document.querySelector('#company-requirements');
   requirements.replaceChildren();
@@ -260,6 +320,74 @@ async function loadProjects() {
   }
 }
 
+function renderDependencies(filter = '') {
+  const query = filter.trim().toLowerCase();
+  const dependencies = state.dependencies.filter((dependency) => dependency.name.includes(query));
+  const list = document.querySelector('#dependency-list');
+  list.replaceChildren();
+
+  if (!dependencies.length) {
+    list.append(element('p', 'empty-state', query ? 'Зависимости не найдены.' : 'Список зависимостей пуст.'));
+    return;
+  }
+
+  dependencies.forEach((dependency) => {
+    const row = element('button');
+    row.type = 'button';
+    row.className = `dependency-row${dependency.name === state.selectedDependency ? ' active' : ''}`;
+    const identity = element('span');
+    identity.append(
+      element('strong', '', dependency.name),
+      element('small', '', `Вариантов версий: ${dependency.versions.length}`),
+    );
+    row.append(identity, element('b', '', dependency.projects_count));
+    row.addEventListener('click', () => selectDependency(dependency, row));
+    list.append(row);
+  });
+}
+
+function renderDependencyDetail(dependency) {
+  const detail = document.querySelector('#dependency-detail');
+  detail.replaceChildren();
+  detail.append(element('h3', '', dependency.name));
+  appendDetail(detail, 'Используется в проектах', String(dependency.projects_count));
+
+  const versions = element('div', 'dependency-versions');
+  dependency.versions.forEach((version) => {
+    const group = element('section', 'dependency-version');
+    group.append(element('h4', '', version.version || 'Версия не указана'));
+    const projects = element('div', 'dependency-projects');
+    version.projects.forEach((project) => {
+      const link = element('a', 'dependency-project');
+      link.href = project.web_url;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.append(
+        element('strong', '', project.path_with_namespace),
+        element('small', '', project.subproject_path === '.' ? 'Корень репозитория' : project.subproject_path),
+      );
+      projects.append(link);
+    });
+    group.append(projects);
+    versions.append(group);
+  });
+  detail.append(versions);
+}
+
+function selectDependency(dependency, row) {
+  state.selectedDependency = dependency.name;
+  document.querySelector('.dependency-row.active')?.classList.remove('active');
+  row.classList.add('active');
+  renderDependencyDetail(dependency);
+}
+
+async function loadDependencies() {
+  state.dependencies = await api(API.dependencies);
+  renderDependencies(document.querySelector('#dependency-search').value);
+  const selected = state.dependencies.find((dependency) => dependency.name === state.selectedDependency);
+  if (selected) renderDependencyDetail(selected);
+}
+
 function renderScanStatus(scan) {
   document.querySelector('#scan-state').textContent = scan.state_title;
   document.querySelector('#scan-button').disabled = scan.state === 'running';
@@ -276,22 +404,24 @@ function renderScanStatus(scan) {
 }
 
 async function refreshScanStatus() {
+  let retry = false;
   try {
     const previousState = state.scanState;
     const scan = await api(API.scan);
     state.scanState = scan.state;
     renderScanStatus(scan);
 
-    window.clearTimeout(state.pollTimer);
-    state.pollTimer = scan.state === 'running'
-      ? window.setTimeout(refreshScanStatus, 1200)
-      : null;
-
     if (previousState === 'running' && scan.state === 'completed') {
-      await Promise.all([loadDashboard(), loadProjects()]);
+      await Promise.all([loadDashboard(), loadProjects(), loadDependencies()]);
     }
   } catch (error) {
+    retry = true;
     showError(error);
+  } finally {
+    window.clearTimeout(state.pollTimer);
+    state.pollTimer = state.scanState === 'running' || retry
+      ? window.setTimeout(refreshScanStatus, retry ? 3000 : 1200)
+      : null;
   }
 }
 
@@ -308,6 +438,8 @@ document.querySelectorAll('.nav-item').forEach((item) => {
 
 window.addEventListener('hashchange', showPage);
 document.querySelector('#project-search').addEventListener('input', (event) => renderProjects(event.target.value));
+document.querySelector('#dependency-search')
+  .addEventListener('input', (event) => renderDependencies(event.target.value));
 
 document.querySelector('#scan-button').addEventListener('click', async () => {
   try {
@@ -320,4 +452,4 @@ document.querySelector('#scan-button').addEventListener('click', async () => {
 });
 
 showPage();
-Promise.all([loadDashboard(), loadProjects(), refreshScanStatus()]).catch(showError);
+Promise.all([loadDashboard(), loadProjects(), loadDependencies(), refreshScanStatus()]).catch(showError);

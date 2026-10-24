@@ -4,8 +4,10 @@ version = "0.0.1"
 requires-python = ">=3.15"
 dependencies = [
     "fastapi>=0.162.0",
+    "packaging>=26.3",
     "pydantic-settings>=2.16.1",
     "python-gitlab>=8.6.0",
+    "pyyaml>=6.0.3",
     "uvicorn>=0.54.0",
 ]
 
@@ -46,6 +48,8 @@ ignore = [
     "D203",  # Конфликт D211
     "D212",  # Конфликт D213
     "PTH123",
+    "RUF001",
+    "TC001",
 ]
 
 [tool.ruff.lint.flake8-quotes]

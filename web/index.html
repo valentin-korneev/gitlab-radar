@@ -14,7 +14,8 @@
       <nav class="nav" aria-label="Основная навигация">
         <button class="nav-item active" data-page="dashboard"><span>01</span>Dashboard</button>
         <button class="nav-item" data-page="projects"><span>02</span>Проекты</button>
-        <button class="nav-item" data-page="admin"><span>03</span>Admin</button>
+        <button class="nav-item" data-page="dependencies"><span>03</span>Зависимости</button>
+        <button class="nav-item" data-page="admin"><span>04</span>Admin</button>
       </nav>
       <p class="sidebar-note">Технологический обзор<br>проектов GitLab</p>
     </aside>
@@ -41,6 +42,10 @@
             <div class="card-heading"><p>Требования компании</p><span>Соответствие</span></div>
             <div id="company-requirements" class="requirements-list"></div>
           </article>
+          <article class="dashboard-card requirements-card">
+            <div class="card-heading"><p>Топ-10 зависимостей</p><span>Проекты</span></div>
+            <div id="top-dependencies" class="dependency-top"></div>
+          </article>
         </div>
       </section>
 
@@ -53,6 +58,19 @@
           <div class="project-list" id="project-list"></div>
           <aside class="project-detail" id="project-detail">
             <p class="empty-state">Выберите проект, чтобы посмотреть детали.</p>
+          </aside>
+        </div>
+      </section>
+
+      <section id="dependencies" class="page">
+        <div class="section-head">
+          <div class="intro"><p>Каталог</p><h2>Зависимости</h2></div>
+          <label class="search"><span>⌕</span><input id="dependency-search" type="search" placeholder="Найти зависимость"></label>
+        </div>
+        <div class="dependencies-layout">
+          <div class="dependency-list" id="dependency-list"></div>
+          <aside class="dependency-detail" id="dependency-detail">
+            <p class="empty-state">Выберите зависимость, чтобы посмотреть версии и проекты.</p>
           </aside>
         </div>
       </section>

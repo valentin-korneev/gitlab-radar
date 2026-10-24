@@ -4,3 +4,4 @@
 .venv
 data/**/*.json
 data/projects
+data/.scan-staging

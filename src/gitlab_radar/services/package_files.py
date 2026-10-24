@@ -1,5 +1,6 @@
 import logging
 from http import HTTPStatus
+lazy from collections.abc import Collection, Iterable
 lazy from pathlib import Path, PurePosixPath
 
 from gitlab.exceptions import GitlabGetError
@@ -8,7 +9,14 @@ lazy from gitlab.v4.objects import Project as GitLabProject
 from gitlab_radar.clients.gitlab import gitlab_client
 from gitlab_radar.schemas.project import ProjectSubproject
 from gitlab_radar.schemas.technology import PackageManager
-from gitlab_radar.services.package_manager import PACKAGE_FILES, PYPROJECT_FILENAME, detect_package_manager
+from gitlab_radar.services.package_manager import (
+    CONTAINER_FILES,
+    PACKAGE_DISCOVERY_FILES,
+    PYPROJECT_FILENAME,
+    SUBPROJECT_FILES,
+    detect_package_manager,
+)
+from gitlab_radar.services.project_metadata import parse_project_metadata
 lazy from gitlab_radar.schemas.project import Project
 
 logger = logging.getLogger(__name__)
@@ -53,15 +61,28 @@ class PackageFilesService:
             project.default_branch,
         )
         gitlab_project = gitlab_client.projects.get(project.id, lazy=True)
-        file_sets = self._get_file_sets(gitlab_project, project.default_branch)
-        self._save_files(project, file_sets)
+        file_sets = self._discover_file_sets(gitlab_project, project.default_branch)
+        files_to_save = list(file_sets)
+        if not any(self._file_set_directory(files) == '' for files in file_sets):
+            repository_files = self._read_directory_files(
+                gitlab_project,
+                '',
+                project.default_branch,
+                filenames=CONTAINER_FILES,
+            )
+            if repository_files:
+                files_to_save.append(repository_files)
+        self._save_files(project, files_to_save)
         project.subprojects = [self._build_subproject(files) for files in file_sets]
         project.package_manager = self._project_package_manager(project.subprojects)
         for subproject in project.subprojects:
             logger.info(
-                'Подпроект %s: пакетный менеджер %s',
+                'Подпроект %s: пакетный менеджер %s, Python %s, зависимостей %d',
                 subproject.path,
                 subproject.package_manager,
+                subproject.python_version or 'не определён',
+                len(subproject.dependencies)
+                + sum(len(group.dependencies) for group in subproject.optional_dependencies),
             )
         logger.info(
             'Проект %s обработан: подпроектов %d, итоговый пакетный менеджер %s',
@@ -70,15 +91,15 @@ class PackageFilesService:
             project.package_manager,
         )
 
-    def _get_file_sets(self, project: GitLabProject, default_branch: str) -> list[dict[str, bytes]]:
+    def _discover_file_sets(self, project: GitLabProject, default_branch: str) -> list[dict[str, bytes]]:
         pyproject_paths = self._find_file_paths(project, PYPROJECT_FILENAME, default_branch)
         if pyproject_paths:
             logger.info('Найдено файлов pyproject.toml: %d', len(pyproject_paths))
-            return [self._read_file_set(project, path, default_branch) for path in pyproject_paths]
+            return [self._read_pyproject_files(project, path, default_branch) for path in pyproject_paths]
 
-        logger.info('Файл pyproject.toml не найден; поиск конфигураций и файлов блокировки')
+        logger.info('Файл pyproject.toml не найден; поиск requirements.txt, конфигураций и файлов блокировки')
         paths_by_directory: dict[str, set[str]] = {}
-        for filename in PACKAGE_FILES:
+        for filename in PACKAGE_DISCOVERY_FILES:
             if filename == PYPROJECT_FILENAME:
                 continue
             for path in self._find_file_paths(project, filename, default_branch):
@@ -86,14 +107,11 @@ class PackageFilesService:
                 paths_by_directory.setdefault(directory, set()).add(path)
 
         return [
-            {
-                path: self._read_file(project, path, default_branch)
-                for path in sorted(paths)
-            }
-            for _, paths in sorted(paths_by_directory.items())
+            self._read_discovered_files(project, directory, paths, default_branch)
+            for directory, paths in sorted(paths_by_directory.items())
         ]
 
-    def _read_file_set(
+    def _read_pyproject_files(
         self,
         project: GitLabProject,
         pyproject_path: str,
@@ -102,10 +120,50 @@ class PackageFilesService:
         directory = self._parent_directory(pyproject_path)
         logger.info('Чтение набора файлов подпроекта: %s', directory or '.')
         files = {pyproject_path: self._read_file(project, pyproject_path, default_branch)}
-        for filename in PACKAGE_FILES:
-            if filename == PYPROJECT_FILENAME:
-                continue
+        files.update(
+            self._read_directory_files(
+                project,
+                directory,
+                default_branch,
+                filenames=(filename for filename in SUBPROJECT_FILES if filename != PYPROJECT_FILENAME),
+            ),
+        )
+        return files
+
+    def _read_discovered_files(
+        self,
+        project: GitLabProject,
+        directory: str,
+        paths: set[str],
+        default_branch: str,
+    ) -> dict[str, bytes]:
+        logger.info('Чтение набора файлов подпроекта: %s', directory or '.')
+        files = {path: self._read_file(project, path, default_branch) for path in sorted(paths)}
+        files.update(
+            self._read_directory_files(
+                project,
+                directory,
+                default_branch,
+                filenames=(filename for filename in SUBPROJECT_FILES if filename != PYPROJECT_FILENAME),
+                excluded_paths=files,
+            ),
+        )
+        return files
+
+    def _read_directory_files(
+        self,
+        project: GitLabProject,
+        directory: str,
+        default_branch: str,
+        *,
+        filenames: Iterable[str],
+        excluded_paths: Collection[str] = (),
+    ) -> dict[str, bytes]:
+        files: dict[str, bytes] = {}
+        for filename in filenames:
             path = f'{directory}/{filename}' if directory else filename
+            if path in excluded_paths:
+                continue
             content = self._read_file_if_exists(project, path, default_branch)
             if content is not None:
                 files[path] = content
@@ -166,22 +224,19 @@ class PackageFilesService:
 
     @staticmethod
     def _build_subproject(files: dict[str, bytes]) -> ProjectSubproject:
-        first_path = next(iter(files))
-        path = PackageFilesService._parent_directory(first_path) or '.'
-        pyproject_content = next(
-            (
-                content
-                for file_path, content in files.items()
-                if PurePosixPath(file_path).name == PYPROJECT_FILENAME
-            ),
-            None,
-        )
+        path = PackageFilesService._file_set_directory(files) or '.'
+        files_by_name = {PurePosixPath(file_path).name: content for file_path, content in files.items()}
+        pyproject_content = files_by_name.get(PYPROJECT_FILENAME)
+        metadata = parse_project_metadata(files_by_name)
         return ProjectSubproject(
             path=path,
             package_manager=detect_package_manager(
                 pyproject_content,
-                {PurePosixPath(file_path).name for file_path in files},
+                files_by_name,
             ),
+            python_version=metadata.python_version,
+            dependencies=metadata.dependencies,
+            optional_dependencies=metadata.optional_dependencies,
         )
 
     @staticmethod
@@ -198,3 +253,7 @@ class PackageFilesService:
     def _parent_directory(path: str) -> str:
         parent = str(PurePosixPath(path).parent)
         return '' if parent == '.' else parent
+
+    @staticmethod
+    def _file_set_directory(files: dict[str, bytes]) -> str:
+        return PackageFilesService._parent_directory(next(iter(files)))
