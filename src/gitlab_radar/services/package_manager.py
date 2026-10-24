@@ -1,10 +1,9 @@
-lazy from collections.abc import Collection
+from collections.abc import Collection, Mapping
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
 from gitlab_radar.schemas.technology import PackageManager
-from gitlab_radar.services.project_metadata import parse_pyproject_document
 
 PYPROJECT_FILENAME = 'pyproject.toml'
 UV_CONFIG_FILENAME = 'uv.toml'
@@ -39,10 +38,9 @@ SUBPROJECT_FILES = (*PACKAGE_DISCOVERY_FILES, PYTHON_VERSION_FILENAME, *CONTAINE
 
 
 def detect_package_manager(
-    pyproject_content: bytes | None,
+    pyproject: Mapping[str, object],
     available_files: Collection[str] = (),
 ) -> PackageManager:
-    pyproject = parse_pyproject_document(pyproject_content)
     detected: set[PackageManager] = set()
     if (
         UV_CONFIG_FILENAME in available_files
@@ -67,18 +65,18 @@ def detect_package_manager(
     if detected:
         return PackageManager.UNKNOWN
 
-    if pyproject_content is None:
+    if PYPROJECT_FILENAME not in available_files:
         return PackageManager.PIP
     return PackageManager.UNKNOWN
 
 
-def _has_tool_section(pyproject: dict[str, object], name: str) -> bool:
+def _has_tool_section(pyproject: Mapping[str, object], name: str) -> bool:
     tool = pyproject.get('tool')
     return isinstance(tool, dict) and isinstance(tool.get(name), dict)
 
 
 def _uses_build_system(
-    pyproject: dict[str, object],
+    pyproject: Mapping[str, object],
     *,
     backend_prefix: str,
     package: str,

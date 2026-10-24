@@ -1,5 +1,5 @@
 from collections import defaultdict
-lazy from collections.abc import Iterable
+from collections.abc import Iterable
 
 from gitlab_radar.schemas.dependency import (
     Dependency,
@@ -12,9 +12,9 @@ from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.services.project import load_projects
 
 
-def build_dependency_catalog(projects: list[Project] | None = None) -> list[DependencyUsage]:
-    projects = load_projects() if projects is None else projects
-    usage: dict[str, dict[str | None, dict[tuple[int, str], DependencyProject]]] = defaultdict(
+async def build_dependency_catalog(projects: list[Project] | None = None) -> list[DependencyUsage]:
+    projects = await load_projects() if projects is None else projects
+    usage: dict[str, dict[str | None, dict[tuple[int, str, DependencyLevel], DependencyProject]]] = defaultdict(
         lambda: defaultdict(dict),
     )
     levels: dict[str, DependencyLevel] = {}
@@ -26,15 +26,16 @@ def build_dependency_catalog(projects: list[Project] | None = None) -> list[Depe
 
     for project in projects:
         for subproject in project.subprojects:
-            reference = DependencyProject(
-                id=project.id,
-                name=project.name,
-                path_with_namespace=project.path_with_namespace,
-                subproject_path=subproject.path,
-                web_url=project.web_url,
-            )
             for dependency, level in subproject_dependency_entries(subproject):
-                usage[dependency.name][dependency.version][(project.id, subproject.path)] = reference
+                reference = DependencyProject(
+                    id=project.id,
+                    name=project.name,
+                    path_with_namespace=project.path_with_namespace,
+                    subproject_path=subproject.path,
+                    web_url=project.web_url,
+                    level=level,
+                )
+                usage[dependency.name][dependency.version][(project.id, subproject.path, level)] = reference
                 current = levels.get(dependency.name)
                 if current is None or priorities[level] < priorities[current]:
                     levels[dependency.name] = level
@@ -50,13 +51,21 @@ def build_dependency_catalog(projects: list[Project] | None = None) -> list[Depe
             DependencyUsage(
                 name=name,
                 level=levels[name],
+                levels=sorted(
+                    {
+                        project.level
+                        for projects_by_version in versions.values()
+                        for project in projects_by_version.values()
+                    },
+                    key=lambda usage_level: priorities[usage_level],
+                ),
                 projects_count=len(project_ids),
                 versions=[
                     DependencyVersionUsage(
                         version=version,
                         projects=sorted(
                             projects_by_version.values(),
-                            key=lambda project: (project.path_with_namespace, project.subproject_path),
+                            key=lambda reference: (reference.path_with_namespace, reference.subproject_path),
                         ),
                     )
                     for version, projects_by_version in sorted(
@@ -66,7 +75,7 @@ def build_dependency_catalog(projects: list[Project] | None = None) -> list[Depe
                 ],
             ),
         )
-    return sorted(catalog, key=lambda dependency: (-dependency.projects_count, dependency.name))
+    return sorted(catalog, key=lambda usage: (-usage.projects_count, usage.name))
 
 
 def project_dependency_names(project: Project) -> set[str]:

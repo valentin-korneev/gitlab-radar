@@ -1,5 +1,5 @@
+from datetime import UTC, datetime
 from enum import StrEnum
-lazy from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, computed_field
 
@@ -11,6 +11,14 @@ class ScanState(StrEnum):
     FAILED = 'failed'
 
 
+class ScanPhase(StrEnum):
+    IDLE = 'idle'
+    COLLECTING = 'collecting'
+    ANALYZING = 'analyzing'
+    PUBLISHING = 'publishing'
+    COMPLETED = 'completed'
+
+
 SCAN_STATE_TITLES = {
     ScanState.IDLE: 'Ожидание',
     ScanState.RUNNING: 'Выполняется',
@@ -20,12 +28,19 @@ SCAN_STATE_TITLES = {
 
 
 class ScanStatus(BaseModel):
+    id: int | None = None
     state: ScanState = ScanState.IDLE
+    phase: ScanPhase = ScanPhase.IDLE
     started_at: datetime | None = None
     completed_at: datetime | None = None
     projects_count: int = 0
-    total_projects: int = 0
-    processed_projects: int = 0
+    total_steps: int = 0
+    completed_steps: int = 0
+    collected_projects: int = 0
+    analyzed_projects: int = 0
+    reused_projects: int = 0
+    skipped_projects: int = 0
+    current_project: str | None = None
     error: str | None = None
     errors: list[str] = Field(default_factory=list)
 
@@ -37,9 +52,9 @@ class ScanStatus(BaseModel):
     @computed_field
     @property
     def progress_percentage(self) -> float:
-        if not self.total_projects:
+        if not self.total_steps:
             return 0.0
-        return round(self.processed_projects / self.total_projects * 100, 1)
+        return round(self.completed_steps / self.total_steps * 100, 1)
 
     @computed_field
     @property

@@ -4,6 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GitLab Radar</title>
+  <script>
+    try {
+      const savedTheme = localStorage.getItem('radar-theme');
+      document.documentElement.dataset.theme = savedTheme
+        || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    } catch (error) {
+      document.documentElement.dataset.theme = 'dark';
+    }
+  </script>
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/app.js" defer></script>
 </head>
@@ -12,17 +21,20 @@
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">R</span><span>GitLab Radar</span></div>
       <nav class="nav" aria-label="Основная навигация">
-        <button class="nav-item active" data-page="dashboard"><span>01</span>Dashboard</button>
+        <button class="nav-item active" data-page="dashboard"><span>01</span>Обзор</button>
         <button class="nav-item" data-page="projects"><span>02</span>Проекты</button>
         <button class="nav-item" data-page="dependencies"><span>03</span>Зависимости</button>
-        <button class="nav-item" data-page="admin"><span>04</span>Admin</button>
+        <button class="nav-item" data-page="admin"><span>04</span>Управление</button>
       </nav>
-      <p class="sidebar-note">Технологический обзор<br>проектов GitLab</p>
+      <div class="sidebar-footer">
+        <p class="sidebar-note">Технологический обзор<br>проектов GitLab</p>
+        <label class="switch theme-switch">Светлая<input id="theme-toggle" type="checkbox"><span></span>Тёмная</label>
+      </div>
     </aside>
 
     <main class="content">
       <header class="topbar">
-        <div><p class="kicker">Workspace</p><h1 id="page-title">Dashboard</h1></div>
+        <div><p class="kicker">GitLab Radar</p><h1 id="page-title">Обзор</h1></div>
       </header>
 
       <section id="dashboard" class="page active">
@@ -32,7 +44,7 @@
             <div class="metric-icon">↗</div>
             <p>Всего проектов</p>
             <strong id="project-count">—</strong>
-            <span>Доступно для анализа</span>
+            <span><b id="subproject-count">—</b> подпроектов</span>
           </article>
           <article class="dashboard-card dependency-count-card">
             <div class="card-heading"><p>Уникальные зависимости</p><span>Без версий</span></div>
@@ -54,9 +66,17 @@
           <article class="dashboard-card">
             <div class="card-heading"><p>Инфраструктура</p><span>Проекты</span></div>
             <div class="infrastructure-statistics">
-              <div><span>Docker</span><strong id="docker-project-count">—</strong></div>
-              <div><span>GitLab CI</span><strong id="gitlab-ci-project-count">—</strong></div>
+              <div><span>Docker</span><strong id="docker-project-count">—</strong><small id="docker-project-percentage">—</small></div>
+              <div><span>GitLab CI</span><strong id="gitlab-ci-project-count">—</strong><small id="gitlab-ci-project-percentage">—</small></div>
             </div>
+          </article>
+          <article class="dashboard-card">
+            <div class="card-heading"><p>Качество данных</p><span>Требует внимания</span></div>
+            <div id="data-quality-stats" class="compact-list"></div>
+          </article>
+          <article class="dashboard-card">
+            <div class="card-heading"><p>Последнее сканирование</p><span>Состояние данных</span></div>
+            <div id="last-scan-stats" class="compact-list"></div>
           </article>
           <article class="dashboard-card requirements-card">
             <div class="card-heading"><p>Требования компании</p><span>Соответствие</span></div>
@@ -72,7 +92,15 @@
       <section id="projects" class="page">
         <div class="section-head">
           <div class="intro"><p>Каталог</p><h2>Проекты</h2></div>
-          <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
+          <div class="project-controls">
+            <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
+            <div class="rule-switches" aria-label="Нарушенные правила">
+              <label class="switch"><input type="checkbox" data-rule="uv-required"><span></span>Не использует uv</label>
+              <label class="switch"><input type="checkbox" data-rule="ruff-required"><span></span>Не использует ruff</label>
+              <label class="switch"><input type="checkbox" data-rule="bandit-required"><span></span>Не использует bandit</label>
+              <label class="switch"><input type="checkbox" data-rule="pylint-required"><span></span>Не использует pylint</label>
+            </div>
+          </div>
         </div>
         <div class="projects-layout">
           <div class="project-list" id="project-list"></div>
@@ -87,7 +115,7 @@
           <div class="intro"><p>Каталог</p><h2>Зависимости</h2></div>
           <div class="dependency-controls">
             <label class="search"><span>⌕</span><input id="dependency-search" type="search" placeholder="Найти зависимость"></label>
-            <label class="toggle"><input id="show-transitive" type="checkbox"> Показывать транзитивные</label>
+            <label class="switch"><input id="show-transitive" type="checkbox"><span></span>Показывать транзитивные</label>
           </div>
         </div>
         <div class="dependencies-layout">
@@ -107,6 +135,7 @@
               <p class="muted">Текущий статус</p><h3 id="scan-state">Ожидание</h3><p id="scan-description">Сканирование ещё не запускалось.</p>
               <div class="scan-progress"><span id="scan-progress-value"></span></div>
               <div class="scan-meta"><span id="scan-progress-label">0 из 0 проектов</span><span id="scan-duration">0 сек.</span></div>
+              <p id="scan-current-project" class="scan-current-project"></p>
             </div>
           </article>
           <article class="scan-actions">
@@ -114,6 +143,10 @@
             <p>Получит актуальный список Python-проектов из GitLab и обновит локальный snapshot.</p>
           </article>
         </div>
+        <details id="scan-errors" class="scan-errors" hidden>
+          <summary>Ошибки сканирования · <span id="scan-errors-count">0</span></summary>
+          <div id="scan-errors-list"></div>
+        </details>
       </section>
 
       <div id="global-error" class="toast" hidden></div>

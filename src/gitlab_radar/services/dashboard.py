@@ -1,11 +1,14 @@
 import re
 from collections import Counter
 
+from gitlab_radar.database.repository import latest_published_scan
 from gitlab_radar.schemas.dashboard import (
     CompanyRequirement,
     Dashboard,
+    DataQualityStatistics,
     DependencyCountStatistics,
     DependencyStatistics,
+    LastScanStatistics,
     PackageManagerStatistics,
     PythonVersionStatistics,
 )
@@ -25,11 +28,20 @@ PACKAGE_MANAGER_TITLES = {
 }
 
 
-def build_dashboard() -> Dashboard:
-    projects = load_projects()
+async def build_dashboard() -> Dashboard:
+    projects = await load_projects()
+    scan = await latest_published_scan()
     total_projects = len(projects)
-    package_managers = Counter(project.package_manager or PackageManager.UNKNOWN for project in projects)
-    dependency_catalog = build_dependency_catalog(projects)
+    subprojects = [subproject for project in projects for subproject in project.subprojects]
+    subproject_managers = Counter(subproject.package_manager for subproject in subprojects)
+    projects_by_manager = Counter(
+        manager
+        for project in projects
+        for manager in {
+            subproject.package_manager for subproject in project.subprojects
+        } or {project.package_manager or PackageManager.UNKNOWN}
+    )
+    dependency_catalog = await build_dependency_catalog(projects)
     rule_matches = Counter(
         code
         for project in projects
@@ -46,7 +58,7 @@ def build_dashboard() -> Dashboard:
     python_versions: Counter[str] = Counter()
     for project in projects:
         project_versions = {
-            _normalize_python_version(subproject.python_version)
+            _normalize_python_version(subproject.python_version or subproject.python_constraint)
             for subproject in project.subprojects
         }
         python_versions.update(version for version in project_versions if version)
@@ -59,8 +71,9 @@ def build_dashboard() -> Dashboard:
             PackageManagerStatistics(
                 package_manager=package_manager,
                 title=title,
-                projects_count=package_managers[package_manager],
-                percentage=_percentage(package_managers[package_manager], total_projects),
+                projects_count=projects_by_manager[package_manager],
+                subprojects_count=subproject_managers[package_manager],
+                percentage=_percentage(subproject_managers[package_manager], len(subprojects)),
             )
             for package_manager, title in PACKAGE_MANAGER_TITLES.items()
         ],
@@ -90,6 +103,31 @@ def build_dashboard() -> Dashboard:
             )
             for rule in COMPANY_RULES
         ],
+        subprojects_count=len(subprojects),
+        data_quality=DataQualityStatistics(
+            unknown_package_manager=sum(
+                subproject.package_manager is PackageManager.UNKNOWN for subproject in subprojects
+            ),
+            unknown_python_version=sum(
+                not (subproject.python_version or subproject.python_constraint)
+                for subproject in subprojects
+            ),
+            projects_without_subprojects=sum(not project.subprojects for project in projects),
+            analysis_errors=sum(bool(project.scan_error) for project in projects),
+        ),
+        last_scan=(
+            LastScanStatistics(
+                completed_at=scan.completed_at.isoformat() if scan.completed_at else None,
+                duration_seconds=round((scan.completed_at - scan.started_at).total_seconds(), 1)
+                if scan.completed_at
+                else 0.0,
+                errors_count=len(scan.errors),
+                reused_projects=scan.reused_projects,
+                skipped_projects=scan.skipped_projects,
+            )
+            if scan
+            else None
+        ),
     )
 
 

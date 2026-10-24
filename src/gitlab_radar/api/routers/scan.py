@@ -7,14 +7,14 @@ router = APIRouter()
 
 
 @router.get('/', response_model=ScanStatus)
-def get_scan_status(response: Response) -> ScanStatus:
+async def get_scan_status(response: Response) -> ScanStatus:
     response.headers['Cache-Control'] = 'no-store'
-    return scan_task.status()
+    return await scan_task.status()
 
 
 @router.post('/', status_code=status.HTTP_202_ACCEPTED)
-def scan(response: Response) -> ScanStatus:
+async def scan(response: Response) -> ScanStatus:
     response.headers['Cache-Control'] = 'no-store'
-    if not scan_task.start():
+    if not await scan_task.start():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Задача уже выполняется')
-    return scan_task.status()
+    return await scan_task.status()

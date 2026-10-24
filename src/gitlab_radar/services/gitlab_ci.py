@@ -1,5 +1,5 @@
 import logging
-lazy from collections.abc import Mapping
+from collections.abc import Mapping
 
 import yaml
 

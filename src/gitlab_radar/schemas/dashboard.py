@@ -1,12 +1,13 @@
 from pydantic import BaseModel
 
-lazy from gitlab_radar.schemas.technology import PackageManager
+from gitlab_radar.schemas.technology import PackageManager
 
 
 class PackageManagerStatistics(BaseModel):
     package_manager: PackageManager
     title: str
     projects_count: int
+    subprojects_count: int
     percentage: float
 
 
@@ -36,8 +37,24 @@ class PythonVersionStatistics(BaseModel):
     projects_count: int
 
 
+class DataQualityStatistics(BaseModel):
+    unknown_package_manager: int
+    unknown_python_version: int
+    projects_without_subprojects: int
+    analysis_errors: int
+
+
+class LastScanStatistics(BaseModel):
+    completed_at: str | None
+    duration_seconds: float
+    errors_count: int
+    reused_projects: int
+    skipped_projects: int
+
+
 class Dashboard(BaseModel):
     projects_count: int
+    subprojects_count: int
     docker_projects_count: int
     gitlab_ci_projects_count: int
     package_managers: list[PackageManagerStatistics]
@@ -45,3 +62,5 @@ class Dashboard(BaseModel):
     python_versions: list[PythonVersionStatistics]
     top_dependencies: list[DependencyStatistics]
     company_requirements: list[CompanyRequirement]
+    data_quality: DataQualityStatistics
+    last_scan: LastScanStatistics | None = None

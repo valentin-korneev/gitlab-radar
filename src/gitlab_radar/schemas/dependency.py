@@ -25,6 +25,7 @@ class DependencyProject(BaseModel):
     path_with_namespace: str
     subproject_path: str
     web_url: str
+    level: DependencyLevel
 
 
 class DependencyVersionUsage(BaseModel):
@@ -35,5 +36,6 @@ class DependencyVersionUsage(BaseModel):
 class DependencyUsage(BaseModel):
     name: str
     level: DependencyLevel
+    levels: list[DependencyLevel] = Field(default_factory=list)
     projects_count: int
     versions: list[DependencyVersionUsage] = Field(default_factory=list)

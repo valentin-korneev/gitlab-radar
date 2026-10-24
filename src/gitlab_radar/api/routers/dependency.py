@@ -7,5 +7,5 @@ router = APIRouter()
 
 
 @router.get('/')
-def get_dependencies() -> list[DependencyUsage]:
-    return build_dependency_catalog()
+async def get_dependencies() -> list[DependencyUsage]:
+    return await build_dependency_catalog()

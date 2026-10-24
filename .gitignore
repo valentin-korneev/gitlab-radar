@@ -2,6 +2,7 @@
 .codex
 .idea
 .venv
-data/**/*.json
-data/projects
-data/.scan-staging
+__pycache__
+*.py[cod]
+data
+!data/.gitkeep
