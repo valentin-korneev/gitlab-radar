@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
+from tortoise import Tortoise
 from tortoise.contrib.fastapi import RegisterTortoise
 lazy from fastapi import FastAPI
 
@@ -28,6 +29,7 @@ async def database_lifespan(app: FastAPI) -> AsyncIterator[None]:
         timezone='UTC',
     )
     async with registration:
+        await _ensure_database_columns()
         await ScanRun.filter(state=ScanState.RUNNING).update(
             state=ScanState.FAILED,
             completed_at=datetime.now(UTC),
@@ -35,3 +37,17 @@ async def database_lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         await import_legacy_snapshot()
         yield
+
+
+async def _ensure_database_columns() -> None:
+    connection = Tortoise.get_connection('default')
+    columns = await connection.execute_query_dict('PRAGMA table_info("scanrun")')
+    if not any(column.get('name') == 'gitlab_requests' for column in columns):
+        await connection.execute_query(
+            'ALTER TABLE "scanrun" ADD COLUMN "gitlab_requests" INT NOT NULL DEFAULT 0',
+        )
+    project_columns = await connection.execute_query_dict('PRAGMA table_info("projectsnapshot")')
+    if not any(column.get('name') == 'analysis_version' for column in project_columns):
+        await connection.execute_query(
+            'ALTER TABLE "projectsnapshot" ADD COLUMN "analysis_version" INT NOT NULL DEFAULT 1',
+        )

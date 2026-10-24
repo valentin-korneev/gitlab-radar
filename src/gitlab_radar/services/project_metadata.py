@@ -1,7 +1,7 @@
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
-lazy from collections.abc import Mapping
 
 from gitlab_radar.schemas.dependency import Dependency, DependencyGroup
 from gitlab_radar.services.dependency_parser import (
@@ -27,11 +27,12 @@ class ProjectMetadata:
     optional_dependencies: list[DependencyGroup]
     transitive_dependencies: list[Dependency]
     configured_tools: list[str]
+    package_registries: list[str]
 
 
 def parse_project_metadata(
-    files: Mapping[str, bytes],
-    pyproject: dict[str, Any] | None = None,
+        files: Mapping[str, bytes],
+        pyproject: dict[str, Any] | None = None,
 ) -> ProjectMetadata:
     pyproject_content = files.get('pyproject.toml')
     pyproject = parse_pyproject_document(pyproject_content) if pyproject is None else pyproject
@@ -87,12 +88,13 @@ def parse_project_metadata(
         configured_tools=sorted(
             {tool for declaration in declarations for tool in declaration.configured_tools},
         ),
+        package_registries=lock.registries,
     )
 
 
 def _without_direct_dependencies(
-    groups: list[DependencyGroup],
-    direct_names: set[str],
+        groups: list[DependencyGroup],
+        direct_names: set[str],
 ) -> list[DependencyGroup]:
     result: list[DependencyGroup] = []
     for group in groups:

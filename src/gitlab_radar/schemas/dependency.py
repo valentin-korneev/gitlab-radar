@@ -9,6 +9,12 @@ class DependencyLevel(StrEnum):
     TRANSITIVE = 'transitive'
 
 
+class DependencySource(StrEnum):
+    PYTHON = 'python'
+    DOCKER = 'docker'
+    CI = 'ci'
+
+
 class Dependency(BaseModel):
     name: str
     version: str | None = None

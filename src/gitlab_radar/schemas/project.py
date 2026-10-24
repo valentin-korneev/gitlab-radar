@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,6 +19,8 @@ class ProjectSubproject(BaseModel):
     optional_dependencies: list[DependencyGroup] = Field(default_factory=list)
     transitive_dependencies: list[Dependency] = Field(default_factory=list)
     configured_tools: list[str] = Field(default_factory=list)
+    package_registries: list[str] = Field(default_factory=list)
+    container_images: list[ContainerImage] = Field(default_factory=list)
     has_docker: bool = False
     company_compliance_percentage: float = 0.0
     company_rule_results: dict[str, bool] = Field(default_factory=dict)
@@ -24,6 +29,19 @@ class ProjectSubproject(BaseModel):
 class GitLabComponent(BaseModel):
     name: str
     version: str | None = None
+
+
+class ContainerSource(StrEnum):
+    DOCKERFILE = 'dockerfile'
+    COMPOSE = 'compose'
+
+
+class ContainerImage(BaseModel):
+    registry: str
+    image: str
+    version: str | None = None
+    source: ContainerSource
+    file_path: str
 
 
 class Project(BaseModel):
@@ -40,6 +58,8 @@ class Project(BaseModel):
     has_docker: bool = False
     has_gitlab_ci: bool = False
     gitlab_ci_components: list[GitLabComponent] = Field(default_factory=list)
+    package_registries: list[str] = Field(default_factory=list)
+    container_images: list[ContainerImage] = Field(default_factory=list)
     company_compliance_percentage: float = 0.0
     company_rule_results: dict[str, bool] = Field(default_factory=dict)
     revision: str | None = None

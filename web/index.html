@@ -71,6 +71,10 @@
             </div>
           </article>
           <article class="dashboard-card">
+            <div class="card-heading"><p>Registry</p><span>Проекты</span></div>
+            <div id="registry-stats" class="compact-list"></div>
+          </article>
+          <article class="dashboard-card">
             <div class="card-heading"><p>Качество данных</p><span>Требует внимания</span></div>
             <div id="data-quality-stats" class="compact-list"></div>
           </article>
@@ -86,6 +90,21 @@
             <div class="card-heading"><p>Топ-10 зависимостей</p><span>Проекты</span></div>
             <div id="top-dependencies" class="dependency-top"></div>
           </article>
+          <article class="dashboard-card requirements-card technology-target-card">
+            <div class="card-heading target-heading">
+              <div><p>Мишень технологий</p><span>Покрытие портфеля</span></div>
+              <label class="switch"><input id="target-show-single" type="checkbox"><span></span>Показывать единичные</label>
+            </div>
+            <div class="technology-target">
+              <div class="target-rings">
+                <span></span><span></span><span></span>
+                <div class="target-sector-labels" aria-hidden="true">
+                  <b>Python</b><b>Зависимости</b><b>Образы</b><b>Registry</b>
+                </div>
+                <div id="target-markers" class="target-markers"></div>
+              </div>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -99,6 +118,9 @@
               <label class="switch"><input type="checkbox" data-rule="ruff-required"><span></span>Не использует ruff</label>
               <label class="switch"><input type="checkbox" data-rule="bandit-required"><span></span>Не использует bandit</label>
               <label class="switch"><input type="checkbox" data-rule="pylint-required"><span></span>Не использует pylint</label>
+              <label class="switch"><input type="checkbox" data-rule="python-linters-component-required"><span></span>Нет python-linters</label>
+              <label class="switch"><input type="checkbox" data-rule="sonar-component-required"><span></span>Нет sonar</label>
+              <label class="switch"><input type="checkbox" data-rule="approved-registry-required"><span></span>Есть запрещённый registry</label>
             </div>
           </div>
         </div>
@@ -114,8 +136,13 @@
         <div class="section-head">
           <div class="intro"><p>Каталог</p><h2>Зависимости</h2></div>
           <div class="dependency-controls">
+            <div class="source-tabs" role="group" aria-label="Тип зависимостей">
+              <button class="source-tab active" type="button" data-source="python">Python</button>
+              <button class="source-tab" type="button" data-source="docker">Docker</button>
+              <button class="source-tab" type="button" data-source="ci">GitLab CI</button>
+            </div>
             <label class="search"><span>⌕</span><input id="dependency-search" type="search" placeholder="Найти зависимость"></label>
-            <label class="switch"><input id="show-transitive" type="checkbox"><span></span>Показывать транзитивные</label>
+            <label id="transitive-filter" class="switch"><input id="show-transitive" type="checkbox"><span></span>Показывать транзитивные</label>
           </div>
         </div>
         <div class="dependencies-layout">
@@ -135,6 +162,7 @@
               <p class="muted">Текущий статус</p><h3 id="scan-state">Ожидание</h3><p id="scan-description">Сканирование ещё не запускалось.</p>
               <div class="scan-progress"><span id="scan-progress-value"></span></div>
               <div class="scan-meta"><span id="scan-progress-label">0 из 0 проектов</span><span id="scan-duration">0 сек.</span></div>
+              <p id="scan-requests" class="scan-requests">Обращений к GitLab: 0</p>
               <p id="scan-current-project" class="scan-current-project"></p>
             </div>
           </article>

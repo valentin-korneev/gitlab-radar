@@ -4,6 +4,7 @@ from pathlib import Path, PurePosixPath
 from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.company_rules import apply_company_compliance
+from gitlab_radar.services.container_parser import parse_container_images
 from gitlab_radar.services.dependency_parser import parse_pyproject_document
 from gitlab_radar.services.gitlab_ci import parse_gitlab_components
 from gitlab_radar.services.package_manager import (
@@ -33,6 +34,9 @@ def analyze_project(project: Project, files: dict[str, Path], revision: str | No
     project.has_docker = any(PurePosixPath(path).name in CONTAINER_FILES for path in contents)
     project.has_gitlab_ci = bool(ci_files)
     project.gitlab_ci_components = parse_gitlab_components(ci_files)
+    project.container_images = parse_container_images(contents)
+    project.package_registries = sorted(
+        {registry for item in project.subprojects for registry in item.package_registries})
     project.scan_error = None
     apply_company_compliance(project)
     logger.info(
@@ -82,6 +86,8 @@ def _build_subproject(path: str, files: dict[str, bytes]) -> ProjectSubproject:
         optional_dependencies=metadata.optional_dependencies,
         transitive_dependencies=metadata.transitive_dependencies,
         configured_tools=metadata.configured_tools,
+        package_registries=metadata.package_registries,
+        container_images=parse_container_images(files),
         has_docker=any(name in CONTAINER_FILES for name in files_by_name),
     )
 

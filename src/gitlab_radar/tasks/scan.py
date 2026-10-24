@@ -3,6 +3,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from gitlab_radar.clients.gitlab import GitLabRequestCounter
 from gitlab_radar.config import settings
 from gitlab_radar.database.models import ScanRun
 from gitlab_radar.database.repository import (
@@ -96,27 +97,30 @@ class ScanTask:
     async def _run(self, scan: ScanRun) -> None:
         logger.info('Сканирование проектов запущено: запуск %d', scan.id)
         errors: list[str] = []
-        try:
-            projects, skipped_without_branch = await asyncio.to_thread(fetch_projects)
-            total_steps = len(projects) * 2 + 1
-            await self._update(
-                scan,
-                projects_count=len(projects),
-                total_steps=total_steps,
-                skipped_projects=skipped_without_branch,
-            )
-            collected = await self._collect_projects(scan, projects, errors)
-            await self._analyze_projects(scan, collected, errors)
-            await self._publish(scan, len(projects), total_steps, errors)
-        except Exception as error:
-            logger.exception('Сканирование проектов завершилось из-за ошибки')
-            await self._fail(scan, errors, error)
+        with GitLabRequestCounter() as request_counter:
+            try:
+                projects, skipped_without_branch = await asyncio.to_thread(fetch_projects)
+                total_steps = len(projects) * 2 + 1
+                await self._update(
+                    scan,
+                    projects_count=len(projects),
+                    total_steps=total_steps,
+                    skipped_projects=skipped_without_branch,
+                    gitlab_requests=request_counter.count,
+                )
+                collected = await self._collect_projects(scan, projects, errors, request_counter)
+                await self._analyze_projects(scan, collected, errors)
+                await self._publish(scan, len(projects), total_steps, errors, request_counter.count)
+            except Exception as error:
+                logger.exception('Сканирование проектов завершилось из-за ошибки')
+                await self._fail(scan, errors, error, request_counter.count)
 
     async def _collect_projects(
-        self,
-        scan: ScanRun,
-        projects: list[Project],
-        errors: list[str],
+            self,
+            scan: ScanRun,
+            projects: list[Project],
+            errors: list[str],
+            request_counter: GitLabRequestCounter,
     ) -> list[CollectedSnapshot]:
         collector = ProjectCollector(settings.application.projects_dir)
         collected: list[CollectedSnapshot] = []
@@ -129,15 +133,16 @@ class ScanTask:
                 collected_projects=number,
                 completed_steps=number,
                 errors=errors,
+                gitlab_requests=request_counter.count,
             )
         return collected
 
     @staticmethod
     async def _collect_project(
-        scan: ScanRun,
-        collector: ProjectCollector,
-        project: Project,
-        errors: list[str],
+            scan: ScanRun,
+            collector: ProjectCollector,
+            project: Project,
+            errors: list[str],
     ) -> CollectedSnapshot:
         try:
             revision = await asyncio.to_thread(collector.revision, project)
@@ -159,10 +164,10 @@ class ScanTask:
             return CollectedSnapshot(snapshot.id, project, False, False)
 
     async def _analyze_projects(
-        self,
-        scan: ScanRun,
-        collected: list[CollectedSnapshot],
-        errors: list[str],
+            self,
+            scan: ScanRun,
+            collected: list[CollectedSnapshot],
+            errors: list[str],
     ) -> None:
         await self._update(scan, phase=ScanPhase.ANALYZING, current_project=None)
         logger.info('Сбор файлов завершён; начинается локальный анализ проектов')
@@ -200,11 +205,12 @@ class ScanTask:
             logger.exception('Не удалось проанализировать проект %s', project.path_with_namespace)
 
     async def _publish(
-        self,
-        scan: ScanRun,
-        projects_count: int,
-        total_steps: int,
-        errors: list[str],
+            self,
+            scan: ScanRun,
+            projects_count: int,
+            total_steps: int,
+            errors: list[str],
+            gitlab_requests: int,
     ) -> None:
         await self._update(scan, phase=ScanPhase.PUBLISHING, current_project=None)
         logger.info('Локальный анализ завершён; результаты публикуются')
@@ -218,17 +224,25 @@ class ScanTask:
             current_project=None,
             errors=errors,
             published=True,
+            gitlab_requests=gitlab_requests,
         )
         invalidate_project_cache()
         await trim_old_scans()
         logger.info(
-            'Сканирование завершено: проектов %d, ошибок %d, длительность %.2f секунды',
+            'Сканирование завершено: проектов %d, обращений к GitLab %d, ошибок %d, длительность %.2f секунды',
             projects_count,
+            gitlab_requests,
             len(errors),
             (completed_at - scan.started_at).total_seconds(),
         )
 
-    async def _fail(self, scan: ScanRun, errors: list[str], error: Exception) -> None:
+    async def _fail(
+            self,
+            scan: ScanRun,
+            errors: list[str],
+            error: Exception,
+            gitlab_requests: int,
+    ) -> None:
         await self._update(
             scan,
             state=ScanState.FAILED,
@@ -236,6 +250,7 @@ class ScanTask:
             error=str(error),
             current_project=None,
             errors=errors,
+            gitlab_requests=gitlab_requests,
         )
 
     async def _update(self, scan: ScanRun, **values: object) -> None:
@@ -247,7 +262,7 @@ class ScanTask:
             status_values = {
                 key: value
                 for key, value in values.items()
-                if key in ScanStatus.model_fields
+                if ScanStatus.model_fields.get(key) is not None
             }
             status_values.setdefault('projects_count', scan.projects_count)
             self._status = self._status.model_copy(update=status_values)
@@ -267,6 +282,7 @@ def _scan_status(scan: ScanRun) -> ScanStatus:
         analyzed_projects=scan.analyzed_projects,
         reused_projects=scan.reused_projects,
         skipped_projects=scan.skipped_projects,
+        gitlab_requests=scan.gitlab_requests,
         current_project=scan.current_project,
         error=scan.error,
         errors=scan.errors,

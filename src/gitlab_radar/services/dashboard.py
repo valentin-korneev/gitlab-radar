@@ -1,5 +1,6 @@
 import re
 from collections import Counter
+from urllib.parse import urlsplit
 
 from gitlab_radar.database.repository import latest_published_scan
 from gitlab_radar.schemas.dashboard import (
@@ -11,6 +12,8 @@ from gitlab_radar.schemas.dashboard import (
     LastScanStatistics,
     PackageManagerStatistics,
     PythonVersionStatistics,
+    TechnologyTarget,
+    TechnologyUsage,
 )
 from gitlab_radar.schemas.dependency import DependencyLevel
 from gitlab_radar.schemas.technology import PackageManager
@@ -63,6 +66,17 @@ async def build_dashboard() -> Dashboard:
         }
         python_versions.update(version for version in project_versions if version)
 
+    image_projects: dict[str, set[int]] = {}
+    registry_projects: dict[str, set[int]] = {}
+    for project in projects:
+        for image in project.container_images:
+            image_projects.setdefault(f'{image.registry}/{image.image}', set()).add(project.id)
+            registry_projects.setdefault(_registry_name(image.registry), set()).add(project.id)
+        for registry in project.package_registries:
+            registry_projects.setdefault(_registry_name(registry), set()).add(project.id)
+
+    registry_statistics = _technology_usage(registry_projects)
+
     return Dashboard(
         projects_count=total_projects,
         docker_projects_count=sum(project.has_docker for project in projects),
@@ -103,7 +117,21 @@ async def build_dashboard() -> Dashboard:
             )
             for rule in COMPANY_RULES
         ],
-        subprojects_count=len(subprojects),
+        technology_target=TechnologyTarget(
+            python_versions=[
+                TechnologyUsage(name=f'Python {version}', projects_count=count)
+                for version, count in python_versions.most_common()
+            ],
+            dependencies=[
+                TechnologyUsage(name=dependency.name, projects_count=dependency.projects_count)
+                for dependency in dependency_catalog
+                if dependency.level is not DependencyLevel.TRANSITIVE
+            ],
+            images=_technology_usage(image_projects),
+            registries=registry_statistics,
+        ),
+        registries=registry_statistics,
+        subprojects_count=sum(max(len(project.subprojects) - 1, 0) for project in projects),
         data_quality=DataQualityStatistics(
             unknown_package_manager=sum(
                 subproject.package_manager is PackageManager.UNKNOWN for subproject in subprojects
@@ -124,6 +152,7 @@ async def build_dashboard() -> Dashboard:
                 errors_count=len(scan.errors),
                 reused_projects=scan.reused_projects,
                 skipped_projects=scan.skipped_projects,
+                gitlab_requests=scan.gitlab_requests,
             )
             if scan
             else None
@@ -142,3 +171,18 @@ def _percentage(value: int, total: int) -> float:
     if not total:
         return 0.0
     return round(value / total * 100, 1)
+
+
+def _technology_usage(projects_by_name: dict[str, set[int]]) -> list[TechnologyUsage]:
+    return [
+        TechnologyUsage(name=name, projects_count=len(project_ids))
+        for name, project_ids in sorted(
+            projects_by_name.items(),
+            key=lambda item: (-len(item[1]), item[0]),
+        )
+    ]
+
+
+def _registry_name(value: str) -> str:
+    parsed = urlsplit(value if '://' in value else f'//{value}')
+    return str(parsed.netloc or value.partition('/')[0]).lower()

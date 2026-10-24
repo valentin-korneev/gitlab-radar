@@ -5,67 +5,87 @@ from gitlab_radar.schemas.dependency import (
     Dependency,
     DependencyLevel,
     DependencyProject,
+    DependencySource,
     DependencyUsage,
     DependencyVersionUsage,
 )
 from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.services.project import load_projects
 
+UsageEntry = tuple[Project, str, Dependency, DependencyLevel]
 
-async def build_dependency_catalog(projects: list[Project] | None = None) -> list[DependencyUsage]:
+
+async def build_dependency_catalog(
+        projects: list[Project] | None = None,
+        source: DependencySource = DependencySource.PYTHON,
+) -> list[DependencyUsage]:
     projects = await load_projects() if projects is None else projects
-    usage: dict[str, dict[str | None, dict[tuple[int, str, DependencyLevel], DependencyProject]]] = defaultdict(
-        lambda: defaultdict(dict),
-    )
-    levels: dict[str, DependencyLevel] = {}
+    entries = {
+        DependencySource.PYTHON: _python_entries,
+        DependencySource.DOCKER: _docker_entries,
+        DependencySource.CI: _ci_entries,
+    }[source](projects)
+    return _build_catalog(entries)
+
+
+def _python_entries(projects: list[Project]) -> Iterable[UsageEntry]:
+    for project in projects:
+        for subproject in project.subprojects:
+            for dependency, level in subproject_dependency_entries(subproject):
+                yield project, subproject.path, dependency, level
+
+
+def _docker_entries(projects: list[Project]) -> Iterable[UsageEntry]:
+    for project in projects:
+        for image in project.container_images:
+            name = f'{image.registry}/{image.image}'
+            path = image.file_path.rpartition('/')[0] or '.'
+            yield project, path, Dependency(name=name, version=image.version), DependencyLevel.DIRECT
+
+
+def _ci_entries(projects: list[Project]) -> Iterable[UsageEntry]:
+    for project in projects:
+        for component in project.gitlab_ci_components:
+            yield project, '.', Dependency(name=component.name, version=component.version), DependencyLevel.DIRECT
+
+
+def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
+    usage: dict[
+        str,
+        dict[str | None, dict[tuple[int, str, DependencyLevel], DependencyProject]],
+    ] = defaultdict(lambda: defaultdict(dict))
     priorities = {
         DependencyLevel.DIRECT: 0,
         DependencyLevel.OPTIONAL: 1,
         DependencyLevel.TRANSITIVE: 2,
     }
-
-    for project in projects:
-        for subproject in project.subprojects:
-            for dependency, level in subproject_dependency_entries(subproject):
-                reference = DependencyProject(
-                    id=project.id,
-                    name=project.name,
-                    path_with_namespace=project.path_with_namespace,
-                    subproject_path=subproject.path,
-                    web_url=project.web_url,
-                    level=level,
-                )
-                usage[dependency.name][dependency.version][(project.id, subproject.path, level)] = reference
-                current = levels.get(dependency.name)
-                if current is None or priorities[level] < priorities[current]:
-                    levels[dependency.name] = level
+    for project, path, dependency, level in entries:
+        reference = DependencyProject(
+            id=project.id,
+            name=project.name,
+            path_with_namespace=project.path_with_namespace,
+            subproject_path=path,
+            web_url=project.web_url,
+            level=level,
+        )
+        usage[dependency.name][dependency.version][(project.id, path, level)] = reference
 
     catalog: list[DependencyUsage] = []
     for name, versions in usage.items():
-        project_ids = {
-            project.id
-            for projects_by_version in versions.values()
-            for project in projects_by_version.values()
-        }
+        references = [reference for values in versions.values() for reference in values.values()]
+        levels = sorted({reference.level for reference in references}, key=priorities.__getitem__)
         catalog.append(
             DependencyUsage(
                 name=name,
-                level=levels[name],
-                levels=sorted(
-                    {
-                        project.level
-                        for projects_by_version in versions.values()
-                        for project in projects_by_version.values()
-                    },
-                    key=lambda usage_level: priorities[usage_level],
-                ),
-                projects_count=len(project_ids),
+                level=levels[0],
+                levels=levels,
+                projects_count=len({reference.id for reference in references}),
                 versions=[
                     DependencyVersionUsage(
                         version=version,
                         projects=sorted(
                             projects_by_version.values(),
-                            key=lambda reference: (reference.path_with_namespace, reference.subproject_path),
+                            key=lambda item: (item.path_with_namespace, item.subproject_path),
                         ),
                     )
                     for version, projects_by_version in sorted(
@@ -75,7 +95,7 @@ async def build_dependency_catalog(projects: list[Project] | None = None) -> lis
                 ],
             ),
         )
-    return sorted(catalog, key=lambda usage: (-usage.projects_count, usage.name))
+    return sorted(catalog, key=lambda item: (-item.projects_count, item.name))
 
 
 def project_dependency_names(project: Project) -> set[str]:
@@ -92,7 +112,7 @@ def subproject_dependencies(subproject: ProjectSubproject) -> Iterable[Dependenc
 
 
 def subproject_dependency_entries(
-    subproject: ProjectSubproject,
+        subproject: ProjectSubproject,
 ) -> Iterable[tuple[Dependency, DependencyLevel]]:
     yield from ((dependency, DependencyLevel.DIRECT) for dependency in subproject.dependencies)
     yield from (

@@ -50,6 +50,19 @@ class LastScanStatistics(BaseModel):
     errors_count: int
     reused_projects: int
     skipped_projects: int
+    gitlab_requests: int
+
+
+class TechnologyUsage(BaseModel):
+    name: str
+    projects_count: int
+
+
+class TechnologyTarget(BaseModel):
+    python_versions: list[TechnologyUsage]
+    dependencies: list[TechnologyUsage]
+    images: list[TechnologyUsage]
+    registries: list[TechnologyUsage]
 
 
 class Dashboard(BaseModel):
@@ -62,5 +75,7 @@ class Dashboard(BaseModel):
     python_versions: list[PythonVersionStatistics]
     top_dependencies: list[DependencyStatistics]
     company_requirements: list[CompanyRequirement]
+    technology_target: TechnologyTarget
+    registries: list[TechnologyUsage]
     data_quality: DataQualityStatistics
     last_scan: LastScanStatistics | None = None

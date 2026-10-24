@@ -114,18 +114,18 @@ class ProjectCollector:
         for entry in entries:
             path = entry.get('path')
             if (
-                entry.get('type') == 'blob'
-                and isinstance(path, str)
-                and PurePosixPath(path).name in TARGET_FILENAMES
+                    entry.get('type') == 'blob'
+                    and isinstance(path, str)
+                    and PurePosixPath(path).name in TARGET_FILENAMES
             ):
                 paths.add(path)
         return sorted(paths, key=lambda value: (value.count('/'), value))
 
     def _read_files(
-        self,
-        project: GitLabProject,
-        paths: list[str],
-        default_branch: str,
+            self,
+            project: GitLabProject,
+            paths: list[str],
+            default_branch: str,
     ) -> dict[str, bytes]:
         if not paths:
             return {}
@@ -143,10 +143,10 @@ class ProjectCollector:
         return {path: self._read_file(project, path, default_branch) for path in paths}
 
     def _read_files_in_batches(
-        self,
-        project: GitLabProject,
-        paths: list[str],
-        default_branch: str,
+            self,
+            project: GitLabProject,
+            paths: list[str],
+            default_branch: str,
     ) -> dict[str, bytes]:
         files: dict[str, bytes] = {}
         logger.info(
@@ -155,7 +155,7 @@ class ProjectCollector:
             (len(paths) + BATCH_SIZE - 1) // BATCH_SIZE,
         )
         for offset in range(0, len(paths), BATCH_SIZE):
-            chunk = paths[offset : offset + BATCH_SIZE]
+            chunk = paths[offset: offset + BATCH_SIZE]
             response = gitlab_client.http_post(
                 f'/projects/{project.id}/repository/blobs/batch',
                 post_data={

@@ -1,0 +1,126 @@
+import re
+from pathlib import PurePosixPath
+
+import yaml
+
+from gitlab_radar.schemas.project import ContainerImage, ContainerSource
+
+_ARG_PATTERN = re.compile(r'^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$', re.IGNORECASE)
+_FROM_PATTERN = re.compile(r'^\s*FROM\s+(?:--\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?', re.IGNORECASE)
+_COPY_FROM_PATTERN = re.compile(r'--from=(\S+)', re.IGNORECASE)
+_VARIABLE_PATTERN = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)(?::[-?](.*?))?}|\$([A-Za-z_][A-Za-z0-9_]*)')
+
+
+def parse_container_images(files: dict[str, bytes]) -> list[ContainerImage]:
+    images: dict[tuple[str, str, str | None, ContainerSource, str], ContainerImage] = {}
+    for path, content in files.items():
+        name = PurePosixPath(path).name
+        if name.lower() == 'dockerfile':
+            parsed = _parse_dockerfile(content, path)
+        elif name in {'compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'}:
+            parsed = _parse_compose(content, path)
+        else:
+            continue
+        for image in parsed:
+            key = (image.registry, image.image, image.version, image.source, image.file_path)
+            images[key] = image
+    return sorted(
+        images.values(),
+        key=lambda item: (item.image, item.version or '', item.file_path),
+    )
+
+
+def _parse_dockerfile(content: bytes, path: str) -> list[ContainerImage]:
+    text = _decode(content)
+    if text is None:
+        return []
+    arguments: dict[str, str] = {}
+    stages: set[str] = set()
+    result: list[ContainerImage] = []
+    for line in _logical_lines(text):
+        argument = _ARG_PATTERN.match(line)
+        if argument and argument.group(2):
+            arguments[argument.group(1)] = argument.group(2).strip()
+            continue
+        instruction = _FROM_PATTERN.match(line)
+        if not instruction:
+            for match in _COPY_FROM_PATTERN.finditer(line):
+                value = _resolve_variables(match.group(1), arguments)
+                if value.lower() not in stages and not value.isdigit():
+                    result.append(_container_image(value, ContainerSource.DOCKERFILE, path))
+            continue
+        value = _resolve_variables(instruction.group(1), arguments)
+        if value.lower() != 'scratch' and value.lower() not in stages:
+            result.append(_container_image(value, ContainerSource.DOCKERFILE, path))
+        if instruction.group(2):
+            stages.add(instruction.group(2).lower())
+    return result
+
+
+def _parse_compose(content: bytes, path: str) -> list[ContainerImage]:
+    text = _decode(content)
+    if text is None:
+        return []
+    try:
+        document = yaml.safe_load(text)
+    except yaml.YAMLError:
+        return []
+    if not isinstance(document, dict) or not isinstance(document.get('services'), dict):
+        return []
+    result: list[ContainerImage] = []
+    for service in document['services'].values():
+        if not isinstance(service, dict) or not isinstance(service.get('image'), str):
+            continue
+        image = _resolve_variables(service['image'], {})
+        if image:
+            result.append(_container_image(image, ContainerSource.COMPOSE, path))
+    return result
+
+
+def _container_image(value: str, source: ContainerSource, path: str) -> ContainerImage:
+    reference, separator, digest = value.strip().partition('@')
+    version = digest if separator else None
+    last_slash = reference.rfind('/')
+    last_colon = reference.rfind(':')
+    if last_colon > last_slash:
+        reference, version = reference[:last_colon], reference[last_colon + 1:]
+    parts = reference.split('/')
+    first = parts[0]
+    if len(parts) > 1 and (
+        '.' in first
+        or ':' in first
+        or first == 'localhost'
+        or first.startswith('$')
+    ):
+        registry = first
+        image = '/'.join(parts[1:])
+    else:
+        registry = 'docker.io'
+        image = reference
+    return ContainerImage(
+        registry=registry,
+        image=image,
+        version=version or None,
+        source=source,
+        file_path=path,
+    )
+
+
+def _logical_lines(text: str) -> list[str]:
+    return re.sub(r'\\\s*\n', ' ', text).splitlines()
+
+
+def _resolve_variables(value: str, arguments: dict[str, str]) -> str:
+    def replace(match: re.Match[str]) -> str:
+        name = match.group(1) or match.group(3)
+        default = match.group(2)
+        return arguments.get(name, default if default is not None else match.group(0))
+
+    return _VARIABLE_PATTERN.sub(replace, value).strip()
+
+
+def _decode(content: bytes) -> str | None:
+    try:
+        return content.decode('utf-8')
+    except UnicodeDecodeError:
+        return None

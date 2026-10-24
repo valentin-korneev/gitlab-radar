@@ -10,6 +10,7 @@ from gitlab_radar.schemas.scan import ScanState
 from gitlab_radar.services.company_rules import apply_company_compliance
 
 logger = logging.getLogger(__name__)
+ANALYSIS_VERSION = 2
 
 
 class ProjectCache:
@@ -108,6 +109,7 @@ async def find_reusable_project(gitlab_id: int, revision: str | None) -> Project
             revision=revision,
             analyzed=True,
             scan__published=True,
+            analysis_version=ANALYSIS_VERSION,
         )
         .order_by('-scan_id')
         .first()
@@ -115,9 +117,9 @@ async def find_reusable_project(gitlab_id: int, revision: str | None) -> Project
 
 
 async def clone_project(
-    source: ProjectSnapshot,
-    scan: ScanRun,
-    project: Project,
+        source: ProjectSnapshot,
+        scan: ScanRun,
+        project: Project,
 ) -> ProjectSnapshot:
     payload = dict(source.payload)
     current = _project_payload(project)
@@ -127,6 +129,7 @@ async def clone_project(
         scan=scan,
         gitlab_id=project.id,
         revision=source.revision,
+        analysis_version=ANALYSIS_VERSION,
         payload=payload,
         collected=True,
         analyzed=True,
@@ -148,16 +151,17 @@ async def clone_project(
 
 
 async def save_collected_project(
-    scan: ScanRun,
-    project: Project,
-    revision: str | None,
-    files: dict[str, Path],
-    error: str | None = None,
+        scan: ScanRun,
+        project: Project,
+        revision: str | None,
+        files: dict[str, Path],
+        error: str | None = None,
 ) -> ProjectSnapshot:
     snapshot = await ProjectSnapshot.create(
         scan=scan,
         gitlab_id=project.id,
         revision=revision,
+        analysis_version=ANALYSIS_VERSION,
         payload=_project_payload(project),
         collected=error is None,
         error=error,

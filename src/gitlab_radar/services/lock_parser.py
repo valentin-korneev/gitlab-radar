@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit
 
 import yaml
 from packaging.utils import canonicalize_name
@@ -15,16 +16,29 @@ logger = logging.getLogger(__name__)
 class LockMetadata:
     dependencies: list[Dependency]
     pipfile_document: dict[str, Any]
+    registries: list[str]
 
 
 def parse_lock_metadata(files: dict[str, bytes]) -> LockMetadata:
     dependencies: list[Dependency] = []
+    registries: set[str] = set()
     for filename in ('uv.lock', 'poetry.lock'):
         content = files.get(filename)
         if content:
-            dependencies.extend(_package_list(parse_toml(content, filename).get('package')))
+            document = parse_toml(content, filename)
+            packages = document.get('package')
+            dependencies.extend(_package_list(packages))
+            registries.update(_package_registries(packages))
 
     pipfile_document = parse_json_document(files.get('Pipfile.lock'), 'Pipfile.lock')
+    sources = table(pipfile_document, '_meta').get('sources')
+    if isinstance(sources, list):
+        registries.update(
+            registry
+            for source in sources
+            if isinstance(source, dict)
+            if (registry := _clean_registry(source.get('url')))
+        )
     for group_name in ('default', 'develop'):
         for name, value in table(pipfile_document, group_name).items():
             version = value.get('version') if isinstance(value, dict) else value
@@ -37,13 +51,15 @@ def parse_lock_metadata(files: dict[str, bytes]) -> LockMetadata:
     for filename in ('conda-lock.yml', 'conda-lock.yaml'):
         content = files.get(filename)
         if content:
-            dependencies.extend(_parse_conda_lock(content))
-    return LockMetadata(unique_dependencies(dependencies), pipfile_document)
+            conda_dependencies, conda_registries = _parse_conda_lock(content)
+            dependencies.extend(conda_dependencies)
+            registries.update(conda_registries)
+    return LockMetadata(unique_dependencies(dependencies), pipfile_document, sorted(registries))
 
 
 def resolve_locked_versions(
-    dependencies: list[Dependency],
-    locked_dependencies: list[Dependency],
+        dependencies: list[Dependency],
+        locked_dependencies: list[Dependency],
 ) -> list[Dependency]:
     locked_versions: dict[str, set[str]] = {}
     for dependency in locked_dependencies:
@@ -81,12 +97,52 @@ def _package_list(value: object) -> list[Dependency]:
     return dependencies
 
 
-def _parse_conda_lock(content: bytes) -> list[Dependency]:
+def _parse_conda_lock(content: bytes) -> tuple[list[Dependency], set[str]]:
     try:
         document = yaml.safe_load(content.decode('utf-8'))
     except (UnicodeDecodeError, yaml.YAMLError):
         logger.warning('Не удалось разобрать lock-файл Conda')
-        return []
+        return [], set()
     if not isinstance(document, dict):
-        return []
-    return _package_list(document.get('package'))
+        return [], set()
+    packages = document.get('package')
+    registries = _package_registries(packages)
+    metadata = table(document, 'metadata')
+    channels = metadata.get('channels')
+    if isinstance(channels, list):
+        registries.update(
+            registry
+            for channel in channels
+            if (registry := _clean_registry(channel))
+        )
+    return _package_list(packages), registries
+
+
+def _package_registries(value: object) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    result: set[str] = set()
+    for package in value:
+        if not isinstance(package, dict):
+            continue
+        source = package.get('source')
+        if isinstance(source, dict):
+            for key in ('registry', 'url'):
+                registry = _clean_registry(source.get(key))
+                if registry:
+                    result.add(registry)
+        registry = _clean_registry(package.get('url'))
+        if registry:
+            result.add(registry)
+    return result
+
+
+def _clean_registry(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    value = value.strip().rstrip('/')
+    parsed = urlsplit(value)
+    if not parsed.scheme or not parsed.hostname:
+        return value
+    netloc = parsed.netloc.rsplit('@', maxsplit=1)[-1]
+    return netloc.lower()
