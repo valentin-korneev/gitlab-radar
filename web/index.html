@@ -22,7 +22,6 @@
     <main class="content">
       <header class="topbar">
         <div><p class="kicker">Workspace</p><h1 id="page-title">Dashboard</h1></div>
-        <div class="connection"><span></span>GitLab connected</div>
       </header>
 
       <section id="dashboard" class="page active">
@@ -34,9 +33,13 @@
             <strong id="project-count">—</strong>
             <span>Доступно для анализа</span>
           </article>
-          <article class="placeholder-card">
-            <span>Следующий показатель</span>
-            <p>Здесь появится новая метрика радара.</p>
+          <article class="dashboard-card">
+            <div class="card-heading"><p>Пакетные менеджеры</p><span>Проекты</span></div>
+            <div id="package-manager-stats" class="statistics-list"></div>
+          </article>
+          <article class="dashboard-card requirements-card">
+            <div class="card-heading"><p>Требования компании</p><span>Соответствие</span></div>
+            <div id="company-requirements" class="requirements-list"></div>
           </article>
         </div>
       </section>

@@ -15,6 +15,10 @@ class ApplicationSettings(BaseSettings):
     def web_dir(self) -> Path:
         return self.base_dir / 'web'
 
+    @property
+    def data_dir(self) -> Path:
+        return self.base_dir / 'data'
+
     model_config = SettingsConfigDict(
         env_prefix='RADAR_',
         env_file=BASE_DIR / '.env',
