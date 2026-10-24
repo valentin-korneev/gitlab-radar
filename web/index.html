@@ -34,9 +34,29 @@
             <strong id="project-count">—</strong>
             <span>Доступно для анализа</span>
           </article>
+          <article class="dashboard-card dependency-count-card">
+            <div class="card-heading"><p>Уникальные зависимости</p><span>Без версий</span></div>
+            <strong id="dependency-count">—</strong>
+            <div class="compact-statistics">
+              <span>Прямые <b id="direct-dependency-count">—</b></span>
+              <span>Опциональные <b id="optional-dependency-count">—</b></span>
+              <span>Транзитивные <b id="transitive-dependency-count">—</b></span>
+            </div>
+          </article>
           <article class="dashboard-card">
             <div class="card-heading"><p>Пакетные менеджеры</p><span>Проекты</span></div>
             <div id="package-manager-stats" class="statistics-list"></div>
+          </article>
+          <article class="dashboard-card">
+            <div class="card-heading"><p>Версии Python</p><span>Проекты</span></div>
+            <div id="python-version-stats" class="compact-list"></div>
+          </article>
+          <article class="dashboard-card">
+            <div class="card-heading"><p>Инфраструктура</p><span>Проекты</span></div>
+            <div class="infrastructure-statistics">
+              <div><span>Docker</span><strong id="docker-project-count">—</strong></div>
+              <div><span>GitLab CI</span><strong id="gitlab-ci-project-count">—</strong></div>
+            </div>
           </article>
           <article class="dashboard-card requirements-card">
             <div class="card-heading"><p>Требования компании</p><span>Соответствие</span></div>
@@ -65,7 +85,10 @@
       <section id="dependencies" class="page">
         <div class="section-head">
           <div class="intro"><p>Каталог</p><h2>Зависимости</h2></div>
-          <label class="search"><span>⌕</span><input id="dependency-search" type="search" placeholder="Найти зависимость"></label>
+          <div class="dependency-controls">
+            <label class="search"><span>⌕</span><input id="dependency-search" type="search" placeholder="Найти зависимость"></label>
+            <label class="toggle"><input id="show-transitive" type="checkbox"> Показывать транзитивные</label>
+          </div>
         </div>
         <div class="dependencies-layout">
           <div class="dependency-list" id="dependency-list"></div>
@@ -80,7 +103,11 @@
         <div class="admin-grid">
           <article class="scan-card">
             <div class="scan-orbit"><span id="scan-dot"></span></div>
-            <div><p class="muted">Текущий статус</p><h3 id="scan-state">Ожидание</h3><p id="scan-description">Сканирование ещё не запускалось.</p></div>
+            <div class="scan-status-content">
+              <p class="muted">Текущий статус</p><h3 id="scan-state">Ожидание</h3><p id="scan-description">Сканирование ещё не запускалось.</p>
+              <div class="scan-progress"><span id="scan-progress-value"></span></div>
+              <div class="scan-meta"><span id="scan-progress-label">0 из 0 проектов</span><span id="scan-duration">0 сек.</span></div>
+            </div>
           </article>
           <article class="scan-actions">
             <button id="scan-button" class="primary-button">Запустить сканирование <span>→</span></button>

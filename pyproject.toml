@@ -71,6 +71,7 @@ disable = [
     "missing-class-docstring",
     "missing-function-docstring",
     "missing-module-docstring",
+    "too-few-public-methods",
 ]
 
 [tool.bandit]

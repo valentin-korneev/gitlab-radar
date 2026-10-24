@@ -12,6 +12,13 @@ class ProjectSubproject(BaseModel):
     python_version: str | None = None
     dependencies: list[Dependency] = Field(default_factory=list)
     optional_dependencies: list[DependencyGroup] = Field(default_factory=list)
+    transitive_dependencies: list[Dependency] = Field(default_factory=list)
+    has_docker: bool = False
+
+
+class GitLabComponent(BaseModel):
+    name: str
+    version: str | None = None
 
 
 class Project(BaseModel):
@@ -25,3 +32,7 @@ class Project(BaseModel):
     last_activity_at: datetime | None
     package_manager: PackageManager | None = None
     subprojects: list[ProjectSubproject] = Field(default_factory=list)
+    has_docker: bool = False
+    has_gitlab_ci: bool = False
+    gitlab_ci_components: list[GitLabComponent] = Field(default_factory=list)
+    company_compliance_percentage: float = 0.0

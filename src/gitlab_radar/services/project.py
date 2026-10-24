@@ -2,6 +2,7 @@ import json
 import logging
 import shutil
 from threading import Lock
+lazy from collections.abc import Callable
 lazy from pathlib import Path
 
 from gitlab.const import AccessLevel
@@ -9,6 +10,7 @@ from gitlab.const import AccessLevel
 from gitlab_radar.clients.gitlab import gitlab_client
 from gitlab_radar.config import settings
 from gitlab_radar.schemas.project import Project
+from gitlab_radar.services.company_rules import project_compliance_percentage
 from gitlab_radar.services.package_files import PackageFilesService
 
 logger = logging.getLogger(__name__)
@@ -23,7 +25,9 @@ BACKUP_FILENAME = '.projects.json.backup'
 _snapshot_lock = Lock()
 
 
-def refresh_projects() -> tuple[list[Project], list[str]]:
+def refresh_projects(
+    progress: Callable[[int, int], None] | None = None,
+) -> tuple[list[Project], list[str]]:
     logger.info('Запрос доступных Python-проектов из GitLab')
     gitlab_projects = gitlab_client.projects.list(
         min_access_level=AccessLevel.REPORTER,
@@ -48,6 +52,8 @@ def refresh_projects() -> tuple[list[Project], list[str]]:
         len(projects),
         skipped_projects,
     )
+    if progress:
+        progress(0, len(projects))
 
     data_directory = settings.application.data_dir
     staging_directory = data_directory / STAGING_DIRECTORY
@@ -57,7 +63,7 @@ def refresh_projects() -> tuple[list[Project], list[str]]:
     logger.info('Создана временная директория снимка: %s', staging_directory)
 
     try:
-        errors = PackageFilesService(projects_directory).scan_projects(projects)
+        errors = PackageFilesService(projects_directory).scan_projects(projects, progress)
         _write_projects(staging_directory / PROJECTS_FILENAME, projects)
         logger.info('Подготовлен новый снимок: проектов %d, ошибок %d', len(projects), len(errors))
         _replace_snapshot(staging_directory)
@@ -76,6 +82,8 @@ def load_projects() -> list[Project]:
             return []
         with projects_path.open(encoding='utf-8') as file:
             projects = [Project.model_validate(project) for project in json.load(file)]
+        for project in projects:
+            project.company_compliance_percentage = project_compliance_percentage(project)
     logger.info('Загружено проектов из файла: %d', len(projects))
     return projects
 

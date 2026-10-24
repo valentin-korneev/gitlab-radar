@@ -45,10 +45,16 @@ class ScanTask:
         with self._lock:
             return self._status.model_copy(deep=True)
 
+    def _update_progress(self, processed: int, total: int) -> None:
+        with self._lock:
+            self._status.processed_projects = processed
+            self._status.total_projects = total
+        logger.info('Прогресс сканирования: %d/%d проектов', processed, total)
+
     def __call__(self) -> None:
         logger.info('Сканирование проектов запущено')
         try:
-            projects, errors = refresh_projects()
+            projects, errors = refresh_projects(self._update_progress)
         except Exception as error:
             with self._lock:
                 self._status.state = ScanState.FAILED
@@ -62,6 +68,8 @@ class ScanTask:
                 self._status.state = ScanState.COMPLETED
                 self._status.completed_at = completed_at
                 self._status.projects_count = len(projects)
+                self._status.processed_projects = len(projects)
+                self._status.total_projects = len(projects)
                 self._status.errors = errors
             duration = (completed_at - started_at).total_seconds() if started_at else 0
             logger.info(

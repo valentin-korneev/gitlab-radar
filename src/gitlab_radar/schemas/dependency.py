@@ -1,4 +1,12 @@
+from enum import StrEnum
+
 from pydantic import BaseModel, Field
+
+
+class DependencyLevel(StrEnum):
+    DIRECT = 'direct'
+    OPTIONAL = 'optional'
+    TRANSITIVE = 'transitive'
 
 
 class Dependency(BaseModel):
@@ -26,5 +34,6 @@ class DependencyVersionUsage(BaseModel):
 
 class DependencyUsage(BaseModel):
     name: str
+    level: DependencyLevel
     projects_count: int
     versions: list[DependencyVersionUsage] = Field(default_factory=list)

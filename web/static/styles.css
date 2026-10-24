@@ -46,6 +46,16 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .metric-card strong { display: block; margin-bottom: 10px; font-size: 5rem; line-height: .9; letter-spacing: -.07em; }
 .metric-card span { color: var(--muted); font-size: .76rem; }
 .dashboard-card { min-height: 0; }
+.dependency-count-card > strong { display: block; margin: 6px 0 24px; font-size: 4rem; line-height: 1; }
+.compact-statistics { display: grid; gap: 10px; }
+.compact-statistics span, .compact-list > div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); font-size: .76rem; }
+.compact-statistics b, .compact-list b { color: var(--text); }
+.compact-list { display: grid; gap: 12px; }
+.infrastructure-statistics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.infrastructure-statistics > div { border: 1px solid var(--line); border-radius: 12px; padding: 18px; background: var(--surface-low); }
+.infrastructure-statistics span, .infrastructure-statistics strong { display: block; }
+.infrastructure-statistics span { margin-bottom: 16px; color: var(--muted); font-size: .76rem; }
+.infrastructure-statistics strong { font-size: 2.4rem; }
 .requirements-card { grid-column: 1 / -1; }
 .card-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
 .card-heading p { margin: 0; font-size: 1rem; font-weight: 750; }
@@ -73,6 +83,10 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
 .search { display: flex; align-items: center; gap: 8px; width: min(320px, 100%); margin-bottom: 36px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px; background: var(--surface); color: var(--muted); }
 .search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); }
+.dependency-controls { display: grid; justify-items: end; margin-bottom: 36px; }
+.dependency-controls .search { margin-bottom: 10px; }
+.toggle { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .76rem; cursor: pointer; }
+.toggle input { accent-color: var(--accent); }
 .projects-layout, .dependencies-layout { display: grid; grid-template-columns: minmax(320px, 1.2fr) minmax(280px, .8fr); gap: 18px; align-items: start; }
 .project-list, .project-detail, .dependency-list, .dependency-detail { border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
 .project-list, .dependency-list { overflow: hidden; }
@@ -104,6 +118,10 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .status-badge.manager-other { background: rgba(255,103,103,.12); color: var(--danger); }
 .project-dependencies { display: grid; gap: 16px; }
 .project-dependencies > .empty-state { margin: 0; }
+.dependency-disclosure { margin-top: 24px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-low); }
+.dependency-disclosure summary { padding: 14px 16px; cursor: pointer; font-size: .78rem; font-weight: 750; }
+.dependency-disclosure[open] summary { border-bottom: 1px solid var(--line); }
+.dependency-disclosure .project-dependencies { padding: 16px; }
 .dependency-group h4, .dependency-version h4 { margin: 0 0 9px; font-size: .78rem; }
 .dependency-badges { display: flex; flex-wrap: wrap; gap: 7px; }
 .dependency-badge { display: inline-flex; align-items: baseline; gap: 6px; border: 1px solid var(--line); border-radius: 999px; padding: 6px 9px; background: var(--surface-low); font-size: .72rem; }
@@ -126,6 +144,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .dependency-project small { margin-top: 4px; color: var(--muted); font-size: .68rem; }
 .admin-grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 18px; }
 .scan-card { display: flex; align-items: center; gap: 24px; }
+.scan-status-content { flex: 1; min-width: 0; }
 .scan-orbit { display: grid; place-items: center; flex: 0 0 76px; height: 76px; border: 1px solid var(--line); border-radius: 50%; }
 .scan-orbit span { width: 13px; height: 13px; border-radius: 50%; background: var(--muted); }
 .scan-orbit span.running { background: var(--accent); box-shadow: 0 0 0 8px rgba(255,122,69,.12); animation: pulse 1.3s infinite; }
@@ -134,6 +153,9 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 @keyframes pulse { 50% { transform: scale(.65); } }
 .muted, #scan-description, .scan-actions p { color: var(--muted); }
 .scan-card h3 { margin-bottom: 8px; font-size: 1.7rem; }
+.scan-progress { overflow: hidden; height: 8px; margin-top: 22px; border-radius: 999px; background: var(--surface-high); }
+.scan-progress span { display: block; width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
+.scan-meta { display: flex; justify-content: space-between; gap: 16px; margin-top: 9px; color: var(--muted); font-size: .7rem; }
 .scan-actions { display: flex; flex-direction: column; justify-content: center; }
 .primary-button { display: flex; justify-content: space-between; border: 0; border-radius: 10px; padding: 14px 16px; background: var(--accent); color: #1b0d08; font-weight: 800; cursor: pointer; }
 .primary-button:hover { background: #ff9469; }
@@ -158,6 +180,8 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 @media (max-width: 540px) {
   .section-head { align-items: stretch; flex-direction: column; }
   .search { margin-top: -14px; }
+  .dependency-controls { justify-items: stretch; }
+  .dependency-controls .search { margin-top: -14px; }
   .scan-card { align-items: flex-start; flex-direction: column; }
   .dependency-top { grid-template-columns: 1fr; }
 }

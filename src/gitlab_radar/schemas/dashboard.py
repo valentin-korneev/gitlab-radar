@@ -24,8 +24,24 @@ class DependencyStatistics(BaseModel):
     projects_count: int
 
 
+class DependencyCountStatistics(BaseModel):
+    total: int
+    direct: int
+    optional: int
+    transitive: int
+
+
+class PythonVersionStatistics(BaseModel):
+    version: str
+    projects_count: int
+
+
 class Dashboard(BaseModel):
     projects_count: int
+    docker_projects_count: int
+    gitlab_ci_projects_count: int
     package_managers: list[PackageManagerStatistics]
+    dependency_counts: DependencyCountStatistics
+    python_versions: list[PythonVersionStatistics]
     top_dependencies: list[DependencyStatistics]
     company_requirements: list[CompanyRequirement]

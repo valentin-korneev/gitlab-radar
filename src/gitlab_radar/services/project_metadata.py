@@ -19,6 +19,7 @@ class ProjectMetadata:
     python_version: str | None
     dependencies: list[Dependency]
     optional_dependencies: list[DependencyGroup]
+    transitive_dependencies: list[Dependency]
 
 
 def parse_pyproject_document(content: bytes | None) -> dict[str, Any]:
@@ -56,14 +57,143 @@ def parse_project_metadata(files: Mapping[str, bytes]) -> ProjectMetadata:
     if not pyproject_content and not pipfile_dependencies and not conda_dependencies and requirements_content:
         dependencies.extend(parse_requirements(requirements_content))
 
+    dependencies = _unique_dependencies(dependencies)
+    optional_dependencies = _merge_dependency_groups(optional_dependencies)
+    locked_dependencies = _lock_dependencies(files)
+    locked_versions = _locked_versions(locked_dependencies)
+    dependencies = _resolve_locked_versions(dependencies, locked_versions)
+    optional_dependencies = [
+        DependencyGroup(
+            name=group.name,
+            dependencies=_resolve_locked_versions(group.dependencies, locked_versions),
+        )
+        for group in optional_dependencies
+    ]
+    direct_names = {dependency.name for dependency in dependencies}
+    optional_dependencies = [
+        DependencyGroup(
+            name=group.name,
+            dependencies=[
+                dependency for dependency in group.dependencies if dependency.name not in direct_names
+            ],
+        )
+        for group in optional_dependencies
+        if any(dependency.name not in direct_names for dependency in group.dependencies)
+    ]
+    optional_names = {
+        dependency.name
+        for group in optional_dependencies
+        for dependency in group.dependencies
+    } - direct_names
+    project_name = _project_name(pyproject)
+    excluded_names = direct_names | optional_names | ({project_name} if project_name else set()) | {'python'}
+
     return ProjectMetadata(
         python_version=_python_version_file(files.get('.python-version')) or next(
             (version for version in python_versions if version),
             None,
         ),
-        dependencies=_unique_dependencies(dependencies),
-        optional_dependencies=_merge_dependency_groups(optional_dependencies),
+        dependencies=dependencies,
+        optional_dependencies=optional_dependencies,
+        transitive_dependencies=[
+            dependency for dependency in locked_dependencies if dependency.name not in excluded_names
+        ],
     )
+
+
+def _lock_dependencies(files: Mapping[str, bytes]) -> list[Dependency]:
+    dependencies: list[Dependency] = []
+    for filename in ('uv.lock', 'poetry.lock'):
+        content = files.get(filename)
+        if content:
+            document = _parse_toml(content, filename)
+            dependencies.extend(_package_list(document.get('package')))
+
+    pipfile_lock = files.get('Pipfile.lock')
+    if pipfile_lock:
+        dependencies.extend(_pipfile_lock_dependencies(pipfile_lock))
+
+    for filename in ('conda-lock.yml', 'conda-lock.yaml'):
+        content = files.get(filename)
+        if content:
+            dependencies.extend(_conda_lock_dependencies(content))
+    return _unique_dependencies(dependencies)
+
+
+def _package_list(value: object) -> list[Dependency]:
+    if not isinstance(value, list):
+        return []
+    dependencies: list[Dependency] = []
+    for package in value:
+        if not isinstance(package, dict):
+            continue
+        name = package.get('name')
+        version = package.get('version')
+        if isinstance(name, str):
+            dependencies.append(
+                Dependency(
+                    name=canonicalize_name(name),
+                    version=f'=={version}' if isinstance(version, str) and version else None,
+                ),
+            )
+    return dependencies
+
+
+def _pipfile_lock_dependencies(content: bytes) -> list[Dependency]:
+    try:
+        document = json.loads(content.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        logger.warning('Не удалось разобрать Pipfile.lock')
+        return []
+    if not isinstance(document, dict):
+        return []
+    dependencies: list[Dependency] = []
+    for group_name in ('default', 'develop'):
+        for name, value in _table(document, group_name).items():
+            version = value.get('version') if isinstance(value, dict) else value
+            dependencies.append(
+                Dependency(
+                    name=canonicalize_name(name),
+                    version=version if isinstance(version, str) and version else None,
+                ),
+            )
+    return dependencies
+
+
+def _conda_lock_dependencies(content: bytes) -> list[Dependency]:
+    try:
+        document = yaml.safe_load(content.decode('utf-8'))
+    except (UnicodeDecodeError, yaml.YAMLError):
+        logger.warning('Не удалось разобрать lock-файл Conda')
+        return []
+    if not isinstance(document, dict):
+        return []
+    return _package_list(document.get('package'))
+
+
+def _locked_versions(dependencies: list[Dependency]) -> dict[str, set[str]]:
+    versions: dict[str, set[str]] = {}
+    for dependency in dependencies:
+        if dependency.version:
+            versions.setdefault(dependency.name, set()).add(dependency.version)
+    return versions
+
+
+def _resolve_locked_versions(
+    dependencies: list[Dependency],
+    locked_versions: Mapping[str, set[str]],
+) -> list[Dependency]:
+    resolved: list[Dependency] = []
+    for dependency in dependencies:
+        versions = locked_versions.get(dependency.name, set())
+        version = next(iter(versions)) if len(versions) == 1 else dependency.version
+        resolved.append(Dependency(name=dependency.name, version=version))
+    return _unique_dependencies(resolved)
+
+
+def _project_name(pyproject: dict[str, Any]) -> str | None:
+    name = _table(pyproject, 'project').get('name') or _table(_table(pyproject, 'tool'), 'poetry').get('name')
+    return canonicalize_name(name) if isinstance(name, str) and name else None
 
 
 def parse_requirements(content: bytes) -> list[Dependency]:

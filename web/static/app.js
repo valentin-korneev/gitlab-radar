@@ -18,6 +18,7 @@ const state = {
   selectedId: null,
   selectedSubprojectPath: null,
   selectedDependency: null,
+  showTransitive: false,
   scanState: null,
   pollTimer: null,
 };
@@ -57,6 +58,7 @@ function subprojectView(project, subproject, detected = true) {
     pythonVersion: subproject.python_version || null,
     dependencies: subproject.dependencies || [],
     optionalDependencies: subproject.optional_dependencies || [],
+    transitiveDependencies: subproject.transitive_dependencies || [],
     isRoot,
     detected,
   };
@@ -69,7 +71,13 @@ function projectView(project) {
   const fallback = subprojects.length === 0
     ? subprojectView(
       project,
-      { path: '.', package_manager: project.package_manager, dependencies: [], optional_dependencies: [] },
+      {
+        path: '.',
+        package_manager: project.package_manager,
+        dependencies: [],
+        optional_dependencies: [],
+        transitive_dependencies: [],
+      },
       false,
     )
     : null;
@@ -202,11 +210,30 @@ function appendProjectDependencies(container, subproject) {
   subproject.optionalDependencies.forEach((group) => {
     if (group.dependencies.length) groups.push(dependencyGroup(`Опциональные · ${group.name}`, group.dependencies));
   });
+  if (subproject.transitiveDependencies.length) {
+    groups.push(dependencyGroup('Транзитивные', subproject.transitiveDependencies));
+  }
 
   const content = element('div', 'project-dependencies');
   if (groups.length) content.append(...groups);
   else content.append(element('p', 'empty-state', 'Зависимости не найдены.'));
-  appendDetail(container, 'Используемые зависимости', content);
+  const dependencyCount = new Set([
+    ...subproject.dependencies.map((dependency) => dependency.name),
+    ...subproject.optionalDependencies.flatMap((group) => group.dependencies.map((dependency) => dependency.name)),
+    ...subproject.transitiveDependencies.map((dependency) => dependency.name),
+  ]).size;
+  const disclosure = element('details', 'dependency-disclosure');
+  disclosure.append(element('summary', '', `Зависимости · ${dependencyCount}`), content);
+  container.append(disclosure);
+}
+
+function appendGitLabComponents(container, project) {
+  if (!project.gitlab_ci_components?.length) return;
+  const components = element('div', 'dependency-badges');
+  project.gitlab_ci_components.forEach((component) => {
+    components.append(dependencyBadge({ name: component.name, version: component.version }));
+  });
+  appendDetail(container, 'Компоненты GitLab CI', components);
 }
 
 function renderProjectDetail(view, subproject) {
@@ -228,7 +255,10 @@ function renderProjectDetail(view, subproject) {
   appendDetail(detail, 'Основная ветка', project.default_branch);
   appendDetail(detail, 'Пакетный менеджер', packageManagerBadge(subproject.packageManager));
   appendDetail(detail, 'Версия Python', subproject.pythonVersion || 'Не определена');
+  appendDetail(detail, 'Соответствие правилам компании', `${project.company_compliance_percentage}%`);
+  appendDetail(detail, 'Docker', project.has_docker ? 'Используется' : 'Не найден');
   appendProjectDependencies(detail, subproject);
+  appendGitLabComponents(detail, project);
   appendDetail(detail, 'Последняя активность', formatDate(project.last_activity_at));
 
   const link = element('a', 'detail-link', 'Открыть в GitLab →');
@@ -249,6 +279,23 @@ function selectProject(view, subproject, row) {
 
 function renderDashboard(dashboard) {
   document.querySelector('#project-count').textContent = dashboard.projects_count;
+  document.querySelector('#dependency-count').textContent = dashboard.dependency_counts.total;
+  document.querySelector('#direct-dependency-count').textContent = dashboard.dependency_counts.direct;
+  document.querySelector('#optional-dependency-count').textContent = dashboard.dependency_counts.optional;
+  document.querySelector('#transitive-dependency-count').textContent = dashboard.dependency_counts.transitive;
+  document.querySelector('#docker-project-count').textContent = dashboard.docker_projects_count;
+  document.querySelector('#gitlab-ci-project-count').textContent = dashboard.gitlab_ci_projects_count;
+
+  const pythonVersions = document.querySelector('#python-version-stats');
+  pythonVersions.replaceChildren();
+  dashboard.python_versions.forEach((item) => {
+    const row = element('div');
+    row.append(element('span', '', `Python ${item.version}`), element('b', '', item.projects_count));
+    pythonVersions.append(row);
+  });
+  if (!dashboard.python_versions.length) {
+    pythonVersions.append(element('p', 'empty-state', 'Версии не определены.'));
+  }
 
   const statistics = document.querySelector('#package-manager-stats');
   statistics.replaceChildren();
@@ -322,7 +369,9 @@ async function loadProjects() {
 
 function renderDependencies(filter = '') {
   const query = filter.trim().toLowerCase();
-  const dependencies = state.dependencies.filter((dependency) => dependency.name.includes(query));
+  const dependencies = state.dependencies.filter((dependency) =>
+    dependency.name.includes(query) && (state.showTransitive || dependency.level !== 'transitive'),
+  );
   const list = document.querySelector('#dependency-list');
   list.replaceChildren();
 
@@ -338,7 +387,11 @@ function renderDependencies(filter = '') {
     const identity = element('span');
     identity.append(
       element('strong', '', dependency.name),
-      element('small', '', `Вариантов версий: ${dependency.versions.length}`),
+      element(
+        'small',
+        '',
+        `${dependency.level === 'transitive' ? 'Транзитивная' : dependency.level === 'optional' ? 'Опциональная' : 'Прямая'} · вариантов версий: ${dependency.versions.length}`,
+      ),
     );
     row.append(identity, element('b', '', dependency.projects_count));
     row.addEventListener('click', () => selectDependency(dependency, row));
@@ -350,6 +403,11 @@ function renderDependencyDetail(dependency) {
   const detail = document.querySelector('#dependency-detail');
   detail.replaceChildren();
   detail.append(element('h3', '', dependency.name));
+  appendDetail(
+    detail,
+    'Тип зависимости',
+    dependency.level === 'transitive' ? 'Транзитивная' : dependency.level === 'optional' ? 'Опциональная' : 'Прямая',
+  );
   appendDetail(detail, 'Используется в проектах', String(dependency.projects_count));
 
   const versions = element('div', 'dependency-versions');
@@ -401,6 +459,9 @@ function renderScanStatus(scan) {
   }
   if (scan.state === 'failed') description = `Завершено ${formatDate(scan.completed_at)} · ${scan.error}`;
   document.querySelector('#scan-description').textContent = description;
+  document.querySelector('#scan-progress-value').style.width = `${scan.progress_percentage}%`;
+  document.querySelector('#scan-progress-label').textContent = `${scan.processed_projects} из ${scan.total_projects} проектов`;
+  document.querySelector('#scan-duration').textContent = `${scan.duration_seconds.toLocaleString('ru-RU')} сек.`;
 }
 
 async function refreshScanStatus() {
@@ -420,7 +481,7 @@ async function refreshScanStatus() {
   } finally {
     window.clearTimeout(state.pollTimer);
     state.pollTimer = state.scanState === 'running' || retry
-      ? window.setTimeout(refreshScanStatus, retry ? 3000 : 1200)
+      ? window.setTimeout(refreshScanStatus, retry ? 10000 : 5000)
       : null;
   }
 }
@@ -440,6 +501,10 @@ window.addEventListener('hashchange', showPage);
 document.querySelector('#project-search').addEventListener('input', (event) => renderProjects(event.target.value));
 document.querySelector('#dependency-search')
   .addEventListener('input', (event) => renderDependencies(event.target.value));
+document.querySelector('#show-transitive').addEventListener('change', (event) => {
+  state.showTransitive = event.target.checked;
+  renderDependencies(document.querySelector('#dependency-search').value);
+});
 
 document.querySelector('#scan-button').addEventListener('click', async () => {
   try {
