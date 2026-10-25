@@ -259,4 +259,4 @@ class ProjectCollector:
 def _public_hook_url(value: str) -> str:
     parsed = urlsplit(value)
     netloc = parsed.netloc.rsplit('@', maxsplit=1)[-1]
-    return urlunsplit((parsed.scheme, netloc, parsed.path, '', ''))
+    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, ''))
