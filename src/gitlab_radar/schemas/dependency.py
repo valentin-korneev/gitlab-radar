@@ -13,6 +13,7 @@ class DependencySource(StrEnum):
     PYTHON = 'python'
     DOCKER = 'docker'
     CI = 'ci'
+    WEBHOOK = 'webhook'
 
 
 class Dependency(BaseModel):

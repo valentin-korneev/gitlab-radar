@@ -1,19 +1,37 @@
 const API = {
   dashboard: '/api/dashboard/', dependencies: '/api/dependency/', projects: '/api/project/', scan: '/api/scan/',
 };
-const PAGE_TITLES = { dashboard: 'Обзор', projects: 'Проекты', dependencies: 'Зависимости', admin: 'Управление' };
+const PAGE_ROUTES = {
+  dashboard: { page: 'dashboard' },
+  projects: { page: 'projects' },
+  dependencies: { page: 'dependencies', source: 'python', title: 'Зависимости', search: 'Найти зависимость' },
+  images: { page: 'dependencies', source: 'docker', title: 'Образы контейнеров', search: 'Найти образ' },
+  components: { page: 'dependencies', source: 'ci', title: 'CI-компоненты', search: 'Найти компонент' },
+  webhooks: { page: 'dependencies', source: 'webhook', title: 'Webhooks', search: 'Найти webhook' },
+  admin: { page: 'admin' },
+};
+const SOURCE_ROUTES = { python: 'dependencies', docker: 'images', ci: 'components', webhook: 'webhooks' };
 const LEVEL_TITLES = { direct: 'Прямая', optional: 'Опциональная', transitive: 'Транзитивная' };
 const RULE_TITLES = {
   'uv-required': 'uv', 'ruff-required': 'ruff', 'bandit-required': 'bandit', 'pylint-required': 'pylint',
   'python-linters-component-required': 'python-linters', 'sonar-component-required': 'sonar',
-  'approved-registry-required': 'Разрешённые registry',
+  'approved-registry-required': 'approved-registry',
+  'aist-reviewer-hook-required': 'aist.reviewer',
 };
 const RULE_GROUPS = [
   { title: 'uv', rules: ['uv-required'] },
   { title: 'Линтеры', rules: ['ruff-required', 'bandit-required', 'pylint-required'] },
   { title: 'CI', rules: ['python-linters-component-required', 'sonar-component-required'] },
   { title: 'Registry', rules: ['approved-registry-required'] },
+  { title: 'Webhook', rules: ['aist-reviewer-hook-required'] },
 ];
+const HOOK_EVENT_TITLES = {
+  push: 'push', tag_push: 'tag push', issues: 'issues', confidential_issues: 'confidential issues',
+  merge_requests: 'merge requests', note: 'comments', confidential_note: 'confidential comments',
+  job: 'jobs', pipeline: 'pipelines', wiki_page: 'wiki', deployment: 'deployments', releases: 'releases',
+  milestone: 'milestones', feature_flag: 'feature flags', resource_access_token: 'access tokens',
+  resource_deploy_token: 'deploy tokens',
+};
 const PHASE_TITLES = {
   idle: 'Ожидание запуска', collecting: 'Сбор файлов из GitLab', analyzing: 'Локальный анализ файлов',
   publishing: 'Публикация результатов', completed: 'Результаты опубликованы',
@@ -96,12 +114,28 @@ function projectView(project) {
 }
 
 async function showPage() {
-  const requestedPage = window.location.hash.slice(1);
-  const pageName = PAGE_TITLES[requestedPage] ? requestedPage : 'dashboard';
+  const requestedRoute = window.location.hash.slice(1);
+  const routeName = PAGE_ROUTES[requestedRoute] ? requestedRoute : 'dashboard';
+  const route = PAGE_ROUTES[routeName];
   document.querySelectorAll('.nav-item, .page').forEach((node) => node.classList.remove('active'));
-  document.querySelector(`.nav-item[data-page="${pageName}"]`).classList.add('active');
-  document.querySelector(`#${pageName}`).classList.add('active');
-  try { await ensurePageLoaded(pageName); } catch (error) { showError(error); }
+  document.querySelector(`.nav-item[data-route="${routeName}"]`).classList.add('active');
+  document.querySelector(`#${route.page}`).classList.add('active');
+  try {
+    if (route.source) {
+      const sourceChanged = state.dependencySource !== route.source;
+      state.dependencySource = route.source;
+      if (sourceChanged) state.selectedDependency = null;
+      document.querySelector('#catalog-title').textContent = route.title;
+      document.querySelector('#dependency-search').placeholder = route.search;
+      document.querySelector('#transitive-filter').classList.toggle('control-placeholder', route.source !== 'python');
+      if (sourceChanged) {
+        document.querySelector('#dependency-detail').replaceChildren(
+          element('p', 'empty-state', 'Выберите элемент, чтобы посмотреть версии и проекты.'),
+        );
+      }
+      await loadDependencies();
+    } else await ensurePageLoaded(route.page);
+  } catch (error) { showError(error); }
 }
 async function ensurePageLoaded(pageName) {
   if (state.loaded[pageName]) return;
@@ -273,6 +307,28 @@ function appendContainerImages(container, project) {
   });
   appendDetail(container, 'Образы Docker по registry', registryList);
 }
+function appendProjectHooks(container, project) {
+  if (!project.webhooks_accessible) return;
+  if (!project.webhooks?.length) {
+    appendDetail(container, 'Webhooks', 'Не настроены');
+    return;
+  }
+  const hooks = element('div', 'webhook-list');
+  project.webhooks.forEach((hook) => {
+    const entry = element('button', `webhook-entry${hook.is_aist_reviewer ? ' webhook-required' : ''}`);
+    entry.type = 'button';
+    entry.append(element('strong', '', hook.name || hook.url));
+    if (hook.name) entry.append(element('small', '', hook.url));
+    entry.append(element(
+      'small',
+      '',
+      hook.events.map((event) => HOOK_EVENT_TITLES[event] || event).join(', ') || 'События не выбраны',
+    ));
+    entry.addEventListener('click', () => openDependency(hook.url, 'webhook'));
+    hooks.append(entry);
+  });
+  appendDetail(container, 'Webhooks', hooks);
+}
 function normalizedPythonVersion(...values) {
   for (const value of values) {
     const match = value?.match(/(^|\D)(\d+)\.(\d+)/);
@@ -310,6 +366,7 @@ function renderProjectDetail(view, subproject) {
     appendRuleViolations(detail, project.company_rule_results);
     appendGitLabComponents(detail, project);
     appendContainerImages(detail, project);
+    appendProjectHooks(detail, project);
     return;
   }
   detail.append(element('h3', '', subproject.title));
@@ -337,6 +394,7 @@ function renderProjectDetail(view, subproject) {
   appendProjectDependencies(detail, subproject);
   appendGitLabComponents(detail, project);
   appendContainerImages(detail, project);
+  appendProjectHooks(detail, project);
   if (project.scan_error) appendDetail(detail, 'Ошибка анализа', project.scan_error);
   appendDetail(detail, 'Последняя активность', formatDate(project.last_activity_at));
   const link = element('a', 'detail-link', 'Открыть в GitLab →');
@@ -431,7 +489,7 @@ function renderDashboard(dashboard) {
   state.projectsCount = dashboard.projects_count;
   renderTechnologyTarget(dashboard.technology_target, dashboard.projects_count);
   const registries = document.querySelector('#registry-stats');
-  registries.replaceChildren(...dashboard.registries.slice(0, 10).map((item) => compactStatRow(item.name, item.projects_count)));
+  registries.replaceChildren(...dashboard.registries.slice(0, 8).map((item) => compactStatRow(item.name, item.projects_count)));
   if (!dashboard.registries.length) registries.append(element('p', 'empty-state', 'Registry не обнаружены.'));
 
   const pythonVersions = document.querySelector('#python-version-stats');
@@ -548,7 +606,7 @@ function renderDependencies() {
   const list = document.querySelector('#dependency-list');
   list.replaceChildren();
   if (!dependencies.length) {
-    list.append(element('p', 'empty-state', state.dependencies.length ? 'Зависимости не найдены.' : 'Список зависимостей пуст.'));
+    list.append(element('p', 'empty-state', state.dependencies.length ? 'Элементы не найдены.' : 'Список пуст.'));
     return;
   }
   dependencies.forEach(({ dependency, visible }) => {
@@ -629,10 +687,9 @@ async function loadDependencies() {
 }
 async function openDependency(name, source = 'python') {
   state.dependencySource = source;
-  document.querySelectorAll('.source-tab').forEach((item) => item.classList.toggle('active', item.dataset.source === source));
   document.querySelector('#transitive-filter').classList.toggle('control-placeholder', source !== 'python');
   state.selectedDependency = name;
-  window.location.hash = 'dependencies';
+  window.location.hash = SOURCE_ROUTES[source];
   await loadDependencies();
   const dependency = state.dependencies.find((item) => item.name === name);
   if (dependency) renderDependencyDetail(dependency);
@@ -707,7 +764,7 @@ function showError(error) {
 }
 
 document.querySelectorAll('.nav-item').forEach((item) => {
-  item.addEventListener('click', () => { window.location.hash = item.dataset.page; });
+  item.addEventListener('click', () => { window.location.hash = item.dataset.route; });
 });
 window.addEventListener('hashchange', showPage);
 document.querySelector('#project-search').addEventListener('input', renderProjects);
@@ -715,16 +772,6 @@ document.querySelectorAll('.rule-switches input').forEach((input) => {
   input.addEventListener('change', renderProjects);
 });
 document.querySelector('#dependency-search').addEventListener('input', renderDependencies);
-document.querySelectorAll('.source-tab').forEach((button) => {
-  button.addEventListener('click', async () => {
-    state.dependencySource = button.dataset.source;
-    state.selectedDependency = null;
-    document.querySelectorAll('.source-tab').forEach((item) => item.classList.toggle('active', item === button));
-    document.querySelector('#transitive-filter').classList.toggle('control-placeholder', state.dependencySource !== 'python');
-    document.querySelector('#dependency-detail').replaceChildren(element('p', 'empty-state', 'Выберите зависимость, чтобы посмотреть версии и проекты.'));
-    await loadDependencies();
-  });
-});
 document.querySelector('#show-transitive').addEventListener('change', (event) => {
   state.showTransitive = event.target.checked;
   renderDependencies();

@@ -29,6 +29,7 @@ def fetch_projects() -> tuple[list[Project], int]:
                 project_data.get('path_with_namespace', project_data.get('id')),
             )
             continue
+        project_data['gitlab_access_level'] = _project_access_level(project_data.get('permissions'))
         projects.append(Project.model_validate(project_data))
     logger.info(
         'Получено проектов для сканирования: %d; пропущено без основной ветки: %d',
@@ -40,3 +41,14 @@ def fetch_projects() -> tuple[list[Project], int]:
 
 async def load_projects() -> list[Project]:
     return await load_projects_from_database()
+
+
+def _project_access_level(permissions: object) -> int:
+    if not isinstance(permissions, dict):
+        return 0
+    levels = []
+    for key in ('project_access', 'group_access'):
+        access = permissions.get(key)
+        if isinstance(access, dict) and isinstance(access.get('access_level'), int):
+            levels.append(access['access_level'])
+    return max(levels, default=0)

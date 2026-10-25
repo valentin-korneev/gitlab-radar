@@ -147,6 +147,7 @@ class ScanTask:
         try:
             revision = await asyncio.to_thread(collector.revision, project)
             project.revision = revision
+            await asyncio.to_thread(collector.collect_hooks, project)
             reusable = await find_reusable_project(project.id, revision)
             if reusable is not None:
                 snapshot = await clone_project(reusable, scan, project)

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
-from gitlab_radar.schemas.project import GitLabComponent, Project, ProjectSubproject
+from gitlab_radar.schemas.project import GitLabComponent, Project, ProjectHook, ProjectSubproject
 from gitlab_radar.schemas.technology import PackageManager
 
 
@@ -12,6 +12,7 @@ class CompanyRule:
     description: str
     dependency: str | None = None
     component_pattern: str | None = None
+    hook_pattern: str | None = None
     registry_policy: bool = False
 
 
@@ -20,6 +21,7 @@ class RuleContext:
     dependencies: set[str]
     tools: set[str]
     components: set[str]
+    hooks: set[str]
     package_registries: set[str]
     container_registries: set[str]
 
@@ -47,6 +49,12 @@ COMPANY_RULES = (
         'Python-зависимости используют Artifactory, образы — Artifactory или GitLab Registry.',
         registry_policy=True,
     ),
+    CompanyRule(
+        'aist-reviewer-hook-required',
+        'Webhook aist.reviewer обязателен',
+        'В проекте настроен webhook, URL которого содержит aist.reviewer.',
+        hook_pattern='aist.reviewer',
+    ),
 )
 
 def subproject_rule_results(
@@ -54,6 +62,7 @@ def subproject_rule_results(
         components: list[GitLabComponent] | None = None,
         package_registries: set[str] | None = None,
         container_registries: set[str] | None = None,
+        hooks: list[ProjectHook] | None = None,
 ) -> dict[str, bool]:
     context = RuleContext(
         dependencies={
@@ -65,6 +74,8 @@ def subproject_rule_results(
         },
         tools=set(subproject.configured_tools),
         components={component.name.lower() for component in components or []},
+        hooks={hook.url.lower() for hook in hooks or []}
+        | {'aist.reviewer' for hook in hooks or [] if hook.is_aist_reviewer},
         package_registries=(
             package_registries
             if package_registries is not None
@@ -89,6 +100,8 @@ def _matches_rule(
 ) -> bool:
     if rule.component_pattern:
         return any(rule.component_pattern in name for name in context.components)
+    if rule.hook_pattern:
+        return any(rule.hook_pattern in url for url in context.hooks)
     if rule.dependency:
         return rule.dependency in context.dependencies or rule.dependency in context.tools
     if rule.registry_policy:
@@ -118,6 +131,7 @@ def project_rule_results(project: Project) -> dict[str, bool]:
             project.gitlab_ci_components,
             set(project.package_registries),
             _project_container_registries(project),
+            project.webhooks,
         )
         for subproject in project.subprojects
     ]
@@ -132,12 +146,14 @@ def subproject_compliance_percentage(
         components: list[GitLabComponent] | None = None,
         package_registries: set[str] | None = None,
         container_registries: set[str] | None = None,
+        hooks: list[ProjectHook] | None = None,
 ) -> float:
     results = subproject_rule_results(
         subproject,
         components,
         package_registries,
         container_registries,
+        hooks,
     )
     return round(sum(results.values()) / len(results) * 100, 1)
 
@@ -152,6 +168,7 @@ def project_compliance_percentage(project: Project) -> float:
                 project.gitlab_ci_components,
                 set(project.package_registries),
                 _project_container_registries(project),
+                project.webhooks,
             )
             for subproject in project.subprojects
         )
@@ -169,12 +186,14 @@ def apply_company_compliance(project: Project) -> None:
             project.gitlab_ci_components,
             package_registries,
             container_registries,
+            project.webhooks,
         )
         subproject.company_compliance_percentage = subproject_compliance_percentage(
             subproject,
             project.gitlab_ci_components,
             package_registries,
             container_registries,
+            project.webhooks,
         )
     project.company_rule_results = project_rule_results(project)
     project.company_compliance_percentage = project_compliance_percentage(project)

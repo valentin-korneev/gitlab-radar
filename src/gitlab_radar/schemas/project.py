@@ -31,6 +31,17 @@ class GitLabComponent(BaseModel):
     version: str | None = None
 
 
+class ProjectHook(BaseModel):
+    id: int
+    url: str
+    name: str | None = None
+    description: str | None = None
+    events: list[str] = Field(default_factory=list)
+    enable_ssl_verification: bool = True
+    alert_status: str | None = None
+    is_aist_reviewer: bool = False
+
+
 class ContainerSource(StrEnum):
     DOCKERFILE = 'dockerfile'
     COMPOSE = 'compose'
@@ -58,6 +69,9 @@ class Project(BaseModel):
     has_docker: bool = False
     has_gitlab_ci: bool = False
     gitlab_ci_components: list[GitLabComponent] = Field(default_factory=list)
+    webhooks: list[ProjectHook] = Field(default_factory=list)
+    webhooks_accessible: bool = False
+    gitlab_access_level: int = 0
     package_registries: list[str] = Field(default_factory=list)
     container_images: list[ContainerImage] = Field(default_factory=list)
     company_compliance_percentage: float = 0.0

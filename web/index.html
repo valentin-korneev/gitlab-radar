@@ -21,10 +21,15 @@
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">R</span><span>GitLab Radar</span></div>
       <nav class="nav" aria-label="Основная навигация">
-        <button class="nav-item active" data-page="dashboard"><span>01</span>Обзор</button>
-        <button class="nav-item" data-page="projects"><span>02</span>Проекты</button>
-        <button class="nav-item" data-page="dependencies"><span>03</span>Зависимости</button>
-        <button class="nav-item" data-page="admin"><span>04</span>Управление</button>
+        <button class="nav-item active" data-route="dashboard">Обзор</button>
+        <hr class="nav-divider">
+        <button class="nav-item" data-route="projects">Проекты</button>
+        <button class="nav-item" data-route="dependencies">Зависимости</button>
+        <button class="nav-item" data-route="images">Образы контейнеров</button>
+        <button class="nav-item" data-route="components">CI-компоненты</button>
+        <button class="nav-item" data-route="webhooks">Webhooks</button>
+        <hr class="nav-divider">
+        <button class="nav-item" data-route="admin">Управление</button>
       </nav>
       <div class="sidebar-footer">
         <p class="sidebar-note">Технологический обзор<br>проектов GitLab</p>
@@ -123,7 +128,8 @@
               <label class="switch"><input type="checkbox" data-rule="pylint-required"><span></span>pylint</label>
               <label class="switch"><input type="checkbox" data-rule="python-linters-component-required"><span></span>python-linters</label>
               <label class="switch"><input type="checkbox" data-rule="sonar-component-required"><span></span>sonar</label>
-              <label class="switch"><input type="checkbox" data-rule="approved-registry-required"><span></span>registry</label>
+              <label class="switch"><input type="checkbox" data-rule="approved-registry-required"><span></span>approved-registry</label>
+              <label class="switch"><input type="checkbox" data-rule="aist-reviewer-hook-required"><span></span>aist.reviewer</label>
             </div>
             <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
           </div>
@@ -138,14 +144,9 @@
 
       <section id="dependencies" class="page">
         <div class="section-head">
-          <div class="intro"><p>Каталог</p><h2>Зависимости</h2></div>
+          <div class="intro"><p>Каталог</p><h2 id="catalog-title">Зависимости</h2></div>
           <div class="dependency-controls">
             <div class="dependency-filters">
-              <div class="source-tabs" role="group" aria-label="Тип зависимостей">
-                <button class="source-tab active" type="button" data-source="python">Python</button>
-                <button class="source-tab" type="button" data-source="docker">Docker</button>
-                <button class="source-tab" type="button" data-source="ci">GitLab CI</button>
-              </div>
               <label id="transitive-filter" class="switch"><input id="show-transitive" type="checkbox"><span></span>Показывать транзитивные</label>
             </div>
             <label class="search"><span>⌕</span><input id="dependency-search" type="search" placeholder="Найти зависимость"></label>
@@ -154,7 +155,7 @@
         <div class="dependencies-layout">
           <div class="dependency-list" id="dependency-list"></div>
           <aside class="dependency-detail" id="dependency-detail">
-            <p class="empty-state">Выберите зависимость, чтобы посмотреть версии и проекты.</p>
+            <p class="empty-state">Выберите элемент, чтобы посмотреть версии и проекты.</p>
           </aside>
         </div>
       </section>

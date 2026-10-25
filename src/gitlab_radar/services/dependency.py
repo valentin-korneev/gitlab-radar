@@ -24,6 +24,7 @@ async def build_dependency_catalog(
         DependencySource.PYTHON: _python_entries,
         DependencySource.DOCKER: _docker_entries,
         DependencySource.CI: _ci_entries,
+        DependencySource.WEBHOOK: _webhook_entries,
     }[source](projects)
     return _build_catalog(entries)
 
@@ -47,6 +48,12 @@ def _ci_entries(projects: list[Project]) -> Iterable[UsageEntry]:
     for project in projects:
         for component in project.gitlab_ci_components:
             yield project, '.', Dependency(name=component.name, version=component.version), DependencyLevel.DIRECT
+
+
+def _webhook_entries(projects: list[Project]) -> Iterable[UsageEntry]:
+    for project in projects:
+        for hook in project.webhooks:
+            yield project, '.', Dependency(name=hook.url), DependencyLevel.DIRECT
 
 
 def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:

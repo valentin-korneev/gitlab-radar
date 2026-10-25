@@ -2,12 +2,14 @@ import base64
 import logging
 from http import HTTPStatus
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit, urlunsplit
 
+from gitlab.const import AccessLevel
 from gitlab.exceptions import GitlabError
 lazy from gitlab.v4.objects import Project as GitLabProject
 
 from gitlab_radar.clients.gitlab import gitlab_client
-from gitlab_radar.schemas.project import Project
+from gitlab_radar.schemas.project import Project, ProjectHook
 from gitlab_radar.services.package_manager import SUBPROJECT_FILES, is_subproject_filename
 
 logger = logging.getLogger(__name__)
@@ -25,6 +27,24 @@ UNSUPPORTED_STATUSES = {
     HTTPStatus.METHOD_NOT_ALLOWED,
     HTTPStatus.UNPROCESSABLE_ENTITY,
 }
+HOOK_EVENT_FIELDS = (
+    'push_events',
+    'tag_push_events',
+    'issues_events',
+    'confidential_issues_events',
+    'merge_requests_events',
+    'note_events',
+    'confidential_note_events',
+    'job_events',
+    'pipeline_events',
+    'wiki_page_events',
+    'deployment_events',
+    'releases_events',
+    'milestone_events',
+    'feature_flag_events',
+    'resource_access_token_events',
+    'resource_deploy_token_events',
+)
 
 
 def _is_target_filename(filename: str) -> bool:
@@ -61,6 +81,32 @@ class ProjectCollector:
             len(files),
         )
         return files
+
+    def collect_hooks(self, project: Project) -> None:
+        if project.gitlab_access_level < AccessLevel.MAINTAINER:
+            return
+        hooks = self._gitlab_project(project).hooks.list(iterator=True, per_page=100)
+        project.webhooks = [self._project_hook(hook.asdict()) for hook in hooks]
+        project.webhooks_accessible = True
+        logger.info(
+            'Webhook проекта %s собраны: %d',
+            project.path_with_namespace,
+            len(project.webhooks),
+        )
+
+    @staticmethod
+    def _project_hook(attributes: dict) -> ProjectHook:
+        url = str(attributes.get('url') or '')
+        return ProjectHook(
+            id=int(attributes['id']),
+            url=_public_hook_url(url),
+            name=attributes.get('name'),
+            description=attributes.get('description'),
+            events=[field.removesuffix('_events') for field in HOOK_EVENT_FIELDS if attributes.get(field)],
+            enable_ssl_verification=bool(attributes.get('enable_ssl_verification', True)),
+            alert_status=attributes.get('alert_status'),
+            is_aist_reviewer='aist.reviewer' in url.lower(),
+        )
 
     @staticmethod
     def _gitlab_project(project: Project) -> GitLabProject:
@@ -210,3 +256,9 @@ class ProjectCollector:
             destination.write_bytes(content)
             destinations[file_path] = destination
         return destinations
+
+
+def _public_hook_url(value: str) -> str:
+    parsed = urlsplit(value)
+    netloc = parsed.netloc.rsplit('@', maxsplit=1)[-1]
+    return urlunsplit((parsed.scheme, netloc, parsed.path, '', ''))
