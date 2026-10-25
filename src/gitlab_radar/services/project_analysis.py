@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path, PurePosixPath
 
+from gitlab_radar.config import settings
 from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.company_rules import apply_company_compliance
@@ -8,11 +9,11 @@ from gitlab_radar.services.container_parser import parse_container_images
 from gitlab_radar.services.dependency_parser import parse_pyproject_document
 from gitlab_radar.services.gitlab_ci import parse_gitlab_components
 from gitlab_radar.services.package_manager import (
-    CONTAINER_FILES,
-    PACKAGE_DISCOVERY_FILES,
     PYPROJECT_FILENAME,
-    SUBPROJECT_FILES,
     detect_package_manager,
+    is_container_filename,
+    is_package_discovery_filename,
+    is_subproject_filename,
 )
 from gitlab_radar.services.project_collection import GITLAB_CI_FILENAMES
 from gitlab_radar.services.project_metadata import parse_project_metadata
@@ -31,9 +32,9 @@ def analyze_project(project: Project, files: dict[str, Path], revision: str | No
     project.revision = revision
     project.subprojects = [_build_subproject(path, file_set) for path, file_set in file_sets]
     project.package_manager = _project_package_manager(project.subprojects)
-    project.has_docker = any(PurePosixPath(path).name in CONTAINER_FILES for path in contents)
+    project.has_docker = any(is_container_filename(PurePosixPath(path).name) for path in contents)
     project.has_gitlab_ci = bool(ci_files)
-    project.gitlab_ci_components = parse_gitlab_components(ci_files)
+    project.gitlab_ci_components = parse_gitlab_components(ci_files, settings.gitlab.url)
     project.container_images = parse_container_images(contents)
     project.package_registries = sorted(
         {registry for item in project.subprojects for registry in item.package_registries})
@@ -52,12 +53,12 @@ def _build_file_sets(files: dict[str, bytes]) -> list[tuple[str, dict[str, bytes
     subproject_files = {
         path: content
         for path, content in files.items()
-        if PurePosixPath(path).name in SUBPROJECT_FILES
+        if is_subproject_filename(PurePosixPath(path).name)
     }
     directories = {
         _parent_directory(path)
         for path in subproject_files
-        if PurePosixPath(path).name in PACKAGE_DISCOVERY_FILES
+        if is_package_discovery_filename(PurePosixPath(path).name)
     }
     return [
         (
@@ -88,7 +89,7 @@ def _build_subproject(path: str, files: dict[str, bytes]) -> ProjectSubproject:
         configured_tools=metadata.configured_tools,
         package_registries=metadata.package_registries,
         container_images=parse_container_images(files),
-        has_docker=any(name in CONTAINER_FILES for name in files_by_name),
+        has_docker=any(is_container_filename(name) for name in files_by_name),
     )
 
 

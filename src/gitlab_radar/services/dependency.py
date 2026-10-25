@@ -52,7 +52,7 @@ def _ci_entries(projects: list[Project]) -> Iterable[UsageEntry]:
 def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
     usage: dict[
         str,
-        dict[str | None, dict[tuple[int, str, DependencyLevel], DependencyProject]],
+        dict[str | None, dict[int, DependencyProject]],
     ] = defaultdict(lambda: defaultdict(dict))
     priorities = {
         DependencyLevel.DIRECT: 0,
@@ -68,7 +68,10 @@ def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
             web_url=project.web_url,
             level=level,
         )
-        usage[dependency.name][dependency.version][(project.id, path, level)] = reference
+        projects_by_version = usage[dependency.name][dependency.version]
+        existing = projects_by_version.get(project.id)
+        if existing is None or priorities[level] < priorities[existing.level]:
+            projects_by_version[project.id] = reference
 
     catalog: list[DependencyUsage] = []
     for name, versions in usage.items():

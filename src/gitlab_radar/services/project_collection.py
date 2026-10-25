@@ -8,13 +8,15 @@ lazy from gitlab.v4.objects import Project as GitLabProject
 
 from gitlab_radar.clients.gitlab import gitlab_client
 from gitlab_radar.schemas.project import Project
-from gitlab_radar.services.package_manager import SUBPROJECT_FILES
+from gitlab_radar.services.package_manager import SUBPROJECT_FILES, is_subproject_filename
 
 logger = logging.getLogger(__name__)
 
 GITLAB_CI_FILENAMES = ('.gitlab-ci.yml', '.gitlab-ci.yaml')
 TARGET_FILENAMES = frozenset((*SUBPROJECT_FILES, *GITLAB_CI_FILENAMES))
-TARGET_SEARCH_QUERY = ' or '.join(f'file:{filename}' for filename in sorted(TARGET_FILENAMES))
+TARGET_SEARCH_QUERY = ' or '.join(
+    [*(f'file:{filename}' for filename in sorted(TARGET_FILENAMES)), 'file:requirements'],
+)
 BATCH_SIZE = 20
 UNSUPPORTED_STATUSES = {
     HTTPStatus.BAD_REQUEST,
@@ -23,6 +25,10 @@ UNSUPPORTED_STATUSES = {
     HTTPStatus.METHOD_NOT_ALLOWED,
     HTTPStatus.UNPROCESSABLE_ENTITY,
 }
+
+
+def _is_target_filename(filename: str) -> bool:
+    return filename in GITLAB_CI_FILENAMES or is_subproject_filename(filename)
 
 
 class ProjectCollector:
@@ -98,7 +104,7 @@ class ProjectCollector:
         paths: set[str] = set()
         for result in results:
             path = result.get('path')
-            if isinstance(path, str) and PurePosixPath(path).name in TARGET_FILENAMES:
+            if isinstance(path, str) and _is_target_filename(PurePosixPath(path).name):
                 paths.add(path)
         return sorted(paths, key=lambda value: (value.count('/'), value))
 
@@ -116,7 +122,7 @@ class ProjectCollector:
             if (
                     entry.get('type') == 'blob'
                     and isinstance(path, str)
-                    and PurePosixPath(path).name in TARGET_FILENAMES
+                    and _is_target_filename(PurePosixPath(path).name)
             ):
                 paths.add(path)
         return sorted(paths, key=lambda value: (value.count('/'), value))

@@ -49,7 +49,6 @@ COMPANY_RULES = (
     ),
 )
 
-
 def subproject_rule_results(
         subproject: ProjectSubproject,
         components: list[GitLabComponent] | None = None,

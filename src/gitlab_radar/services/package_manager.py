@@ -1,4 +1,5 @@
 from collections.abc import Collection, Mapping
+from fnmatch import fnmatchcase
 
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
@@ -9,21 +10,14 @@ PYPROJECT_FILENAME = 'pyproject.toml'
 UV_CONFIG_FILENAME = 'uv.toml'
 POETRY_LOCK_FILENAME = 'poetry.lock'
 UV_LOCK_FILENAME = 'uv.lock'
-PIPFILE_FILENAME = 'Pipfile'
-PIPFILE_LOCK_FILENAME = 'Pipfile.lock'
-CONDA_CONFIG_FILENAMES = ('environment.yml', 'environment.yaml')
-CONDA_LOCK_FILENAMES = ('conda-lock.yml', 'conda-lock.yaml')
 REQUIREMENTS_FILENAME = 'requirements.txt'
+REQUIREMENTS_FILENAME_PATTERN = 'requirements.*.txt'
 PYTHON_VERSION_FILENAME = '.python-version'
 PACKAGE_FILES = (
     PYPROJECT_FILENAME,
     UV_CONFIG_FILENAME,
     POETRY_LOCK_FILENAME,
     UV_LOCK_FILENAME,
-    PIPFILE_FILENAME,
-    PIPFILE_LOCK_FILENAME,
-    *CONDA_CONFIG_FILENAMES,
-    *CONDA_LOCK_FILENAMES,
 )
 PACKAGE_DISCOVERY_FILES = (*PACKAGE_FILES, REQUIREMENTS_FILENAME)
 CONTAINER_FILES = (
@@ -55,11 +49,6 @@ def detect_package_manager(
         or _uses_build_system(pyproject, backend_prefix='poetry.core', package='poetry-core')
     ):
         detected.add(PackageManager.POETRY)
-    if PIPFILE_FILENAME in available_files or PIPFILE_LOCK_FILENAME in available_files:
-        detected.add(PackageManager.PIPENV)
-    if any(filename in available_files for filename in (*CONDA_CONFIG_FILENAMES, *CONDA_LOCK_FILENAMES)):
-        detected.add(PackageManager.CONDA)
-
     if len(detected) == 1:
         return detected.pop()
     if detected:
@@ -68,6 +57,30 @@ def detect_package_manager(
     if PYPROJECT_FILENAME not in available_files:
         return PackageManager.PIP
     return PackageManager.UNKNOWN
+
+
+def is_requirements_filename(filename: str) -> bool:
+    return filename == REQUIREMENTS_FILENAME or fnmatchcase(filename, REQUIREMENTS_FILENAME_PATTERN)
+
+
+def is_package_discovery_filename(filename: str) -> bool:
+    return filename in PACKAGE_FILES or is_requirements_filename(filename)
+
+
+def is_dockerfile_filename(filename: str) -> bool:
+    return filename.lower().startswith('dockerfile')
+
+
+def is_container_filename(filename: str) -> bool:
+    return is_dockerfile_filename(filename) or filename in CONTAINER_FILES
+
+
+def is_subproject_filename(filename: str) -> bool:
+    return (
+        is_package_discovery_filename(filename)
+        or filename == PYTHON_VERSION_FILENAME
+        or is_container_filename(filename)
+    )
 
 
 def _has_tool_section(pyproject: Mapping[str, object], name: str) -> bool:

@@ -33,10 +33,6 @@
     </aside>
 
     <main class="content">
-      <header class="topbar">
-        <div><p class="kicker">GitLab Radar</p><h1 id="page-title">Обзор</h1></div>
-      </header>
-
       <section id="dashboard" class="page active">
         <div class="intro"><p>Сводка</p><h2>Портфель проектов</h2></div>
         <div class="cards">
@@ -56,38 +52,35 @@
             </div>
           </article>
           <article class="dashboard-card">
-            <div class="card-heading"><p>Пакетные менеджеры</p><span>Проекты</span></div>
+            <div class="card-heading"><p>Пакетные менеджеры</p></div>
             <div id="package-manager-stats" class="statistics-list"></div>
           </article>
           <article class="dashboard-card">
-            <div class="card-heading"><p>Версии Python</p><span>Проекты</span></div>
+            <div class="card-heading"><p>Версии Python</p></div>
             <div id="python-version-stats" class="compact-list"></div>
           </article>
+          <div class="infrastructure-stack">
+            <article class="dashboard-card infrastructure-card">
+              <div><p>Docker</p></div>
+              <strong id="docker-project-count">—</strong>
+              <small id="docker-project-percentage">—</small>
+            </article>
+            <article class="dashboard-card infrastructure-card">
+              <div><p>GitLab CI</p></div>
+              <strong id="gitlab-ci-project-count">—</strong>
+              <small id="gitlab-ci-project-percentage">—</small>
+            </article>
+          </div>
           <article class="dashboard-card">
-            <div class="card-heading"><p>Инфраструктура</p><span>Проекты</span></div>
-            <div class="infrastructure-statistics">
-              <div><span>Docker</span><strong id="docker-project-count">—</strong><small id="docker-project-percentage">—</small></div>
-              <div><span>GitLab CI</span><strong id="gitlab-ci-project-count">—</strong><small id="gitlab-ci-project-percentage">—</small></div>
-            </div>
-          </article>
-          <article class="dashboard-card">
-            <div class="card-heading"><p>Registry</p><span>Проекты</span></div>
+            <div class="card-heading"><p>Registry</p></div>
             <div id="registry-stats" class="compact-list"></div>
-          </article>
-          <article class="dashboard-card">
-            <div class="card-heading"><p>Качество данных</p><span>Требует внимания</span></div>
-            <div id="data-quality-stats" class="compact-list"></div>
-          </article>
-          <article class="dashboard-card">
-            <div class="card-heading"><p>Последнее сканирование</p><span>Состояние данных</span></div>
-            <div id="last-scan-stats" class="compact-list"></div>
           </article>
           <article class="dashboard-card requirements-card">
             <div class="card-heading"><p>Требования компании</p><span>Соответствие</span></div>
             <div id="company-requirements" class="requirements-list"></div>
           </article>
           <article class="dashboard-card requirements-card">
-            <div class="card-heading"><p>Топ-10 зависимостей</p><span>Проекты</span></div>
+            <div class="card-heading"><p>Топ-10 зависимостей</p></div>
             <div id="top-dependencies" class="dependency-top"></div>
           </article>
           <article class="dashboard-card requirements-card technology-target-card">
@@ -112,16 +105,17 @@
         <div class="section-head">
           <div class="intro"><p>Каталог</p><h2>Проекты</h2></div>
           <div class="project-controls">
-            <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
             <div class="rule-switches" aria-label="Нарушенные правила">
-              <label class="switch"><input type="checkbox" data-rule="uv-required"><span></span>Не использует uv</label>
-              <label class="switch"><input type="checkbox" data-rule="ruff-required"><span></span>Не использует ruff</label>
-              <label class="switch"><input type="checkbox" data-rule="bandit-required"><span></span>Не использует bandit</label>
-              <label class="switch"><input type="checkbox" data-rule="pylint-required"><span></span>Не использует pylint</label>
-              <label class="switch"><input type="checkbox" data-rule="python-linters-component-required"><span></span>Нет python-linters</label>
-              <label class="switch"><input type="checkbox" data-rule="sonar-component-required"><span></span>Нет sonar</label>
-              <label class="switch"><input type="checkbox" data-rule="approved-registry-required"><span></span>Есть запрещённый registry</label>
+              <span class="control-label">Нарушения правил</span>
+              <label class="switch"><input type="checkbox" data-rule="uv-required"><span></span>uv</label>
+              <label class="switch"><input type="checkbox" data-rule="ruff-required"><span></span>ruff</label>
+              <label class="switch"><input type="checkbox" data-rule="bandit-required"><span></span>bandit</label>
+              <label class="switch"><input type="checkbox" data-rule="pylint-required"><span></span>pylint</label>
+              <label class="switch"><input type="checkbox" data-rule="python-linters-component-required"><span></span>python-linters</label>
+              <label class="switch"><input type="checkbox" data-rule="sonar-component-required"><span></span>sonar</label>
+              <label class="switch"><input type="checkbox" data-rule="approved-registry-required"><span></span>registry</label>
             </div>
+            <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
           </div>
         </div>
         <div class="projects-layout">
@@ -136,13 +130,15 @@
         <div class="section-head">
           <div class="intro"><p>Каталог</p><h2>Зависимости</h2></div>
           <div class="dependency-controls">
-            <div class="source-tabs" role="group" aria-label="Тип зависимостей">
-              <button class="source-tab active" type="button" data-source="python">Python</button>
-              <button class="source-tab" type="button" data-source="docker">Docker</button>
-              <button class="source-tab" type="button" data-source="ci">GitLab CI</button>
+            <div class="dependency-filters">
+              <div class="source-tabs" role="group" aria-label="Тип зависимостей">
+                <button class="source-tab active" type="button" data-source="python">Python</button>
+                <button class="source-tab" type="button" data-source="docker">Docker</button>
+                <button class="source-tab" type="button" data-source="ci">GitLab CI</button>
+              </div>
+              <label id="transitive-filter" class="switch"><input id="show-transitive" type="checkbox"><span></span>Показывать транзитивные</label>
             </div>
             <label class="search"><span>⌕</span><input id="dependency-search" type="search" placeholder="Найти зависимость"></label>
-            <label id="transitive-filter" class="switch"><input id="show-transitive" type="checkbox"><span></span>Показывать транзитивные</label>
           </div>
         </div>
         <div class="dependencies-layout">
@@ -169,6 +165,14 @@
           <article class="scan-actions">
             <button id="scan-button" class="primary-button">Запустить сканирование <span>→</span></button>
             <p>Получит актуальный список Python-проектов из GitLab и обновит локальный snapshot.</p>
+          </article>
+          <article class="dashboard-card admin-last-scan">
+            <div class="card-heading"><p>Последнее сканирование</p><span>Состояние данных</span></div>
+            <div id="last-scan-stats" class="compact-list"></div>
+          </article>
+          <article class="dashboard-card">
+            <div class="card-heading"><p>Качество данных</p><span>Требует внимания</span></div>
+            <div id="data-quality-stats" class="compact-list"></div>
           </article>
         </div>
         <details id="scan-errors" class="scan-errors" hidden>

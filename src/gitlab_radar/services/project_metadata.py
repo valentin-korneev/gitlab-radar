@@ -6,14 +6,13 @@ from typing import Any
 from gitlab_radar.schemas.dependency import Dependency, DependencyGroup
 from gitlab_radar.services.dependency_parser import (
     merge_dependency_groups,
-    parse_conda,
-    parse_pipfile,
     parse_pyproject,
     parse_pyproject_document,
     parse_requirements,
     unique_dependencies,
 )
 from gitlab_radar.services.lock_parser import parse_lock_metadata, resolve_locked_versions
+from gitlab_radar.services.package_manager import is_requirements_filename
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +38,6 @@ def parse_project_metadata(
     lock = parse_lock_metadata(dict(files))
     declarations = [
         parse_pyproject(pyproject),
-        parse_pipfile(files.get('Pipfile'), lock.pipfile_document),
-        parse_conda(files.get('environment.yml') or files.get('environment.yaml')),
     ]
 
     dependencies = unique_dependencies(
@@ -49,9 +46,17 @@ def parse_project_metadata(
     optional_dependencies = merge_dependency_groups(
         [group for declaration in declarations for group in declaration.optional_dependencies],
     )
-    requirements_content = files.get('requirements.txt')
-    if not pyproject_content and not dependencies and requirements_content:
-        dependencies.extend(parse_requirements(requirements_content))
+    requirements_files = [
+        content
+        for filename, content in sorted(files.items())
+        if is_requirements_filename(filename)
+    ]
+    if not pyproject_content and not dependencies:
+        dependencies.extend(
+            dependency
+            for content in requirements_files
+            for dependency in parse_requirements(content)
+        )
 
     dependencies = resolve_locked_versions(unique_dependencies(dependencies), lock.dependencies)
     optional_dependencies = [

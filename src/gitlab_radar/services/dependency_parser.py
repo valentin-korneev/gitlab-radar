@@ -1,11 +1,9 @@
-import json
 import logging
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-import yaml
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 
@@ -117,64 +115,6 @@ def parse_requirements(content: bytes) -> list[Dependency]:
     return unique_dependencies(dependencies)
 
 
-def parse_pipfile(content: bytes | None, lock_document: dict[str, Any]) -> DependencyDeclarations:
-    document = parse_toml(content, 'Pipfile') if content else lock_document
-    if not document:
-        return DependencyDeclarations()
-    if content:
-        packages = table(document, 'packages')
-        dev_packages = table(document, 'dev-packages')
-        requires = table(document, 'requires')
-    else:
-        packages = table(document, 'default')
-        dev_packages = table(document, 'develop')
-        requires = table(table(document, '_meta'), 'requires')
-    return DependencyDeclarations(
-        dependencies=mapped_dependencies(packages),
-        optional_dependencies=dependency_groups({'dev': mapped_dependencies(dev_packages)}),
-        python_constraint=string_value(requires.get('python_full_version'))
-        or string_value(requires.get('python_version')),
-    )
-
-
-def parse_conda(content: bytes | None) -> DependencyDeclarations:
-    if not content:
-        return DependencyDeclarations()
-    try:
-        document = yaml.safe_load(content.decode('utf-8'))
-    except (UnicodeDecodeError, yaml.YAMLError):
-        logger.warning('Не удалось разобрать environment-файл Conda')
-        return DependencyDeclarations()
-    if not isinstance(document, dict) or not isinstance(document.get('dependencies'), list):
-        return DependencyDeclarations()
-    dependencies: list[Dependency] = []
-    python_constraint: str | None = None
-    for item in document['dependencies']:
-        if isinstance(item, str):
-            dependency = conda_dependency(item)
-            if dependency.name == 'python':
-                python_constraint = dependency.version
-            else:
-                dependencies.append(dependency)
-        elif isinstance(item, dict) and isinstance(item.get('pip'), list):
-            dependencies.extend(requirement_list(item['pip']))
-    return DependencyDeclarations(
-        dependencies=unique_dependencies(dependencies),
-        python_constraint=python_constraint,
-    )
-
-
-def parse_json_document(content: bytes | None, filename: str) -> dict[str, Any]:
-    if not content:
-        return {}
-    try:
-        document = json.loads(content.decode('utf-8'))
-    except (UnicodeDecodeError, json.JSONDecodeError):
-        logger.warning('Не удалось разобрать %s', filename)
-        return {}
-    return document if isinstance(document, dict) else {}
-
-
 def parse_toml(content: bytes, filename: str) -> dict[str, Any]:
     try:
         return tomllib.loads(content.decode('utf-8'))
@@ -230,10 +170,6 @@ def is_optional_poetry_dependency(value: object) -> bool:
     return isinstance(value, dict) and value.get('optional') is True
 
 
-def mapped_dependencies(values: dict[str, Any]) -> list[Dependency]:
-    return unique_dependencies([poetry_dependency(name, value) for name, value in values.items()])
-
-
 def pyproject_python_constraint(document: dict[str, Any]) -> str | None:
     requires_python = table(document, 'project').get('requires-python')
     if isinstance(requires_python, str):
@@ -244,19 +180,6 @@ def pyproject_python_constraint(document: dict[str, Any]) -> str | None:
     if isinstance(poetry_python, dict):
         return string_value(poetry_python.get('version'))
     return None
-
-
-def conda_dependency(value: str) -> Dependency:
-    specification = value.rpartition('::')[2].strip()
-    for operator in ('>=', '<=', '!=', '==', '~=', '>', '<', '='):
-        position = specification.find(operator)
-        if position > 0:
-            name = specification[:position].strip()
-            version = specification[position:].strip()
-            if operator == '=':
-                version = f'=={version[1:].split("=", maxsplit=1)[0]}'
-            return Dependency(name=canonicalize_name(name), version=version)
-    return Dependency(name=canonicalize_name(specification))
 
 
 def merge_dependency_groups(groups: list[DependencyGroup]) -> list[DependencyGroup]:

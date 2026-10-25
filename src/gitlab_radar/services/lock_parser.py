@@ -1,21 +1,15 @@
-import logging
 from dataclasses import dataclass
-from typing import Any
 from urllib.parse import urlsplit
 
-import yaml
 from packaging.utils import canonicalize_name
 
 from gitlab_radar.schemas.dependency import Dependency
-from gitlab_radar.services.dependency_parser import parse_json_document, parse_toml, table, unique_dependencies
-
-logger = logging.getLogger(__name__)
+from gitlab_radar.services.dependency_parser import parse_toml, unique_dependencies
 
 
 @dataclass(frozen=True, slots=True)
 class LockMetadata:
     dependencies: list[Dependency]
-    pipfile_document: dict[str, Any]
     registries: list[str]
 
 
@@ -30,31 +24,7 @@ def parse_lock_metadata(files: dict[str, bytes]) -> LockMetadata:
             dependencies.extend(_package_list(packages))
             registries.update(_package_registries(packages))
 
-    pipfile_document = parse_json_document(files.get('Pipfile.lock'), 'Pipfile.lock')
-    sources = table(pipfile_document, '_meta').get('sources')
-    if isinstance(sources, list):
-        registries.update(
-            registry
-            for source in sources
-            if isinstance(source, dict)
-            if (registry := _clean_registry(source.get('url')))
-        )
-    for group_name in ('default', 'develop'):
-        for name, value in table(pipfile_document, group_name).items():
-            version = value.get('version') if isinstance(value, dict) else value
-            dependencies.append(
-                Dependency(
-                    name=canonicalize_name(name),
-                    version=version if isinstance(version, str) and version else None,
-                ),
-            )
-    for filename in ('conda-lock.yml', 'conda-lock.yaml'):
-        content = files.get(filename)
-        if content:
-            conda_dependencies, conda_registries = _parse_conda_lock(content)
-            dependencies.extend(conda_dependencies)
-            registries.update(conda_registries)
-    return LockMetadata(unique_dependencies(dependencies), pipfile_document, sorted(registries))
+    return LockMetadata(unique_dependencies(dependencies), sorted(registries))
 
 
 def resolve_locked_versions(
@@ -95,27 +65,6 @@ def _package_list(value: object) -> list[Dependency]:
                 ),
             )
     return dependencies
-
-
-def _parse_conda_lock(content: bytes) -> tuple[list[Dependency], set[str]]:
-    try:
-        document = yaml.safe_load(content.decode('utf-8'))
-    except (UnicodeDecodeError, yaml.YAMLError):
-        logger.warning('Не удалось разобрать lock-файл Conda')
-        return [], set()
-    if not isinstance(document, dict):
-        return [], set()
-    packages = document.get('package')
-    registries = _package_registries(packages)
-    metadata = table(document, 'metadata')
-    channels = metadata.get('channels')
-    if isinstance(channels, list):
-        registries.update(
-            registry
-            for channel in channels
-            if (registry := _clean_registry(channel))
-        )
-    return _package_list(packages), registries
 
 
 def _package_registries(value: object) -> set[str]:

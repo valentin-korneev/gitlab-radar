@@ -25,8 +25,6 @@ PACKAGE_MANAGER_TITLES = {
     PackageManager.UV: 'uv',
     PackageManager.POETRY: 'Poetry',
     PackageManager.PIP: 'pip',
-    PackageManager.PIPENV: 'Pipenv',
-    PackageManager.CONDA: 'Conda',
     PackageManager.UNKNOWN: 'Не определён',
 }
 

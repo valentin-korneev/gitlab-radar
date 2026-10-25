@@ -4,6 +4,7 @@ from pathlib import PurePosixPath
 import yaml
 
 from gitlab_radar.schemas.project import ContainerImage, ContainerSource
+from gitlab_radar.services.package_manager import is_dockerfile_filename
 
 _ARG_PATTERN = re.compile(r'^\s*ARG\s+([A-Za-z_][A-Za-z0-9_]*)(?:=(.*))?$', re.IGNORECASE)
 _FROM_PATTERN = re.compile(r'^\s*FROM\s+(?:--\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?', re.IGNORECASE)
@@ -12,21 +13,26 @@ _VARIABLE_PATTERN = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)(?::[-?](.*?))?}|\$
 
 
 def parse_container_images(files: dict[str, bytes]) -> list[ContainerImage]:
-    images: dict[tuple[str, str, str | None, ContainerSource, str], ContainerImage] = {}
+    images: dict[tuple[str, str, str | None], ContainerImage] = {}
     for path, content in files.items():
         name = PurePosixPath(path).name
-        if name.lower() == 'dockerfile':
+        if is_dockerfile_filename(name):
             parsed = _parse_dockerfile(content, path)
         elif name in {'compose.yaml', 'compose.yml', 'docker-compose.yaml', 'docker-compose.yml'}:
             parsed = _parse_compose(content, path)
         else:
             continue
         for image in parsed:
-            key = (image.registry, image.image, image.version, image.source, image.file_path)
-            images[key] = image
+            key = (image.registry, image.image, image.version)
+            existing = images.get(key)
+            if existing is None or (
+                image.source is ContainerSource.COMPOSE
+                and existing.source is not ContainerSource.COMPOSE
+            ):
+                images[key] = image
     return sorted(
         images.values(),
-        key=lambda item: (item.image, item.version or '', item.file_path),
+        key=lambda item: (item.registry, item.image, item.version or ''),
     )
 
 
@@ -47,11 +53,15 @@ def _parse_dockerfile(content: bytes, path: str) -> list[ContainerImage]:
             for match in _COPY_FROM_PATTERN.finditer(line):
                 value = _resolve_variables(match.group(1), arguments)
                 if value.lower() not in stages and not value.isdigit():
-                    result.append(_container_image(value, ContainerSource.DOCKERFILE, path))
+                    image = _container_image(value, ContainerSource.DOCKERFILE, path)
+                    if image is not None:
+                        result.append(image)
             continue
         value = _resolve_variables(instruction.group(1), arguments)
         if value.lower() != 'scratch' and value.lower() not in stages:
-            result.append(_container_image(value, ContainerSource.DOCKERFILE, path))
+            image = _container_image(value, ContainerSource.DOCKERFILE, path)
+            if image is not None:
+                result.append(image)
         if instruction.group(2):
             stages.add(instruction.group(2).lower())
     return result
@@ -73,11 +83,15 @@ def _parse_compose(content: bytes, path: str) -> list[ContainerImage]:
             continue
         image = _resolve_variables(service['image'], {})
         if image:
-            result.append(_container_image(image, ContainerSource.COMPOSE, path))
+            parsed = _container_image(image, ContainerSource.COMPOSE, path)
+            if parsed is not None:
+                result.append(parsed)
     return result
 
 
-def _container_image(value: str, source: ContainerSource, path: str) -> ContainerImage:
+def _container_image(value: str, source: ContainerSource, path: str) -> ContainerImage | None:
+    if _has_unresolved_template(value):
+        return None
     reference, separator, digest = value.strip().partition('@')
     version = digest if separator else None
     last_slash = reference.rfind('/')
@@ -104,6 +118,10 @@ def _container_image(value: str, source: ContainerSource, path: str) -> Containe
         source=source,
         file_path=path,
     )
+
+
+def _has_unresolved_template(value: str) -> bool:
+    return '{{' in value or '}}' in value or _VARIABLE_PATTERN.search(value) is not None
 
 
 def _logical_lines(text: str) -> list[str]:
