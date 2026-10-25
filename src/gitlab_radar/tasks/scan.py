@@ -21,6 +21,7 @@ from gitlab_radar.database.repository import (
 from gitlab_radar.schemas.project import Project
 from gitlab_radar.schemas.scan import ScanPhase, ScanState, ScanStatus
 from gitlab_radar.schemas.technology import PackageManager
+from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.project import fetch_projects
 from gitlab_radar.services.project_analysis import analyze_project
 from gitlab_radar.services.project_collection import ProjectCollector
@@ -46,7 +47,7 @@ class ScanTask:
     async def start(self) -> bool:
         async with self._lock:
             if self._task is not None and not self._task.done():
-                logger.warning('Запуск отклонён: сканирование уже выполняется')
+                logger.warning('Запуск отклонен: сканирование уже выполняется')
                 return False
             started_at = datetime.now(UTC)
             scan = await ScanRun.create(
@@ -179,7 +180,7 @@ class ScanTask:
             errors: list[str],
     ) -> None:
         await self._update(scan, phase=ScanPhase.ANALYZING, current_project=None)
-        logger.info('Сбор файлов завершён; начинается локальный анализ проектов')
+        logger.info('Сбор файлов завершен; начинается локальный анализ проектов')
         total = len(collected)
 
         semaphore = asyncio.Semaphore(LOCAL_ANALYSIS_CONCURRENCY)
@@ -244,7 +245,7 @@ class ScanTask:
             gitlab_requests: int,
     ) -> None:
         await self._update(scan, phase=ScanPhase.PUBLISHING, current_project=None)
-        logger.info('Локальный анализ завершён; результаты публикуются')
+        logger.info('Локальный анализ завершен; результаты публикуются')
         completed_at = datetime.now(UTC)
         await self._update(
             scan,
@@ -259,7 +260,8 @@ class ScanTask:
         )
         invalidate_project_cache()
         try:
-            await trim_old_scans()
+            parameter_values = await application_parameter_values()
+            await trim_old_scans(int(parameter_values['retained_scan_count']))
         except Exception:
             logger.exception('Не удалось удалить старые снимки сканирования')
         logger.info(

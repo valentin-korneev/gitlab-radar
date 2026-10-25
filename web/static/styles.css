@@ -171,7 +171,10 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .search { display: flex; align-items: center; gap: 8px; width: min(320px, 100%); margin-bottom: 36px; border: 1px solid var(--line); border-radius: 10px; padding: 10px 13px; background: var(--surface); color: var(--muted); }
 .project-controls .search, .dependency-controls .search { margin-bottom: 0; }
 .search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); }
-.rule-switches { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.rule-switches { display: grid; flex: 1; grid-template-columns: repeat(4, minmax(0, 1fr)); align-items: center; gap: 12px 18px; }
+.rule-switches.six-columns { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.rule-switches > .control-label { grid-column: 1 / -1; }
+.rule-switches > .switch { min-width: 0; }
 .control-label { color: var(--muted); font-size: .68rem; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; }
 .switch { position: relative; display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: .72rem; cursor: pointer; }
 .switch input { position: absolute; opacity: 0; pointer-events: none; }
@@ -243,7 +246,6 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .webhook-entry strong, .webhook-entry small { overflow-wrap: break-word; overflow-wrap: anywhere; }
 .webhook-entry strong { font-size: .76rem; }
 .webhook-entry small { color: var(--muted); font-size: .68rem; }
-.webhook-entry.webhook-required strong { color: var(--green); }
 .transitive-toggle { justify-self: start; border: 1px solid var(--line); border-radius: 9px; padding: 8px 11px; background: var(--surface-high); color: var(--muted); font-size: .72rem; cursor: pointer; }
 .transitive-toggle:hover { border-color: var(--accent); color: var(--text); }
 .detail-link { display: inline-flex; margin-top: 26px; color: var(--accent); text-decoration: none; }
@@ -264,6 +266,102 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .dependency-project strong { font-size: .76rem; }
 .dependency-project small { margin-top: 4px; color: var(--muted); font-size: .68rem; }
 .admin-grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 18px; }
+.requirements-admin-grid { display: grid; grid-template-columns: 1fr; gap: 18px; }
+.parameters-head { margin-bottom: 28px; }
+.parameters-card { max-width: 760px; }
+.parameters-form { display: grid; gap: 22px; }
+.parameter-fields { display: grid; gap: 18px; }
+.parameter-field { display: grid; grid-template-columns: minmax(220px, 1fr) 150px; align-items: center; gap: 6px 20px; }
+.parameter-value-input { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 10px 11px; outline: 0; background: var(--surface-low); color: var(--text); font: inherit; }
+.parameter-value-input:focus { border-color: var(--accent); }
+.parameter-field small { grid-column: 1 / -1; color: var(--muted); line-height: 1.45; }
+.parameter-actions { display: flex; justify-content: flex-end; }
+.percentage-parameter { grid-template-columns: 1fr; }
+.threshold-preview { display: flex; grid-column: 1 / -1; width: 100%; height: 12px; overflow: hidden; border-radius: 999px; background: var(--surface-high); }
+.threshold-preview span { min-width: 2px; transition: width .15s ease; }
+.threshold-danger { background: var(--danger); }
+.threshold-warning { background: var(--warning); }
+.threshold-success { background: var(--green); }
+.threshold-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.threshold-controls label { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; color: var(--muted); font-size: .72rem; }
+.threshold-controls input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.threshold-controls output { min-width: 42px; border-radius: 7px; padding: 4px 7px; background: var(--surface-high); color: var(--text); text-align: center; font-weight: 750; }
+.requirements-head { margin-bottom: 28px; }
+.requirements-head .intro { margin-bottom: 0; }
+.requirements-actions { display: flex; align-items: center; gap: 10px; margin-bottom: 0; }
+.requirements-layout { display: grid; grid-template-columns: minmax(240px, .7fr) minmax(0, 1.3fr); gap: 18px; align-items: start; }
+.requirement-groups-card { padding: 0; overflow: hidden; }
+.requirement-groups-card > .card-heading { margin: 0; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.requirement-groups-list { display: grid; }
+.requirement-group-list-item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; border: 0; border-bottom: 1px solid var(--line); padding: 14px 16px; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.requirement-group-list-item:last-child { border-bottom: 0; }
+.requirement-group-list-item:hover, .requirement-group-list-item.active { background: var(--surface-high); }
+.requirement-group-list-item strong, .requirement-group-list-item small { display: block; }
+.requirement-group-list-item small { margin-top: 4px; color: var(--muted); }
+.group-open-mark { color: var(--muted); font-size: 1.2rem; }
+.requirement-group-detail { min-height: 260px; }
+.requirement-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
+.requirement-detail-heading h3 { margin: 0; }
+.requirement-detail-heading p { max-width: 650px; margin: 7px 0 0; line-height: 1.5; }
+.requirement-detail-items { display: grid; }
+.requirement-tree-summary strong, .requirement-tree-summary small { display: block; }
+.requirement-tree-summary small { margin-top: 4px; color: var(--muted); }
+.requirement-tree-item { display: grid; grid-template-columns: 20px minmax(0, 1fr) 34px 132px; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); padding: 12px 0; }
+.requirement-tree-item:last-child { border-bottom: 0; }
+.requirement-tree-item.disabled { opacity: .55; }
+.requirement-tree-summary { min-width: 0; }
+.requirement-tree-summary strong, .requirement-tree-summary small { overflow-wrap: anywhere; }
+.requirement-enabled-switch { min-width: 30px; }
+.editor-dialog { width: min(620px, calc(100vw - 32px)); max-width: none; border: 0; padding: 0; background: transparent; color: var(--text); }
+.requirement-editor-dialog { width: min(960px, calc(100vw - 32px)); }
+.confirm-dialog { width: min(460px, calc(100vw - 32px)); }
+.editor-dialog::backdrop { background: rgba(0, 0, 0, .62); backdrop-filter: blur(3px); }
+.editor-dialog .dashboard-card { max-height: min(88vh, 900px); overflow-y: auto; box-shadow: 0 24px 80px rgba(0, 0, 0, .4); }
+.confirm-dialog-message { margin: 0; color: var(--muted); line-height: 1.55; }
+.confirm-dialog-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; margin-top: 24px; }
+.requirement-builder-card { grid-column: 1 / -1; }
+.requirement-list-card { grid-column: 1 / -1; }
+.group-form { display: grid; grid-template-columns: minmax(220px, 1fr) auto; align-items: end; gap: 12px; }
+.group-form > label { display: grid; gap: 7px; color: var(--muted); font-size: .72rem; }
+.group-form .group-description { grid-column: 1 / -1; }
+.group-form .requirement-form-actions { grid-column: auto; }
+.group-drag-handle, .requirement-drag-handle { flex: 0 0 auto; color: var(--muted); cursor: grab; font-size: 1.1rem; letter-spacing: -3px; user-select: none; }
+.group-drag-handle:active, .requirement-drag-handle:active { cursor: grabbing; }
+.requirement-group-list-item.group-dragging, .requirement-tree-item.requirement-dragging { opacity: .45; }
+.requirement-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.requirement-form > label { display: grid; gap: 7px; color: var(--muted); font-size: .72rem; }
+.requirement-form input, .requirement-form select, .requirement-form textarea,
+.group-form input, .group-form select, .group-form textarea,
+.requirement-condition input, .requirement-condition select { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 10px 11px; outline: 0; background: var(--surface-low); color: var(--text); font: inherit; }
+.requirement-form input:focus, .requirement-form select:focus, .requirement-form textarea:focus,
+.group-form input:focus, .group-form select:focus, .group-form textarea:focus,
+.requirement-condition input:focus, .requirement-condition select:focus { border-color: var(--accent); }
+.requirement-description, .requirement-conditions-heading, .root-condition-logic, .requirement-conditions, .requirement-form-actions { grid-column: 1 / -1; }
+.requirement-description textarea { resize: vertical; }
+.condition-empty input { width: auto; }
+.requirement-conditions-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 8px; }
+.condition-heading-actions, .condition-group-actions { display: flex; align-items: center; gap: 9px; }
+.root-condition-logic, .condition-group-logic-field { display: grid; max-width: 360px; gap: 7px; color: var(--muted); font-size: .72rem; }
+.condition-group-logic-field select { width: 100%; }
+.requirement-conditions { display: grid; gap: 10px; }
+.requirement-condition { display: grid; grid-template-columns: 1fr 1fr 1.2fr auto auto; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; background: var(--surface-low); }
+.condition-group { display: grid; gap: 10px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 12px; padding: 12px; background: color-mix(in srgb, var(--surface-low) 82%, transparent); }
+.condition-group-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.condition-group-items { display: grid; gap: 10px; padding-left: 14px; }
+.condition-empty { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: .68rem; }
+.condition-remove { width: 32px; height: 32px; border: 1px solid var(--error-line); border-radius: 8px; background: var(--error-bg); color: var(--danger); cursor: pointer; }
+.requirement-form-actions, .admin-requirement-actions { display: flex; align-items: center; gap: 9px; }
+.admin-requirement-actions { flex: 0 0 auto; justify-content: flex-end; }
+.requirement-form-actions .primary-button { min-width: 150px; }
+.secondary-button, .danger-button { border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; background: var(--surface-high); color: var(--text); cursor: pointer; }
+.icon-button { position: relative; display: inline-flex !important; align-items: center; justify-content: center !important; flex: 0 0 38px; width: 38px; min-width: 38px !important; height: 38px; padding: 0 !important; font-size: 1.15rem; line-height: 1; text-align: center; }
+.button-icon { display: block; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.condition-remove .button-icon { width: 16px; height: 16px; }
+.icon-button::after, .condition-remove::after { content: attr(aria-label); position: absolute; z-index: 50; right: 0; bottom: calc(100% + 8px); width: max-content; max-width: 220px; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; background: var(--surface-high); color: var(--text); box-shadow: 0 8px 24px rgba(0, 0, 0, .28); font-size: .7rem; font-weight: 600; line-height: 1.25; pointer-events: none; opacity: 0; transform: translateY(3px); transition: opacity .12s ease, transform .12s ease; }
+.icon-button:hover::after, .icon-button:focus-visible::after, .condition-remove:hover::after, .condition-remove:focus-visible::after { opacity: 1; transform: translateY(0); }
+.condition-remove { position: relative; display: inline-flex; align-items: center; justify-content: center; padding: 0; line-height: 1; }
+.secondary-button:hover { border-color: var(--accent); }
+.danger-button { border-color: var(--error-line); background: var(--error-bg); color: var(--danger); }
 .scan-card { display: flex; align-items: center; gap: 24px; }
 .scan-status-content { flex: 1; min-width: 0; }
 .scan-orbit { display: grid; place-items: center; flex: 0 0 76px; height: 76px; border: 1px solid var(--line); border-radius: 50%; }
@@ -301,11 +399,15 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .nav-item { flex: 0 0 auto; padding: 9px 11px; }
   .content { padding: 0 20px 40px; }
   .topbar { min-height: 100px; }
-  .cards, .projects-layout, .dependencies-layout, .admin-grid { grid-template-columns: 1fr; }
+  .cards, .projects-layout, .dependencies-layout, .admin-grid, .requirements-layout { grid-template-columns: 1fr; }
   .project-detail, .dependency-detail { position: static; }
   .project-list, .project-detail { height: auto; min-height: 0; max-height: none; overflow-y: visible; }
   .technology-target { min-height: auto; padding: 0; }
+  .group-form { grid-template-columns: 1fr; }
+  .group-form .requirement-form-actions { grid-column: 1; }
+  .requirement-condition { grid-template-columns: 1fr 1fr; }
   .target-rings { width: min(620px, 88vw); margin: 0 auto; }
+  .rule-switches, .rule-switches.six-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 540px) {
@@ -315,5 +417,15 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .project-controls > *, .dependency-controls > * { width: 100%; }
   .scan-card { align-items: flex-start; flex-direction: column; }
   .dependency-top { grid-template-columns: 1fr; }
-  .rule-switches { grid-template-columns: 1fr; }
+  .rule-switches, .rule-switches.six-columns { grid-template-columns: 1fr; }
+  .requirement-form { grid-template-columns: 1fr; }
+  .requirement-form > * { grid-column: 1; }
+  .requirement-condition { grid-template-columns: 1fr; }
+  .parameter-field { grid-template-columns: 1fr; }
+  .threshold-controls { grid-template-columns: 1fr; }
+  .requirements-head { align-items: stretch; }
+  .requirements-actions { margin-bottom: 0; }
+  .requirement-tree-item { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .requirement-tree-item .admin-requirement-actions { grid-column: 2 / -1; }
+  .requirement-detail-heading { flex-direction: column; }
 }

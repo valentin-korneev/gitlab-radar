@@ -1,0 +1,24 @@
+- key: python_oldest_current_version
+  title: Самая старая актуальная версия Python
+  description: Эта версия помечается предупреждением, более ранние — как устаревшие, более новые — как актуальные.
+  value: '3.11'
+  value_type: version
+  sort_order: 1
+
+- key: retained_scan_count
+  title: Количество хранимых сканирований
+  description: После публикации нового сканирования более старые результаты удаляются.
+  value: '5'
+  value_type: integer
+  min_value: 1
+  max_value: 100
+  sort_order: 2
+
+- key: project_compliance_thresholds
+  title: Пороги соответствия проекта
+  description: Первая граница отделяет критическую зону, вторая — успешную.
+  value: '50,80'
+  value_type: percentage_range
+  min_value: 0
+  max_value: 100
+  sort_order: 3

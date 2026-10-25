@@ -8,6 +8,7 @@ from gitlab_radar.schemas.technology import PackageManager
 
 PYPROJECT_FILENAME = 'pyproject.toml'
 UV_CONFIG_FILENAME = 'uv.toml'
+PIP_CONFIG_FILENAME = 'pip.conf'
 POETRY_LOCK_FILENAME = 'poetry.lock'
 UV_LOCK_FILENAME = 'uv.lock'
 REQUIREMENTS_FILENAME = 'requirements.txt'
@@ -16,6 +17,7 @@ PYTHON_VERSION_FILENAME = '.python-version'
 PACKAGE_FILES = (
     PYPROJECT_FILENAME,
     UV_CONFIG_FILENAME,
+    PIP_CONFIG_FILENAME,
     POETRY_LOCK_FILENAME,
     UV_LOCK_FILENAME,
 )

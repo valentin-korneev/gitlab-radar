@@ -29,11 +29,13 @@
         <button class="nav-item" data-route="components">CI-компоненты</button>
         <button class="nav-item" data-route="webhooks">Webhooks</button>
         <hr class="nav-divider">
+        <button class="nav-item" data-route="requirements">Требования</button>
+        <button class="nav-item" data-route="parameters">Параметры</button>
         <button class="nav-item" data-route="admin">Управление</button>
       </nav>
       <div class="sidebar-footer">
         <p class="sidebar-note">Технологический обзор<br>проектов GitLab</p>
-        <label class="switch theme-switch">Светлая<input id="theme-toggle" type="checkbox"><span></span>Тёмная</label>
+        <label class="switch theme-switch">Светлая<input id="theme-toggle" type="checkbox"><span></span>Темная</label>
       </div>
     </aside>
 
@@ -124,14 +126,6 @@
         <div class="project-controls">
           <div class="rule-switches" aria-label="Нарушенные правила">
             <span class="control-label">Нарушения правил</span>
-            <label class="switch"><input type="checkbox" data-rule="uv-required"><span></span>uv</label>
-            <label class="switch"><input type="checkbox" data-rule="ruff-required"><span></span>ruff</label>
-            <label class="switch"><input type="checkbox" data-rule="bandit-required"><span></span>bandit</label>
-            <label class="switch"><input type="checkbox" data-rule="pylint-required"><span></span>pylint</label>
-            <label class="switch"><input type="checkbox" data-rule="python-linters-component-required"><span></span>python-linters</label>
-            <label class="switch"><input type="checkbox" data-rule="sonar-component-required"><span></span>sonar</label>
-            <label class="switch"><input type="checkbox" data-rule="approved-registry-required"><span></span>approved-registry</label>
-            <label class="switch"><input type="checkbox" data-rule="aist-reviewer-hook-required"><span></span>aist.reviewer</label>
           </div>
         </div>
         <div class="projects-layout">
@@ -160,13 +154,100 @@
         </div>
       </section>
 
+      <section id="requirements" class="page">
+        <div class="section-head requirements-head">
+          <div class="intro"><p>Настройка</p><h2>Требования компании</h2></div>
+          <div class="requirements-actions">
+            <button id="create-group" class="primary-button icon-button" type="button" title="Создать группу" aria-label="Создать группу" data-icon="plus"></button>
+          </div>
+        </div>
+        <div class="requirements-layout">
+          <aside class="dashboard-card requirement-groups-card">
+            <div class="card-heading"><p>Группы</p><span id="requirements-count">0</span></div>
+            <div id="requirement-groups" class="requirement-groups-list"></div>
+          </aside>
+          <article id="requirement-group-detail" class="dashboard-card requirement-group-detail">
+            <p class="empty-state">Выберите группу, чтобы посмотреть требования.</p>
+          </article>
+        </div>
+
+        <dialog id="group-dialog" class="editor-dialog">
+          <article class="dashboard-card group-builder-card">
+            <div class="card-heading"><p id="group-dialog-title">Новая группа</p><span>Раздел дашборда</span></div>
+            <form id="requirement-group-form" class="group-form">
+              <input id="requirement-group-id" type="hidden">
+              <label>Название<input id="requirement-group-name" required maxlength="100" placeholder="Линтеры"></label>
+              <label class="group-description">Описание<textarea id="requirement-group-description" rows="3" placeholder="Что объединяет требования группы"></textarea></label>
+              <div class="requirement-form-actions">
+                <button class="primary-button icon-button" type="submit" title="Сохранить группу" aria-label="Сохранить группу" data-icon="check"></button>
+                <button id="cancel-group-edit" class="secondary-button icon-button" type="button" title="Отменить" aria-label="Отменить" data-icon="close"></button>
+              </div>
+            </form>
+          </article>
+        </dialog>
+
+        <dialog id="requirement-dialog" class="editor-dialog requirement-editor-dialog">
+          <article class="dashboard-card requirement-builder-card">
+            <div class="card-heading"><p id="requirement-dialog-title">Новое требование</p><span>Правило соответствия</span></div>
+            <form id="requirement-form" class="requirement-form">
+              <input id="requirement-id" type="hidden">
+              <label>Название<input id="requirement-title" required maxlength="200" placeholder="Обязательный webhook"></label>
+              <label>Код<input id="requirement-code" required maxlength="100" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="reviewer-hook-required"></label>
+              <label class="requirement-description">Описание<textarea id="requirement-description" rows="2"></textarea></label>
+              <div class="requirement-conditions-heading">
+                <strong>Условия</strong>
+                <div class="condition-heading-actions">
+                  <button id="add-condition" type="button" class="secondary-button icon-button" title="Добавить условие" aria-label="Добавить условие" data-icon="plus"></button>
+                  <button id="add-condition-group" type="button" class="secondary-button icon-button" title="Добавить группу условий" aria-label="Добавить группу условий" data-icon="group"></button>
+                </div>
+              </div>
+              <label class="root-condition-logic">Как объединять условия<select id="requirement-condition-logic"><option value="and">И — должны выполняться все</option><option value="or">ИЛИ — достаточно одного</option></select></label>
+              <div id="requirement-conditions" class="requirement-conditions"></div>
+              <div class="requirement-form-actions">
+                <button class="primary-button icon-button" type="submit" title="Сохранить требование" aria-label="Сохранить требование" data-icon="check"></button>
+                <button id="cancel-requirement-edit" class="secondary-button icon-button" type="button" title="Отменить" aria-label="Отменить" data-icon="close"></button>
+              </div>
+            </form>
+          </article>
+        </dialog>
+
+        <dialog id="move-requirement-dialog" class="editor-dialog">
+          <article class="dashboard-card">
+            <div class="card-heading"><p>Сменить группу</p><span id="move-requirement-title"></span></div>
+            <form id="move-requirement-form" class="group-form">
+              <input id="move-requirement-id" type="hidden">
+              <label>Новая группа<select id="move-requirement-group" required></select></label>
+              <div class="requirement-form-actions">
+                <button class="primary-button icon-button" type="submit" title="Перенести требование" aria-label="Перенести требование" data-icon="move"></button>
+                <button id="cancel-requirement-move" class="secondary-button icon-button" type="button" title="Отменить" aria-label="Отменить" data-icon="close"></button>
+              </div>
+            </form>
+          </article>
+        </dialog>
+      </section>
+
+      <section id="parameters" class="page">
+        <div class="section-head parameters-head">
+          <div class="intro"><p>Настройка</p><h2>Параметры</h2></div>
+        </div>
+        <article class="dashboard-card parameters-card">
+          <div class="card-heading"><p>Общие параметры</p><span>Применяются ко всему приложению</span></div>
+          <form id="parameters-form" class="parameters-form">
+            <div id="parameter-fields" class="parameter-fields"></div>
+            <div class="parameter-actions">
+              <button class="primary-button icon-button" type="submit" title="Сохранить параметры" aria-label="Сохранить параметры" data-icon="check"></button>
+            </div>
+          </form>
+        </article>
+      </section>
+
       <section id="admin" class="page">
         <div class="intro"><p>Управление</p><h2>Сканирование GitLab</h2></div>
         <div class="admin-grid">
           <article class="scan-card">
             <div class="scan-orbit"><span id="scan-dot"></span></div>
             <div class="scan-status-content">
-              <p class="muted">Текущий статус</p><h3 id="scan-state">Ожидание</h3><p id="scan-description">Сканирование ещё не запускалось.</p>
+              <p class="muted">Текущий статус</p><h3 id="scan-state">Ожидание</h3><p id="scan-description">Сканирование еще не запускалось.</p>
               <div class="scan-progress"><span id="scan-progress-value"></span></div>
               <div class="scan-meta"><span id="scan-progress-label">0 из 0 проектов</span><span id="scan-duration">0 сек.</span></div>
               <p id="scan-requests" class="scan-requests">Обращений к GitLab: 0</p>
@@ -191,6 +272,17 @@
           <div id="scan-errors-list"></div>
         </details>
       </section>
+
+      <dialog id="confirm-dialog" class="editor-dialog confirm-dialog">
+        <article class="dashboard-card">
+          <div class="card-heading"><p id="confirm-dialog-title">Подтвердите действие</p><span>Необратимое действие</span></div>
+          <p id="confirm-dialog-message" class="confirm-dialog-message"></p>
+          <form method="dialog" class="confirm-dialog-actions">
+            <button class="secondary-button icon-button" type="submit" value="cancel" title="Отменить" aria-label="Отменить" data-icon="close"></button>
+            <button id="confirm-dialog-submit" class="danger-button icon-button" type="submit" value="confirm" title="Подтвердить удаление" aria-label="Подтвердить удаление" data-icon="trash"></button>
+          </form>
+        </article>
+      </dialog>
 
       <div id="global-error" class="toast" hidden></div>
     </main>

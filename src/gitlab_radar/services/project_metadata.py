@@ -1,5 +1,6 @@
 import logging
 from collections.abc import Mapping
+from configparser import ConfigParser, Error as ConfigParserError
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,6 +10,7 @@ from gitlab_radar.services.dependency_parser import (
     parse_pyproject,
     parse_pyproject_document,
     parse_requirements,
+    parse_toml,
     unique_dependencies,
 )
 from gitlab_radar.services.lock_parser import parse_lock_metadata, resolve_locked_versions
@@ -80,6 +82,12 @@ def parse_project_metadata(
         (declaration.python_constraint for declaration in declarations if declaration.python_constraint),
         None,
     )
+    package_registries = _package_registries(
+        files,
+        pyproject,
+        lock.registries,
+        has_dependencies=bool(dependencies or optional_dependencies or lock.dependencies),
+    )
 
     return ProjectMetadata(
         python_version=python_version,
@@ -93,8 +101,63 @@ def parse_project_metadata(
         configured_tools=sorted(
             {tool for declaration in declarations for tool in declaration.configured_tools},
         ),
-        package_registries=lock.registries,
+        package_registries=package_registries,
     )
+
+
+def _package_registries(
+    files: Mapping[str, bytes],
+    pyproject: Mapping[str, object],
+    lock_registries: list[str],
+    *,
+    has_dependencies: bool,
+) -> list[str]:
+    registries = set(lock_registries)
+    tool = pyproject.get('tool')
+    if isinstance(tool, Mapping):
+        for name in ('uv', 'poetry', 'pip'):
+            section = tool.get(name)
+            if isinstance(section, Mapping):
+                registries.update(_index_urls(section))
+
+    uv_content = files.get('uv.toml')
+    if uv_content:
+        registries.update(_index_urls(parse_toml(uv_content, 'uv.toml')))
+
+    pip_content = files.get('pip.conf')
+    if pip_content:
+        parser = ConfigParser(interpolation=None)
+        try:
+            parser.read_string(pip_content.decode('utf-8'))
+        except (ConfigParserError, UnicodeDecodeError):
+            logger.warning('Не удалось разобрать pip.conf')
+        else:
+            for section in parser.sections():
+                for key in ('index-url', 'extra-index-url'):
+                    if parser.has_option(section, key):
+                        registries.update(parser.get(section, key).split())
+
+    if not registries and has_dependencies:
+        registries.add('https://pypi.org/simple')
+    return sorted(registry.strip().rstrip('/') for registry in registries if registry.strip())
+
+
+def _index_urls(section: Mapping[str, object]) -> set[str]:
+    registries: set[str] = set()
+    for key in ('index-url', 'extra-index-url', 'default-index'):
+        value = section.get(key)
+        if isinstance(value, str):
+            registries.add(value)
+        elif isinstance(value, list):
+            registries.update(item for item in value if isinstance(item, str))
+    sources = section.get('source') or section.get('index')
+    if isinstance(sources, list):
+        registries.update(
+            str(source['url'])
+            for source in sources
+            if isinstance(source, Mapping) and isinstance(source.get('url'), str)
+        )
+    return registries
 
 
 def _without_direct_dependencies(

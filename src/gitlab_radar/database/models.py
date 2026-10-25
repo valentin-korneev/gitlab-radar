@@ -46,3 +46,40 @@ class ProjectFile(Model):
 
     class Meta:
         unique_together = (('project', 'path'),)
+
+
+class CompanyRequirementGroup(Model):
+    id = fields.IntField(primary_key=True)
+    name = fields.CharField(max_length=100, unique=True)
+    description = fields.TextField(default='')
+    sort_order = fields.IntField(default=0)
+
+
+class CompanyRequirement(Model):
+    id = fields.IntField(primary_key=True)
+    code = fields.CharField(max_length=100, unique=True)
+    title = fields.CharField(max_length=200)
+    group = fields.ForeignKeyField(
+        'models.CompanyRequirementGroup',
+        related_name='requirements',
+        on_delete=fields.RESTRICT,
+    )
+    description = fields.TextField(default='')
+    condition = fields.JSONField()
+    enabled = fields.BooleanField(default=True, index=True)
+    sort_order = fields.IntField(default=0)
+
+
+class ApplicationParameter(Model):
+    key = fields.CharField(max_length=100, primary_key=True)
+    title = fields.CharField(max_length=200)
+    description = fields.TextField(default='')
+    value = fields.CharField(max_length=500)
+    value_type = fields.CharField(max_length=30, default='string')
+    min_value = fields.IntField(null=True)
+    max_value = fields.IntField(null=True)
+    sort_order = fields.IntField(default=0)
+
+
+class DataFixture(Model):
+    name = fields.CharField(max_length=100, primary_key=True)

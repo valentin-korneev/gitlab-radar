@@ -1,0 +1,12 @@
+- name: Пакетный менеджер
+  description: Требования к инструментам установки и управления зависимостями.
+  sort_order: 1
+- name: Линтеры
+  description: Инструменты статического анализа и проверки качества кода.
+  sort_order: 2
+- name: GitLab (CI+Webhook)
+  description: Обязательные компоненты, интеграции и настройки GitLab CI.
+  sort_order: 3
+- name: Registry
+  description: Политики использования registry пакетов и контейнеров.
+  sort_order: 4

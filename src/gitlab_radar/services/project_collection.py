@@ -104,7 +104,6 @@ class ProjectCollector:
             events=[field.removesuffix('_events') for field in HOOK_EVENT_FIELDS if attributes.get(field)],
             enable_ssl_verification=bool(attributes.get('enable_ssl_verification', True)),
             alert_status=attributes.get('alert_status'),
-            is_aist_reviewer='aist.reviewer' in url.lower(),
         )
 
     @staticmethod
@@ -130,7 +129,7 @@ class ProjectCollector:
                 logger.warning('Точный поиск GitLab недоступен; используется дерево репозитория')
             else:
                 self._exact_search_supported = True
-                logger.info('Точный поиск GitLab нашёл целевых файлов: %d', len(paths))
+                logger.info('Точный поиск GitLab нашел целевых файлов: %d', len(paths))
                 return paths
         paths = self._find_in_repository_tree(project, default_branch)
         logger.info('В дереве репозитория найдено целевых файлов: %d', len(paths))

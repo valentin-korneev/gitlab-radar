@@ -39,7 +39,6 @@ class ProjectHook(BaseModel):
     events: list[str] = Field(default_factory=list)
     enable_ssl_verification: bool = True
     alert_status: str | None = None
-    is_aist_reviewer: bool = False
 
 
 class ContainerSource(StrEnum):

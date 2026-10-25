@@ -1,5 +1,8 @@
 const API = {
   dashboard: '/api/dashboard/', dependencies: '/api/dependency/', projects: '/api/project/', scan: '/api/scan/',
+  requirements: '/api/company-requirement/', requirementCatalog: '/api/company-requirement/catalog',
+  requirementGroups: '/api/company-requirement-group/',
+  parameters: '/api/application-parameter/',
 };
 const PAGE_ROUTES = {
   dashboard: { page: 'dashboard' },
@@ -8,23 +11,12 @@ const PAGE_ROUTES = {
   images: { page: 'dependencies', source: 'docker', title: 'Образы контейнеров', search: 'Найти образ' },
   components: { page: 'dependencies', source: 'ci', title: 'CI-компоненты', search: 'Найти компонент' },
   webhooks: { page: 'dependencies', source: 'webhook', title: 'Webhooks', search: 'Найти webhook' },
+  requirements: { page: 'requirements' },
+  parameters: { page: 'parameters' },
   admin: { page: 'admin' },
 };
 const SOURCE_ROUTES = { python: 'dependencies', docker: 'images', ci: 'components', webhook: 'webhooks' };
 const LEVEL_TITLES = { direct: 'Прямая', optional: 'Опциональная', transitive: 'Транзитивная' };
-const RULE_TITLES = {
-  'uv-required': 'uv', 'ruff-required': 'ruff', 'bandit-required': 'bandit', 'pylint-required': 'pylint',
-  'python-linters-component-required': 'python-linters', 'sonar-component-required': 'sonar',
-  'approved-registry-required': 'approved-registry',
-  'aist-reviewer-hook-required': 'aist.reviewer',
-};
-const RULE_GROUPS = [
-  { title: 'uv', rules: ['uv-required'] },
-  { title: 'Линтеры', rules: ['ruff-required', 'bandit-required', 'pylint-required'] },
-  { title: 'CI', rules: ['python-linters-component-required', 'sonar-component-required'] },
-  { title: 'Registry', rules: ['approved-registry-required'] },
-  { title: 'Webhook', rules: ['aist-reviewer-hook-required'] },
-];
 const HOOK_EVENT_TITLES = {
   push: 'push', tag_push: 'tag push', issues: 'issues', confidential_issues: 'confidential issues',
   merge_requests: 'merge requests', note: 'comments', confidential_note: 'confidential comments',
@@ -40,7 +32,10 @@ const state = {
   projects: [], dependencies: [], dependencyCache: {}, dependencySource: 'python', selectedId: null, selectedSubprojectPath: null,
   selectedDependency: null, showTransitive: false, scanState: null, pollTimer: null,
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
-  loaded: { dashboard: false, projects: false, dependencies: false, admin: false }, loading: {},
+  requirements: [], requirementGroups: [], requirementCatalog: null,
+  parameters: [],
+  selectedRequirementGroupId: null,
+  loaded: { dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false, admin: false }, loading: {},
 };
 
 async function api(path, options = {}) {
@@ -49,7 +44,37 @@ async function api(path, options = {}) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.detail || `HTTP ${response.status}`);
   }
-  return response.json();
+  return response.status === 204 ? null : response.json();
+}
+function activeRequirements() { return state.requirements.filter((requirement) => requirement.enabled); }
+async function ensureRequirements() {
+  const requests = [];
+  if (!state.requirements.length) requests.push(api(API.requirements).then((items) => { state.requirements = items; }));
+  if (!state.requirementGroups.length) requests.push(api(API.requirementGroups).then((items) => { state.requirementGroups = items; }));
+  if (!state.requirementCatalog) requests.push(api(API.requirementCatalog).then((catalog) => { state.requirementCatalog = catalog; }));
+  await Promise.all(requests);
+  renderRuleFilters();
+}
+function renderRuleFilters() {
+  const container = document.querySelector('.rule-switches');
+  const selected = new Set([...container.querySelectorAll('input:checked')].map((input) => input.dataset.rule));
+  const heading = container.querySelector('.control-label') || element('span', 'control-label', 'Нарушения правил');
+  container.replaceChildren(heading);
+  const active = activeRequirements();
+  const grouped = state.requirementGroups
+    .map((group) => active.filter((requirement) => requirement.group_id === group.id))
+    .filter((requirements) => requirements.length);
+  container.classList.toggle('six-columns', grouped.length > 4);
+  grouped.flat().forEach((requirement) => {
+    const label = element('label', 'switch');
+    const input = element('input');
+    input.type = 'checkbox';
+    input.dataset.rule = requirement.code;
+    input.checked = selected.has(requirement.code);
+    input.addEventListener('change', renderProjects);
+    label.append(input, element('span'), document.createTextNode(requirement.title));
+    container.append(label);
+  });
 }
 function formatDate(value) {
   if (!value) return '—';
@@ -73,6 +98,42 @@ function element(tag, className, text) {
   if (className) node.className = className;
   if (text !== undefined) node.textContent = text;
   return node;
+}
+const ICON_PATHS = {
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  check: '<path d="m5 12 4 4L19 6"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',
+  move: '<path d="m9 5-5 5 5 5M4 10h10a6 6 0 0 1 6 6v3"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/>',
+  group: '<path d="M8 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3M16 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M8 12h8M12 8v8"/>',
+};
+function iconElement(name) {
+  const holder = document.createElement('span');
+  holder.innerHTML = `<svg class="button-icon" viewBox="0 0 24 24" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
+  return holder.firstElementChild;
+}
+function iconButton(icon, className, title) {
+  const button = element('button', `${className} icon-button`);
+  button.type = 'button';
+  button.title = title;
+  button.setAttribute('aria-label', title);
+  button.append(iconElement(icon));
+  return button;
+}
+document.querySelectorAll('[data-icon]').forEach((button) => button.append(iconElement(button.dataset.icon)));
+function confirmAction(title, message, confirmLabel = 'Подтвердить действие') {
+  const dialog = document.querySelector('#confirm-dialog');
+  const submit = document.querySelector('#confirm-dialog-submit');
+  document.querySelector('#confirm-dialog-title').textContent = title;
+  document.querySelector('#confirm-dialog-message').textContent = message;
+  submit.title = confirmLabel;
+  submit.setAttribute('aria-label', confirmLabel);
+  dialog.returnValue = 'cancel';
+  dialog.showModal();
+  return new Promise((resolve) => {
+    dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
+  });
 }
 function subprojectView(project, subproject, detected = true) {
   const isRoot = subproject.path === '.';
@@ -140,7 +201,10 @@ async function showPage() {
 async function ensurePageLoaded(pageName) {
   if (state.loaded[pageName]) return;
   if (!state.loading[pageName]) {
-    const loaders = { dashboard: loadDashboard, projects: loadProjects, dependencies: loadDependencies, admin: loadAdmin };
+    const loaders = {
+      dashboard: loadDashboard, projects: loadProjects, dependencies: loadDependencies,
+      requirements: loadRequirementsPage, parameters: loadParametersPage, admin: loadAdmin,
+    };
     state.loading[pageName] = loaders[pageName]().finally(() => { delete state.loading[pageName]; });
   }
   await state.loading[pageName];
@@ -315,7 +379,7 @@ function appendProjectHooks(container, project) {
   }
   const hooks = element('div', 'webhook-list');
   project.webhooks.forEach((hook) => {
-    const entry = element('button', `webhook-entry${hook.is_aist_reviewer ? ' webhook-required' : ''}`);
+    const entry = element('button', 'webhook-entry');
     entry.type = 'button';
     entry.append(element('strong', '', hook.name || hook.url));
     if (hook.name) entry.append(element('small', '', hook.url));
@@ -346,9 +410,9 @@ function appendTechnologyStatuses(container, project) {
   appendDetail(container, 'Технологии', statuses);
 }
 function appendRuleViolations(container, results) {
-  const violations = Object.entries(RULE_TITLES)
-    .filter(([code]) => results?.[code] === false)
-    .map(([, title]) => title);
+  const violations = activeRequirements()
+    .filter((requirement) => results?.[requirement.code] === false)
+    .map((requirement) => requirement.title);
   if (!violations.length) return;
   const badges = element('div', 'rule-violations');
   violations.forEach((title) => badges.append(element('span', '', title)));
@@ -381,10 +445,11 @@ function renderProjectDetail(view, subproject) {
   ].filter(Boolean).join(' · ');
   appendDetail(detail, 'Python', pythonDetails);
   const compliance = element('p', 'detail-value compliance-value', `${subproject.compliance}%`);
+  const [dangerThreshold, successThreshold] = parameterRange('project_compliance_thresholds');
   compliance.classList.add(
-    subproject.compliance < 50
+    subproject.compliance < dangerThreshold
       ? 'compliance-danger'
-      : subproject.compliance < 80
+      : subproject.compliance < successThreshold
         ? 'compliance-warning'
         : 'compliance-success',
   );
@@ -417,14 +482,26 @@ function compactStatRow(label, value) {
   return row;
 }
 function pythonVersionLink(item) {
-  const version = item.version.split('.').map(Number);
   const row = element('button', 'compact-stat-link');
   row.type = 'button';
-  if (version[0] < 3 || (version[0] === 3 && version[1] <= 10)) row.classList.add('python-version-danger');
-  else if (version[0] === 3 && version[1] === 11) row.classList.add('python-version-warning');
+  const oldestCurrent = parameterValue('python_oldest_current_version');
+  const comparison = compareVersions(item.version, oldestCurrent);
+  if (comparison < 0) row.classList.add('python-version-danger');
+  else if (comparison === 0) row.classList.add('python-version-warning');
   row.append(element('span', '', `Python ${item.version}`), element('b', '', String(item.projects_count)));
   row.addEventListener('click', () => openPythonVersion(item.version));
   return row;
+}
+function parameterValue(key) {
+  return state.parameters.find((parameter) => parameter.key === key).value;
+}
+function parameterRange(key) {
+  return parameterValue(key).split(',').map(Number);
+}
+function compareVersions(left, right) {
+  const leftParts = left.split('.').map(Number);
+  const rightParts = right.split('.').map(Number);
+  return (leftParts[0] || 0) - (rightParts[0] || 0) || (leftParts[1] || 0) - (rightParts[1] || 0);
 }
 function stableFraction(value) {
   let hash = 2166136261;
@@ -520,17 +597,23 @@ function renderDashboard(dashboard) {
     row.addEventListener('click', () => openDependency(item.name));
     topDependencies.append(row);
   });
-  if (!dashboard.top_dependencies.length) topDependencies.append(element('p', 'empty-state', 'Зависимости ещё не найдены.'));
+  if (!dashboard.top_dependencies.length) topDependencies.append(element('p', 'empty-state', 'Зависимости еще не найдены.'));
 
   const requirements = document.querySelector('#company-requirements');
   requirements.replaceChildren();
-  const requirementsByCode = new Map(dashboard.company_requirements.map((item) => [item.code, item]));
-  RULE_GROUPS.forEach((definition) => {
+  const configuredByCode = new Map(activeRequirements().map((item) => [item.code, item]));
+  const groups = new Map(state.requirementGroups.map((group) => [group.name, []]));
+  dashboard.company_requirements.forEach((item) => {
+    const configured = configuredByCode.get(item.code);
+    const groupName = state.requirementGroups.find((group) => group.id === configured?.group_id)?.name || 'Без группы';
+    if (!groups.has(groupName)) groups.set(groupName, []);
+    groups.get(groupName).push(item);
+  });
+  groups.forEach((itemsForGroup, groupName) => {
+    if (!itemsForGroup.length) return;
     const group = element('section', 'requirement-group');
     const items = element('div', 'requirement-group-items');
-    definition.rules.forEach((code) => {
-      const item = requirementsByCode.get(code);
-      if (!item) return;
+    itemsForGroup.forEach((item) => {
       const card = element('button', 'requirement');
       card.type = 'button';
       const progress = element('div', 'requirement-progress');
@@ -538,16 +621,16 @@ function renderDashboard(dashboard) {
       progressValue.style.width = `${item.compliance_percentage}%`;
       progress.append(progressValue);
       card.append(
-        element('strong', '', RULE_TITLES[code]),
+        element('strong', '', item.title),
         element('b', '', `${item.compliance_percentage}%`),
         progress,
         element('small', '', `${item.matching_projects} из ${item.total_projects}`),
       );
       card.title = item.description;
-      card.addEventListener('click', () => openRuleViolations(code));
+      card.addEventListener('click', () => openRuleViolations(item.code));
       items.append(card);
     });
-    group.append(element('h4', '', definition.title), items);
+    group.append(element('h4', '', groupName), items);
     requirements.append(group);
   });
 
@@ -557,7 +640,7 @@ function renderDashboard(dashboard) {
 }
 function renderDataQuality(quality) {
   document.querySelector('#data-quality-stats').replaceChildren(
-    compactStatRow('Менеджер не определён', quality.unknown_package_manager),
+    compactStatRow('Менеджер не определен', quality.unknown_package_manager),
     compactStatRow('Версия Python не определена', quality.unknown_python_version),
     compactStatRow('Без подпроектов', quality.projects_without_subprojects),
     compactStatRow('Ошибки анализа', quality.analysis_errors),
@@ -575,17 +658,487 @@ function renderLastScan(scan) {
       compactStatRow('Ошибки', scan.errors_count),
       compactStatRow('Обращения к GitLab', scan.gitlab_requests),
     );
-  } else lastScan.append(element('p', 'empty-state', 'Сканирование ещё не запускалось.'));
+  } else lastScan.append(element('p', 'empty-state', 'Сканирование еще не запускалось.'));
 }
-async function loadDashboard() { renderDashboard(await api(API.dashboard)); state.loaded.dashboard = true; }
+function optionSelect(options, value, className) {
+  const select = element('select', className);
+  options.forEach((option) => {
+    const node = element('option', '', option.title);
+    node.value = option.value;
+    node.selected = option.value === value;
+    select.append(node);
+  });
+  return select;
+}
+function conditionLogicSelect(value = 'and') {
+  return optionSelect(
+    [
+      { value: 'and', title: 'И — должны выполняться все' },
+      { value: 'or', title: 'ИЛИ — достаточно одного' },
+    ],
+    value,
+    'condition-group-logic',
+  );
+}
+function addRequirementCondition(condition = {}, container = document.querySelector('#requirement-conditions')) {
+  const row = element('div', 'requirement-condition');
+  const source = optionSelect(state.requirementCatalog.sources, condition.source, 'condition-source');
+  const operator = optionSelect(state.requirementCatalog.operators, condition.operator, 'condition-operator');
+  const values = element('input', 'condition-values');
+  values.required = true;
+  values.placeholder = 'Значения через запятую';
+  values.value = (condition.values || []).join(', ');
+  const emptyLabel = element('label', 'condition-empty');
+  const empty = element('input');
+  empty.type = 'checkbox';
+  empty.className = 'condition-empty-result';
+  empty.checked = Boolean(condition.empty_result);
+  emptyLabel.append(empty, document.createTextNode(' Если данных нет — требование выполнено'));
+  const remove = element('button', 'condition-remove');
+  remove.type = 'button';
+  remove.title = 'Удалить условие';
+  remove.setAttribute('aria-label', 'Удалить условие');
+  remove.append(iconElement('close'));
+  remove.addEventListener('click', () => {
+    if (container.children.length > 1) row.remove();
+  });
+  row.append(source, operator, values, emptyLabel, remove);
+  container.append(row);
+}
+function addRequirementConditionGroup(group = {}, container = document.querySelector('#requirement-conditions')) {
+  const node = element('section', 'condition-group');
+  const heading = element('div', 'condition-group-heading');
+  const logic = conditionLogicSelect(group.logic || 'and');
+  logic.setAttribute('aria-label', 'Логика группы условий');
+  const logicField = element('label', 'condition-group-logic-field');
+  logicField.append(document.createTextNode('Как объединять условия'), logic);
+  const actions = element('div', 'condition-group-actions');
+  const addCondition = iconButton('plus', 'secondary-button', 'Добавить условие в группу');
+  const addGroup = iconButton('group', 'secondary-button', 'Добавить вложенную группу');
+  const remove = iconButton('trash', 'danger-button', 'Удалить группу условий');
+  const items = element('div', 'condition-group-items');
+  addCondition.addEventListener('click', () => addRequirementCondition({}, items));
+  addGroup.addEventListener('click', () => addRequirementConditionGroup({}, items));
+  remove.addEventListener('click', () => {
+    if (container.children.length > 1) node.remove();
+  });
+  actions.append(addCondition, addGroup, remove);
+  heading.append(element('strong', '', 'Группа условий'), actions);
+  node.append(heading, logicField, items);
+  (group.items || [{}]).forEach((condition) => addRequirementConditionNode(condition, items));
+  container.append(node);
+}
+function addRequirementConditionNode(node, container = document.querySelector('#requirement-conditions')) {
+  if (node && Array.isArray(node.items)) addRequirementConditionGroup(node, container);
+  else addRequirementCondition(node || {}, container);
+}
+function conditionNodePayload(node) {
+  if (node.classList.contains('condition-group')) {
+    const items = node.querySelector(':scope > .condition-group-items');
+    return {
+      logic: node.querySelector(':scope > .condition-group-logic-field .condition-group-logic').value,
+      items: [...items.children].map(conditionNodePayload),
+    };
+  }
+  return {
+    source: node.querySelector('.condition-source').value,
+    operator: node.querySelector('.condition-operator').value,
+    values: node.querySelector('.condition-values').value.split(',').map((value) => value.trim()).filter(Boolean),
+    empty_result: node.querySelector('.condition-empty-result').checked,
+  };
+}
+function countConditionNodes(nodes) {
+  return nodes.reduce((count, node) => count + (
+    Array.isArray(node.items) ? countConditionNodes(node.items) : 1
+  ), 0);
+}
+function requirementPayload() {
+  const requirementId = Number(document.querySelector('#requirement-id').value);
+  const current = state.requirements.find((requirement) => requirement.id === requirementId);
+  return {
+    code: document.querySelector('#requirement-code').value.trim(),
+    title: document.querySelector('#requirement-title').value.trim(),
+    group_id: current?.group_id || state.selectedRequirementGroupId,
+    description: document.querySelector('#requirement-description').value.trim(),
+    enabled: current?.enabled ?? true,
+    sort_order: current?.sort_order || (
+      state.requirements.filter((requirement) => requirement.group_id === state.selectedRequirementGroupId).length + 1
+    ) * 10,
+    condition: {
+      logic: document.querySelector('#requirement-condition-logic').value,
+      items: [...document.querySelector('#requirement-conditions').children].map(conditionNodePayload),
+    },
+  };
+}
+function resetRequirementForm() {
+  document.querySelector('#requirement-form').reset();
+  document.querySelector('#requirement-id').value = '';
+  document.querySelector('#requirement-conditions').replaceChildren();
+  addRequirementCondition();
+  document.querySelector('#requirement-dialog-title').textContent = 'Новое требование';
+}
+function editRequirement(requirement) {
+  document.querySelector('#requirement-id').value = requirement.id;
+  document.querySelector('#requirement-title').value = requirement.title;
+  document.querySelector('#requirement-code').value = requirement.code;
+  document.querySelector('#requirement-description').value = requirement.description;
+  document.querySelector('#requirement-condition-logic').value = requirement.condition.logic;
+  document.querySelector('#requirement-conditions').replaceChildren();
+  requirement.condition.items.forEach((condition) => addRequirementConditionNode(condition));
+  document.querySelector('#requirement-dialog-title').textContent = 'Редактирование требования';
+  document.querySelector('#requirement-dialog').showModal();
+  document.querySelector('#requirement-title').focus();
+}
+async function removeRequirement(requirement) {
+  const confirmed = await confirmAction(
+    'Удалить требование?',
+    `Требование «${requirement.title}» будет удалено без возможности восстановления.`,
+    'Удалить требование',
+  );
+  if (!confirmed) return;
+  await api(`${API.requirements}${requirement.id}`, { method: 'DELETE' });
+  await reloadRequirements();
+}
+function groupPayload() {
+  const groupId = Number(document.querySelector('#requirement-group-id').value);
+  const current = state.requirementGroups.find((group) => group.id === groupId);
+  return {
+    name: document.querySelector('#requirement-group-name').value.trim(),
+    description: document.querySelector('#requirement-group-description').value.trim(),
+    sort_order: current?.sort_order || (state.requirementGroups.length + 1) * 10,
+  };
+}
+function resetGroupForm() {
+  document.querySelector('#requirement-group-form').reset();
+  document.querySelector('#requirement-group-id').value = '';
+  document.querySelector('#group-dialog-title').textContent = 'Новая группа';
+}
+function editRequirementGroup(group) {
+  document.querySelector('#requirement-group-id').value = group.id;
+  document.querySelector('#requirement-group-name').value = group.name;
+  document.querySelector('#requirement-group-description').value = group.description;
+  document.querySelector('#group-dialog-title').textContent = 'Редактирование группы';
+  document.querySelector('#group-dialog').showModal();
+  document.querySelector('#requirement-group-name').focus();
+}
+async function removeRequirementGroup(group) {
+  const confirmed = await confirmAction(
+    'Удалить группу?',
+    `Группа «${group.name}» будет удалена без возможности восстановления.`,
+    'Удалить группу',
+  );
+  if (!confirmed) return;
+  await api(`${API.requirementGroups}${group.id}`, { method: 'DELETE' });
+  if (state.selectedRequirementGroupId === group.id) state.selectedRequirementGroupId = null;
+  await reloadRequirements();
+}
+function renderRequirementGroups() {
+  const container = document.querySelector('#requirement-groups');
+  if (!container) return;
+  document.querySelector('#requirements-count').textContent = state.requirementGroups.length;
+  container.replaceChildren();
+  state.requirementGroups.forEach((group) => {
+    const node = element(
+      'button',
+      `requirement-group-list-item${group.id === state.selectedRequirementGroupId ? ' active' : ''}`,
+    );
+    node.type = 'button';
+    node.dataset.groupId = group.id;
+    node.title = `Открыть группу «${group.name}»`;
+    const handle = element('span', 'group-drag-handle', '⋮⋮');
+    handle.draggable = true;
+    handle.title = 'Перетащить группу';
+    handle.addEventListener('click', (event) => event.stopPropagation());
+    const summary = element('div');
+    const groupRequirements = state.requirements.filter((requirement) => requirement.group_id === group.id);
+    summary.append(
+      element('strong', '', group.name),
+      element('small', '', `${groupRequirements.length} из 6`),
+    );
+    node.append(handle, summary, element('span', 'group-open-mark', '›'));
+    node.addEventListener('click', () => {
+      state.selectedRequirementGroupId = group.id;
+      renderRequirementGroups();
+    });
+    container.append(node);
+  });
+  if (!state.requirementGroups.length) container.append(element('p', 'empty-state', 'Сначала создайте группу.'));
+  renderRequirementGroupDetail();
+}
+function renderRequirementGroupDetail() {
+  const detail = document.querySelector('#requirement-group-detail');
+  const group = state.requirementGroups.find((item) => item.id === state.selectedRequirementGroupId);
+  detail.replaceChildren();
+  delete detail.dataset.groupId;
+  if (!group) {
+    detail.append(element('p', 'empty-state', 'Выберите группу, чтобы посмотреть требования.'));
+    return;
+  }
+  detail.dataset.groupId = group.id;
+  const heading = element('div', 'requirement-detail-heading');
+  const identity = element('div');
+  identity.append(element('h3', '', group.name));
+  if (group.description) identity.append(element('p', 'muted', group.description));
+  const groupRequirements = state.requirements.filter((requirement) => requirement.group_id === group.id);
+  const actions = element('div', 'admin-requirement-actions');
+  const edit = iconButton('edit', 'secondary-button', 'Изменить группу');
+  edit.addEventListener('click', () => editRequirementGroup(group));
+  const add = iconButton('plus', 'primary-button', 'Добавить требование');
+  add.disabled = groupRequirements.length >= 6;
+  add.addEventListener('click', () => {
+    resetRequirementForm();
+    document.querySelector('#requirement-dialog').showModal();
+  });
+  const remove = iconButton('trash', 'danger-button', 'Удалить группу');
+  remove.addEventListener('click', () => removeRequirementGroup(group).catch(showError));
+  actions.append(edit, add, remove);
+  heading.append(identity, actions);
+  const requirements = element('div', 'requirement-detail-items');
+  groupRequirements.forEach((requirement) => requirements.append(requirementTreeItem(requirement)));
+  if (!groupRequirements.length) requirements.append(element('p', 'empty-state', 'В группе пока нет требований.'));
+  detail.append(heading, requirements);
+}
+function requirementTreeItem(requirement) {
+  const item = element('div', `requirement-tree-item${requirement.enabled ? '' : ' disabled'}`);
+  item.dataset.requirementId = requirement.id;
+  const handle = element('span', 'requirement-drag-handle', '⋮⋮');
+  handle.draggable = true;
+  handle.title = 'Перетащить требование';
+  const summary = element('div', 'requirement-tree-summary');
+  summary.append(
+    element('strong', '', requirement.title),
+    element('small', '', `${requirement.code} · условий: ${countConditionNodes(requirement.condition.items)}`),
+  );
+  const enabled = element('label', 'switch requirement-enabled-switch');
+  const input = element('input');
+  input.type = 'checkbox';
+  input.checked = requirement.enabled;
+  input.addEventListener('change', async () => {
+    try { await setRequirementEnabled(requirement, input.checked); } catch (error) {
+      input.checked = requirement.enabled;
+      showError(error);
+    }
+  });
+  enabled.append(input, element('span'));
+  enabled.title = requirement.enabled ? 'Требование включено' : 'Требование выключено';
+  const actions = element('div', 'admin-requirement-actions');
+  const edit = iconButton('edit', 'secondary-button', 'Изменить требование');
+  edit.addEventListener('click', () => editRequirement(requirement));
+  const move = iconButton('move', 'secondary-button', 'Сменить группу');
+  move.disabled = !state.requirementGroups.some((group) => (
+    group.id !== requirement.group_id
+    && state.requirements.filter((item) => item.group_id === group.id).length < 6
+  ));
+  move.addEventListener('click', () => openRequirementMove(requirement));
+  const remove = iconButton('trash', 'danger-button', 'Удалить требование');
+  remove.addEventListener('click', () => removeRequirement(requirement).catch(showError));
+  actions.append(edit, move, remove);
+  item.append(handle, summary, enabled, actions);
+  return item;
+}
+async function setRequirementEnabled(requirement, enabled) {
+  const updated = await api(`${API.requirements}${requirement.id}/enabled`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  });
+  state.requirements = state.requirements.map((item) => item.id === updated.id ? updated : item);
+  state.loaded.dashboard = false;
+  state.loaded.projects = false;
+  renderRuleFilters();
+  renderRequirementGroups();
+}
+function openRequirementMove(requirement) {
+  document.querySelector('#move-requirement-id').value = requirement.id;
+  document.querySelector('#move-requirement-title').textContent = requirement.title;
+  const select = document.querySelector('#move-requirement-group');
+  select.replaceChildren();
+  state.requirementGroups
+    .filter((group) => (
+      group.id !== requirement.group_id
+      && state.requirements.filter((item) => item.group_id === group.id).length < 6
+    ))
+    .forEach((group) => {
+      const option = element('option', '', group.name);
+      option.value = group.id;
+      select.append(option);
+    });
+  document.querySelector('#move-requirement-dialog').showModal();
+}
+async function moveRequirement(requirementId, groupId) {
+  await api(`${API.requirements}${requirementId}/group`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ group_id: groupId }),
+  });
+  state.requirements = await api(API.requirements);
+  state.loaded.dashboard = false;
+  state.loaded.projects = false;
+  renderRuleFilters();
+  renderRequirementGroups();
+}
+async function saveRequirementGroupOrder() {
+  const groupIds = [...document.querySelectorAll('#requirement-groups [data-group-id]')]
+    .map((item) => Number(item.dataset.groupId));
+  state.requirementGroups = await api(`${API.requirementGroups}order`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ group_ids: groupIds }),
+  });
+  state.loaded.dashboard = false;
+  renderRequirementGroups();
+}
+async function saveRequirementOrder(groupNode) {
+  const requirementIds = [...groupNode.querySelectorAll('[data-requirement-id]')]
+    .map((item) => Number(item.dataset.requirementId));
+  state.requirements = await api(`${API.requirements}order`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ group_id: Number(groupNode.dataset.groupId), requirement_ids: requirementIds }),
+  });
+  state.loaded.dashboard = false;
+  renderRequirementGroups();
+}
+async function reloadRequirements() {
+  [state.requirements, state.requirementGroups] = await Promise.all([
+    api(API.requirements), api(API.requirementGroups),
+  ]);
+  if (!state.requirementGroups.some((group) => group.id === state.selectedRequirementGroupId)) {
+    state.selectedRequirementGroupId = null;
+  }
+  state.loaded.dashboard = false;
+  state.loaded.projects = false;
+  state.loaded.requirements = false;
+  renderRuleFilters();
+  renderRequirementGroups();
+  resetRequirementForm();
+  resetGroupForm();
+}
+async function loadDashboard() {
+  const [dashboard] = await Promise.all([api(API.dashboard), ensureRequirements(), ensureParameters()]);
+  renderDashboard(dashboard);
+  state.loaded.dashboard = true;
+}
+async function ensureParameters() {
+  if (!state.parameters.length) state.parameters = await api(API.parameters);
+}
+function renderParameters() {
+  const fields = document.querySelector('#parameter-fields');
+  fields.replaceChildren();
+  state.parameters.forEach((parameter) => {
+    if (parameter.value_type === 'percentage_range') {
+      fields.append(percentageParameterField(parameter));
+      return;
+    }
+    const label = element('label', 'parameter-field');
+    const input = element('input');
+    input.className = 'parameter-value-input';
+    input.name = parameter.key;
+    input.value = parameter.value;
+    input.required = true;
+    if (parameter.value_type === 'version') {
+      input.inputMode = 'decimal';
+      input.pattern = '\\d+\\.\\d+';
+      input.placeholder = '3.11';
+    } else if (parameter.value_type === 'integer') {
+      input.type = 'number';
+      input.step = '1';
+      if (parameter.min_value !== null) input.min = parameter.min_value;
+      if (parameter.max_value !== null) input.max = parameter.max_value;
+    }
+    label.append(element('strong', '', parameter.title), input);
+    if (parameter.description) label.append(element('small', '', parameter.description));
+    fields.append(label);
+  });
+}
+function percentageParameterField(parameter) {
+  const field = element('section', 'parameter-field percentage-parameter');
+  const hidden = element('input');
+  hidden.type = 'hidden';
+  hidden.name = parameter.key;
+  const minimum = parameter.min_value ?? 0;
+  const maximum = parameter.max_value ?? 100;
+  let [lowerValue, upperValue] = parameter.value.split(',').map(Number);
+  const preview = element('div', 'threshold-preview');
+  const danger = element('span', 'threshold-danger');
+  const warning = element('span', 'threshold-warning');
+  const success = element('span', 'threshold-success');
+  preview.append(danger, warning, success);
+  const controls = element('div', 'threshold-controls');
+  const lower = element('input');
+  const upper = element('input');
+  [lower, upper].forEach((input) => {
+    input.type = 'range';
+    input.min = minimum;
+    input.max = maximum;
+    input.step = '1';
+  });
+  lower.value = lowerValue;
+  upper.value = upperValue;
+  const lowerOutput = element('output');
+  const upperOutput = element('output');
+  const lowerLabel = element('label');
+  const upperLabel = element('label');
+  lowerLabel.append(element('span', '', 'Предупреждение начинается'), lower, lowerOutput);
+  upperLabel.append(element('span', '', 'Успешная зона начинается'), upper, upperOutput);
+  controls.append(lowerLabel, upperLabel);
+  function update(changed) {
+    lowerValue = Number(lower.value);
+    upperValue = Number(upper.value);
+    if (lowerValue >= upperValue) {
+      if (changed === lower) upperValue = Math.min(maximum, lowerValue + 1);
+      else lowerValue = Math.max(minimum, upperValue - 1);
+      lower.value = lowerValue;
+      upper.value = upperValue;
+    }
+    hidden.value = `${lowerValue},${upperValue}`;
+    lowerOutput.value = `${lowerValue}%`;
+    upperOutput.value = `${upperValue}%`;
+    const span = maximum - minimum || 1;
+    danger.style.width = `${(lowerValue - minimum) / span * 100}%`;
+    warning.style.width = `${(upperValue - lowerValue) / span * 100}%`;
+    success.style.width = `${(maximum - upperValue) / span * 100}%`;
+  }
+  lower.addEventListener('input', () => update(lower));
+  upper.addEventListener('input', () => update(upper));
+  update();
+  field.append(element('strong', '', parameter.title), preview, controls, hidden);
+  if (parameter.description) field.append(element('small', '', parameter.description));
+  return field;
+}
+async function loadParametersPage() {
+  await ensureParameters();
+  renderParameters();
+  state.loaded.parameters = true;
+}
+async function saveParameters() {
+  const values = Object.fromEntries(state.parameters.map((parameter) => [
+    parameter.key,
+    document.querySelector(`#parameters-form [name="${parameter.key}"]`).value.trim(),
+  ]));
+  state.parameters = await api(API.parameters, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ values }),
+  });
+  state.loaded.dashboard = false;
+  renderParameters();
+}
 async function loadAdmin() {
   const dashboard = await api(API.dashboard);
   renderLastScan(dashboard.last_scan);
   renderDataQuality(dashboard.data_quality);
   state.loaded.admin = true;
 }
+async function loadRequirementsPage() {
+  await ensureRequirements();
+  renderRequirementGroups();
+  if (!document.querySelector('.requirement-condition')) addRequirementCondition();
+  state.loaded.requirements = true;
+}
 async function loadProjects() {
-  state.projects = await api(API.projects);
+  const [projects] = await Promise.all([api(API.projects), ensureRequirements(), ensureParameters()]);
+  state.projects = projects;
   state.loaded.projects = true;
   renderProjects();
   const selected = state.projects.find((project) => project.id === state.selectedId);
@@ -714,7 +1267,7 @@ function renderScanStatus(scan) {
   document.querySelector('#scan-state').textContent = scan.state_title;
   document.querySelector('#scan-button').disabled = scan.state === 'running';
   document.querySelector('#scan-dot').className = scan.state;
-  let description = 'Сканирование ещё не запускалось.';
+  let description = 'Сканирование еще не запускалось.';
   if (scan.state === 'running') description = `${PHASE_TITLES[scan.phase]} · запущено ${formatDate(scan.started_at)}`;
   if (scan.state === 'completed') description = `Завершено ${formatDate(scan.completed_at)} · проектов: ${scan.projects_count}`;
   if (scan.state === 'failed') description = `Завершено ${formatDate(scan.completed_at)} · ${scan.error || 'неизвестная ошибка'}`;
@@ -768,9 +1321,6 @@ document.querySelectorAll('.nav-item').forEach((item) => {
 });
 window.addEventListener('hashchange', showPage);
 document.querySelector('#project-search').addEventListener('input', renderProjects);
-document.querySelectorAll('.rule-switches input').forEach((input) => {
-  input.addEventListener('change', renderProjects);
-});
 document.querySelector('#dependency-search').addEventListener('input', renderDependencies);
 document.querySelector('#show-transitive').addEventListener('change', (event) => {
   state.showTransitive = event.target.checked;
@@ -792,6 +1342,126 @@ themeToggle.addEventListener('change', () => {
 document.querySelector('#scan-button').addEventListener('click', async () => {
   try { await api(API.scan, { method: 'POST' }); } catch (error) { showError(error); }
   await refreshScanStatus();
+});
+document.querySelector('#parameters-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try { await saveParameters(); } catch (error) { showError(error); }
+});
+document.querySelector('#add-condition').addEventListener('click', () => addRequirementCondition());
+document.querySelector('#add-condition-group').addEventListener('click', () => addRequirementConditionGroup());
+document.querySelector('#create-group').addEventListener('click', () => {
+  resetGroupForm();
+  document.querySelector('#group-dialog').showModal();
+});
+document.querySelector('#cancel-requirement-edit').addEventListener('click', () => {
+  document.querySelector('#requirement-dialog').close();
+  resetRequirementForm();
+});
+document.querySelector('#cancel-group-edit').addEventListener('click', () => {
+  document.querySelector('#group-dialog').close();
+  resetGroupForm();
+});
+document.querySelector('#cancel-requirement-move').addEventListener('click', () => {
+  document.querySelector('#move-requirement-dialog').close();
+});
+const requirementGroups = document.querySelector('#requirement-groups');
+let draggedGroup = null;
+requirementGroups.addEventListener('dragstart', (event) => {
+  if (!event.target.closest('.group-drag-handle')) return;
+  draggedGroup = event.target.closest('[data-group-id]');
+  draggedGroup.classList.add('group-dragging');
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', draggedGroup.dataset.groupId);
+});
+requirementGroups.addEventListener('dragover', (event) => {
+  if (!draggedGroup) return;
+  event.preventDefault();
+  const target = event.target.closest('[data-group-id]');
+  if (!target || target === draggedGroup) return;
+  const bounds = target.getBoundingClientRect();
+  const afterTarget = event.clientY > bounds.top + bounds.height / 2;
+  requirementGroups.insertBefore(draggedGroup, afterTarget ? target.nextSibling : target);
+});
+requirementGroups.addEventListener('drop', async (event) => {
+  if (!draggedGroup) return;
+  event.preventDefault();
+  try { await saveRequirementGroupOrder(); } catch (error) {
+    showError(error);
+    await reloadRequirements();
+  }
+});
+requirementGroups.addEventListener('dragend', () => {
+  draggedGroup?.classList.remove('group-dragging');
+  draggedGroup = null;
+});
+let draggedRequirement = null;
+const requirementGroupDetail = document.querySelector('#requirement-group-detail');
+requirementGroupDetail.addEventListener('dragstart', (event) => {
+  if (!event.target.closest('.requirement-drag-handle')) return;
+  draggedRequirement = event.target.closest('[data-requirement-id]');
+  draggedRequirement.classList.add('requirement-dragging');
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', draggedRequirement.dataset.requirementId);
+});
+requirementGroupDetail.addEventListener('dragover', (event) => {
+  if (!draggedRequirement) return;
+  event.preventDefault();
+  const target = event.target.closest('[data-requirement-id]');
+  if (!target || target === draggedRequirement) return;
+  const sourceGroup = draggedRequirement.closest('[data-group-id]');
+  if (target.closest('[data-group-id]') !== sourceGroup) return;
+  const bounds = target.getBoundingClientRect();
+  const afterTarget = event.clientY > bounds.top + bounds.height / 2;
+  target.parentElement.insertBefore(draggedRequirement, afterTarget ? target.nextSibling : target);
+});
+requirementGroupDetail.addEventListener('drop', async (event) => {
+  if (!draggedRequirement) return;
+  event.preventDefault();
+  const groupNode = draggedRequirement.closest('[data-group-id]');
+  try { await saveRequirementOrder(groupNode); } catch (error) {
+    showError(error);
+    await reloadRequirements();
+  }
+});
+requirementGroupDetail.addEventListener('dragend', () => {
+  draggedRequirement?.classList.remove('requirement-dragging');
+  draggedRequirement = null;
+});
+document.querySelector('#requirement-group-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const groupId = document.querySelector('#requirement-group-id').value;
+  try {
+    await api(groupId ? `${API.requirementGroups}${groupId}` : API.requirementGroups, {
+      method: groupId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(groupPayload()),
+    });
+    await reloadRequirements();
+    document.querySelector('#group-dialog').close();
+  } catch (error) { showError(error); }
+});
+document.querySelector('#move-requirement-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try {
+    await moveRequirement(
+      Number(document.querySelector('#move-requirement-id').value),
+      Number(document.querySelector('#move-requirement-group').value),
+    );
+    document.querySelector('#move-requirement-dialog').close();
+  } catch (error) { showError(error); }
+});
+document.querySelector('#requirement-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const requirementId = document.querySelector('#requirement-id').value;
+  try {
+    await api(requirementId ? `${API.requirements}${requirementId}` : API.requirements, {
+      method: requirementId ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requirementPayload()),
+    });
+    await reloadRequirements();
+    document.querySelector('#requirement-dialog').close();
+  } catch (error) { showError(error); }
 });
 showPage();
 refreshScanStatus();

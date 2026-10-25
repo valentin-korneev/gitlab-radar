@@ -41,7 +41,7 @@ def parse_pyproject(document: dict[str, Any]) -> DependencyDeclarations:
         optional_dependencies=dependency_groups(groups),
         python_constraint=pyproject_python_constraint(document),
         project_name=canonicalize_name(project_name) if isinstance(project_name, str) and project_name else None,
-        configured_tools={name for name in ('ruff', 'bandit', 'pylint') if isinstance(tool.get(name), dict)},
+        configured_tools=set(tool),
     )
 
 

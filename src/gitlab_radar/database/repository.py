@@ -1,13 +1,9 @@
-import json
 import logging
-from datetime import UTC, datetime
 from pathlib import Path
 
-from gitlab_radar.config import settings
 from gitlab_radar.database.models import ProjectFile, ProjectSnapshot, ScanRun
 from gitlab_radar.schemas.project import Project
-from gitlab_radar.schemas.scan import ScanState
-from gitlab_radar.services.company_rules import apply_company_compliance
+from gitlab_radar.services.company_rules import apply_company_compliance, load_company_requirements
 
 logger = logging.getLogger(__name__)
 REUSED_PROJECT_METADATA_FIELDS = {
@@ -37,54 +33,6 @@ class ProjectCache:
 PROJECT_CACHE = ProjectCache()
 
 
-async def import_legacy_snapshot() -> None:
-    if await ScanRun.filter(published=True).exists():
-        return
-
-    path = settings.application.data_dir / 'projects.json'
-    if not path.exists():
-        return
-
-    try:
-        payloads = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, json.JSONDecodeError):
-        logger.exception('Не удалось импортировать прежний снимок проектов из %s', path)
-        return
-    if not isinstance(payloads, list):
-        logger.warning('Прежний снимок проектов имеет неожиданный формат: %s', path)
-        return
-
-    now = datetime.now(UTC)
-    scan = await ScanRun.create(
-        state=ScanState.COMPLETED,
-        phase='completed',
-        started_at=now,
-        completed_at=now,
-        projects_count=len(payloads),
-        total_steps=len(payloads),
-        completed_steps=len(payloads),
-        collected_projects=len(payloads),
-        analyzed_projects=len(payloads),
-        published=True,
-    )
-    snapshots = []
-    for payload in payloads:
-        if not isinstance(payload, dict) or not isinstance(payload.get('id'), int):
-            continue
-        project_payload = _without_compliance(payload)
-        snapshots.append(
-            ProjectSnapshot(
-                scan=scan,
-                gitlab_id=project_payload['id'],
-                payload=project_payload,
-                collected=True,
-                analyzed=True,
-            ),
-        )
-    await ProjectSnapshot.bulk_create(snapshots)
-    logger.info('Прежний JSON-снимок импортирован в SQLite: проектов %d', len(snapshots))
-
-
 async def latest_published_scan() -> ScanRun | None:
     return await ScanRun.filter(published=True).order_by('-id').first()
 
@@ -98,10 +46,11 @@ async def load_projects() -> list[Project]:
     if scan is None:
         return []
     if PROJECT_CACHE.scan_id != scan.id:
+        requirements = await load_company_requirements()
         rows = await ProjectSnapshot.filter(scan_id=scan.id).order_by('gitlab_id').values_list('payload', flat=True)
         projects = [Project.model_validate(payload) for payload in rows]
         for project in projects:
-            apply_company_compliance(project)
+            apply_company_compliance(project, requirements)
         PROJECT_CACHE.scan_id = scan.id
         PROJECT_CACHE.projects = projects
         logger.info('Снимок %d загружен из SQLite: проектов %d', scan.id, len(projects))
@@ -234,7 +183,7 @@ async def restore_previous_analysis(snapshot_id: int, project: Project, error: s
     return True
 
 
-async def trim_old_scans(keep: int = 5) -> None:
+async def trim_old_scans(keep: int) -> None:
     retained_ids = await ScanRun.filter(published=True).order_by('-id').limit(keep).values_list('id', flat=True)
     if retained_ids:
         await ScanRun.filter(published=True).exclude(id__in=retained_ids).delete()

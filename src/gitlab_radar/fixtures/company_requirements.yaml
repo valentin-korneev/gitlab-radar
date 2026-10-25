@@ -1,0 +1,92 @@
+- code: uv-required
+  title: Менеджер uv
+  group: Пакетный менеджер
+  description: Проект использует uv как пакетный менеджер.
+  condition:
+    logic: and
+    items:
+      - source: package_manager
+        operator: equals
+        values: [uv]
+
+- code: ruff-required
+  title: Использование ruff
+  group: Линтеры
+  description: Проект использует ruff как зависимость и настроенный инструмент.
+  condition:
+    logic: and
+    items:
+      - source: dependency_and_tool
+        operator: equals
+        values: [ruff]
+
+- code: bandit-required
+  title: Использование bandit
+  group: Линтеры
+  description: Проект использует bandit как зависимость и настроенный инструмент.
+  condition:
+    logic: and
+    items:
+      - source: dependency_and_tool
+        operator: equals
+        values: [bandit]
+
+- code: pylint-required
+  title: Использование pylint
+  group: Линтеры
+  description: Проект использует pylint как зависимость и настроенный инструмент.
+  condition:
+    logic: and
+    items:
+      - source: dependency_and_tool
+        operator: equals
+        values: [pylint]
+
+- code: python-linters-component-required
+  title: CI-компонент python-linters
+  group: GitLab (CI+Webhook)
+  description: GitLab CI подключает компонент, имя которого содержит python-linters.
+  condition:
+    logic: and
+    items:
+      - source: ci_component
+        operator: contains
+        values: [python-linters]
+
+- code: sonar-component-required
+  title: CI-компонент sonar
+  group: GitLab (CI+Webhook)
+  description: GitLab CI подключает компонент, имя которого содержит sonar.
+  condition:
+    logic: and
+    items:
+      - source: ci_component
+        operator: contains
+        values: [sonar]
+
+- code: aist-reviewer-hook-required
+  title: ALTman.Reviewer
+  group: GitLab (CI+Webhook)
+  description: В проекте настроен ALTman.Reviewer.
+  condition:
+    logic: and
+    items:
+      - source: webhook
+        operator: contains
+        values: [aist.reviewer]
+
+- code: approved-registry-required
+  title: Внутренние registry
+  group: Registry
+  description: Python-зависимости используют artifactory, образы — artifactory или gitLab-registry.
+  condition:
+    logic: and
+    items:
+      - source: package_registry
+        operator: all_contain_any
+        values: [artifactory]
+        empty_result: true
+      - source: container_registry
+        operator: all_contain_any
+        values: [artifactory, gitlab-registry]
+        empty_result: true

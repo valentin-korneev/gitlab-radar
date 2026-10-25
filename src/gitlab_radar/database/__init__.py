@@ -3,13 +3,12 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from tortoise import Tortoise
 from tortoise.contrib.fastapi import RegisterTortoise
-lazy from fastapi import FastAPI
+from fastapi import FastAPI
 
 from gitlab_radar.config import settings
+from gitlab_radar.database.fixtures import load_database_fixtures
 from gitlab_radar.database.models import ScanRun
-from gitlab_radar.database.repository import import_legacy_snapshot
 from gitlab_radar.schemas.scan import ScanState
 
 
@@ -29,20 +28,10 @@ async def database_lifespan(app: FastAPI) -> AsyncIterator[None]:
         timezone='UTC',
     )
     async with registration:
-        await _ensure_database_columns()
+        await load_database_fixtures()
         await ScanRun.filter(state=ScanState.RUNNING).update(
             state=ScanState.FAILED,
             completed_at=datetime.now(UTC),
             error='Приложение было остановлено до завершения сканирования',
         )
-        await import_legacy_snapshot()
         yield
-
-
-async def _ensure_database_columns() -> None:
-    connection = Tortoise.get_connection('default')
-    columns = await connection.execute_query_dict('PRAGMA table_info("scanrun")')
-    if not any(column.get('name') == 'gitlab_requests' for column in columns):
-        await connection.execute_query(
-            'ALTER TABLE "scanrun" ADD COLUMN "gitlab_requests" INT NOT NULL DEFAULT 0',
-        )

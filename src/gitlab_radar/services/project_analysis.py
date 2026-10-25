@@ -4,7 +4,6 @@ from pathlib import Path, PurePosixPath
 from gitlab_radar.config import settings
 from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.schemas.technology import PackageManager
-from gitlab_radar.services.company_rules import apply_company_compliance
 from gitlab_radar.services.container_parser import parse_container_images
 from gitlab_radar.services.dependency_parser import parse_pyproject_document
 from gitlab_radar.services.gitlab_ci import parse_gitlab_components
@@ -39,7 +38,6 @@ def analyze_project(project: Project, files: dict[str, Path], revision: str | No
     project.package_registries = sorted(
         {registry for item in project.subprojects for registry in item.package_registries})
     project.scan_error = None
-    apply_company_compliance(project)
     logger.info(
         'Проект %s проанализирован: подпроектов %d, файлов %d',
         project.path_with_namespace,

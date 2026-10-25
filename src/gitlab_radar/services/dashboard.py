@@ -18,7 +18,8 @@ from gitlab_radar.schemas.dashboard import (
 from gitlab_radar.schemas.dependency import DependencyLevel
 from gitlab_radar.schemas.project import Project
 from gitlab_radar.schemas.technology import PackageManager
-from gitlab_radar.services.company_rules import COMPANY_RULES
+from gitlab_radar.services.application_parameters import application_parameter_values
+from gitlab_radar.services.company_rules import load_company_requirements
 from gitlab_radar.services.dependency import build_dependency_catalog
 from gitlab_radar.services.project import load_projects
 
@@ -27,11 +28,17 @@ PACKAGE_MANAGER_TITLES = {
     PackageManager.PIP: 'pip',
     PackageManager.POETRY: 'Poetry',
     PackageManager.MIXED: 'Смешанный',
-    PackageManager.UNKNOWN: 'Не определён',
+    PackageManager.UNKNOWN: 'Не определен',
 }
 
 _dashboard_cache_scan_id: int | None = None
 _dashboard_cache: Dashboard | None = None
+
+
+def invalidate_dashboard_cache() -> None:
+    global _dashboard_cache, _dashboard_cache_scan_id  # noqa: PLW0603
+    _dashboard_cache_scan_id = None
+    _dashboard_cache = None
 
 
 async def build_dashboard() -> Dashboard:
@@ -42,6 +49,11 @@ async def build_dashboard() -> Dashboard:
         return _dashboard_cache.model_copy(deep=True)
 
     projects = await load_projects()
+    requirements = await load_company_requirements()
+    parameter_values = await application_parameter_values()
+    oldest_current_python = tuple(
+        map(int, parameter_values['python_oldest_current_version'].split('.')),
+    )
     total_projects = len(projects)
     subprojects = [subproject for project in projects for subproject in project.subprojects]
     subproject_managers = Counter(subproject.package_manager for subproject in subprojects)
@@ -124,7 +136,7 @@ async def build_dashboard() -> Dashboard:
                 total_projects=total_projects,
                 compliance_percentage=_percentage(rule_matches[rule.code], total_projects),
             )
-            for rule in COMPANY_RULES
+            for rule in requirements
         ],
         technology_target=TechnologyTarget(
             python_versions=[
@@ -136,7 +148,7 @@ async def build_dashboard() -> Dashboard:
                     projects_count=sum(
                         count
                         for version, count in python_versions.items()
-                        if tuple(map(int, version.split('.'))) >= (3, 11)
+                        if tuple(map(int, version.split('.'))) >= oldest_current_python
                     ),
                 ),
             ],
