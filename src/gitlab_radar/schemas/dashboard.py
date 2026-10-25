@@ -70,6 +70,8 @@ class Dashboard(BaseModel):
     subprojects_count: int
     docker_projects_count: int
     gitlab_ci_projects_count: int
+    fastapi_projects_count: int
+    django_projects_count: int
     package_managers: list[PackageManagerStatistics]
     dependency_counts: DependencyCountStatistics
     python_versions: list[PythonVersionStatistics]

@@ -96,14 +96,13 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .compact-statistics span, .compact-list > div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); font-size: .76rem; }
 .compact-statistics b, .compact-list b { color: var(--text); }
 .compact-list { display: grid; gap: 12px; }
-.infrastructure-stack { display: grid; gap: 18px; }
-.infrastructure-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 18px; padding: 20px 24px; }
-.infrastructure-card > div { grid-row: 1 / 3; }
+.infrastructure-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.infrastructure-card { display: flex; flex-direction: column; align-items: flex-start; aspect-ratio: 1; padding: 20px 24px; }
 .infrastructure-card p { margin: 0 0 5px; font-weight: 750; }
 .infrastructure-card span, .infrastructure-card small { color: var(--muted); font-size: .7rem; }
 .infrastructure-card span { text-transform: uppercase; letter-spacing: .09em; }
-.infrastructure-card strong { align-self: end; font-size: 2rem; line-height: 1; text-align: right; }
-.infrastructure-card small { align-self: start; text-align: right; }
+.infrastructure-card strong { display: flex; align-items: center; min-height: 50%; margin-top: auto; font-size: clamp(4.5rem, 8vw, 7rem); line-height: .8; letter-spacing: -.07em; }
+.infrastructure-card small { margin-top: 10px; color: var(--accent); font-size: .86rem; font-weight: 800; }
 .requirements-card { grid-column: 1 / -1; }
 .technology-target-card { overflow: visible; }
 .target-heading { align-items: center; }
@@ -184,6 +183,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .projects-layout, .dependencies-layout { display: grid; grid-template-columns: minmax(320px, 1.2fr) minmax(280px, .8fr); gap: 18px; align-items: start; }
 .project-list, .project-detail, .dependency-list, .dependency-detail { border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
 .project-list, .dependency-list { overflow: hidden; }
+.project-list, .project-detail { height: calc(100vh - 290px); min-height: 420px; overflow-y: auto; }
 .dependency-list { height: min(65vh, 720px); min-height: 480px; overflow-y: auto; }
 .project-tree:not(:last-child) { border-bottom: 1px solid var(--line); }
 .project-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; width: 100%; border: 0; padding: 17px 20px; background: transparent; text-align: left; cursor: pointer; }
@@ -290,6 +290,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .topbar { min-height: 100px; }
   .cards, .projects-layout, .dependencies-layout, .admin-grid { grid-template-columns: 1fr; }
   .project-detail, .dependency-detail { position: static; }
+  .project-list, .project-detail { height: auto; min-height: 0; max-height: none; overflow-y: visible; }
   .technology-target { min-height: auto; padding: 0; }
   .target-rings { width: min(620px, 88vw); margin: 0 auto; }
 }

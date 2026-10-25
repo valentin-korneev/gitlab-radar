@@ -16,6 +16,7 @@ from gitlab_radar.schemas.dashboard import (
     TechnologyUsage,
 )
 from gitlab_radar.schemas.dependency import DependencyLevel
+from gitlab_radar.schemas.project import Project
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.company_rules import COMPANY_RULES, project_rule_results
 from gitlab_radar.services.dependency import build_dependency_catalog
@@ -36,11 +37,10 @@ async def build_dashboard() -> Dashboard:
     subprojects = [subproject for project in projects for subproject in project.subprojects]
     subproject_managers = Counter(subproject.package_manager for subproject in subprojects)
     projects_by_manager = Counter(
-        manager
+        (project.package_manager or PackageManager.UNKNOWN)
+        if project.subprojects
+        else PackageManager.UNKNOWN
         for project in projects
-        for manager in {
-            subproject.package_manager for subproject in project.subprojects
-        } or {project.package_manager or PackageManager.UNKNOWN}
     )
     dependency_catalog = await build_dependency_catalog(projects)
     rule_matches = Counter(
@@ -79,13 +79,15 @@ async def build_dashboard() -> Dashboard:
         projects_count=total_projects,
         docker_projects_count=sum(project.has_docker for project in projects),
         gitlab_ci_projects_count=sum(project.has_gitlab_ci for project in projects),
+        fastapi_projects_count=sum(_project_uses_dependency(project, 'fastapi') for project in projects),
+        django_projects_count=sum(_project_uses_dependency(project, 'django') for project in projects),
         package_managers=[
             PackageManagerStatistics(
                 package_manager=package_manager,
                 title=title,
                 projects_count=projects_by_manager[package_manager],
                 subprojects_count=subproject_managers[package_manager],
-                percentage=_percentage(subproject_managers[package_manager], len(subprojects)),
+                percentage=_percentage(projects_by_manager[package_manager], total_projects),
             )
             for package_manager, title in PACKAGE_MANAGER_TITLES.items()
         ],
@@ -97,7 +99,11 @@ async def build_dashboard() -> Dashboard:
         ),
         python_versions=[
             PythonVersionStatistics(version=version, projects_count=count)
-            for version, count in sorted(python_versions.items(), key=lambda item: item[0], reverse=True)
+            for version, count in sorted(
+                python_versions.items(),
+                key=lambda item: tuple(int(part) for part in item[0].split('.')),
+                reverse=True,
+            )
         ],
         top_dependencies=[
             DependencyStatistics(name=dependency.name, projects_count=dependency.projects_count)
@@ -169,6 +175,21 @@ def _percentage(value: int, total: int) -> float:
     if not total:
         return 0.0
     return round(value / total * 100, 1)
+
+
+def _project_uses_dependency(project: Project, dependency_name: str) -> bool:
+    return any(
+        dependency.name == dependency_name
+        for subproject in project.subprojects
+        for dependency in (
+            subproject.dependencies
+            + [
+                dependency
+                for group in subproject.optional_dependencies
+                for dependency in group.dependencies
+            ]
+        )
+    )
 
 
 def _technology_usage(projects_by_name: dict[str, set[int]]) -> list[TechnologyUsage]:

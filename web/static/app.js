@@ -221,11 +221,26 @@ function appendProjectDependencies(container, subproject) {
 }
 function appendGitLabComponents(container, project) {
   if (!project.gitlab_ci_components?.length) return;
-  const components = element('div', 'dependency-badges');
+  const componentsByRegistry = new Map();
   project.gitlab_ci_components.forEach((component) => {
-    components.append(dependencyBadge(component, () => openDependency(component.name, 'ci')));
+    const registry = registryName(component.name);
+    if (!componentsByRegistry.has(registry)) componentsByRegistry.set(registry, []);
+    componentsByRegistry.get(registry).push(component);
   });
-  appendDetail(container, 'Компоненты GitLab CI', components);
+  const registryList = element('div', 'image-registry-list');
+  [...componentsByRegistry.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .forEach(([registry, components]) => {
+      const group = element('section', 'image-registry-group');
+      const badges = element('div', 'dependency-badges');
+      components.forEach((component) => badges.append(dependencyBadge(
+        { ...component, name: component.name.slice(registry.length).replace(/^\//, '') || component.name },
+        () => openDependency(component.name, 'ci'),
+      )));
+      group.append(element('h4', '', registry), badges);
+      registryList.append(group);
+    });
+  appendDetail(container, 'Компоненты GitLab CI по registry', registryList);
 }
 function appendContainerImages(container, project) {
   if (!project.container_images?.length) return;
@@ -379,9 +394,13 @@ function renderDashboard(dashboard) {
   document.querySelector('#transitive-dependency-count').textContent = dashboard.dependency_counts.transitive;
   document.querySelector('#docker-project-count').textContent = dashboard.docker_projects_count;
   document.querySelector('#gitlab-ci-project-count').textContent = dashboard.gitlab_ci_projects_count;
+  document.querySelector('#fastapi-project-count').textContent = dashboard.fastapi_projects_count;
+  document.querySelector('#django-project-count').textContent = dashboard.django_projects_count;
   const total = dashboard.projects_count || 1;
   document.querySelector('#docker-project-percentage').textContent = `${Math.round(dashboard.docker_projects_count / total * 100)}% проектов`;
   document.querySelector('#gitlab-ci-project-percentage').textContent = `${Math.round(dashboard.gitlab_ci_projects_count / total * 100)}% проектов`;
+  document.querySelector('#fastapi-project-percentage').textContent = `${Math.round(dashboard.fastapi_projects_count / total * 100)}% проектов`;
+  document.querySelector('#django-project-percentage').textContent = `${Math.round(dashboard.django_projects_count / total * 100)}% проектов`;
   state.technologyTarget = dashboard.technology_target;
   state.projectsCount = dashboard.projects_count;
   renderTechnologyTarget(dashboard.technology_target, dashboard.projects_count);
@@ -395,7 +414,7 @@ function renderDashboard(dashboard) {
 
   const statistics = document.querySelector('#package-manager-stats');
   statistics.replaceChildren();
-  dashboard.package_managers.filter((item) => item.subprojects_count > 0).forEach((item) => {
+  dashboard.package_managers.filter((item) => item.projects_count > 0).forEach((item) => {
     const row = element('div', 'statistics-row');
     const label = element('div', 'statistics-label');
     label.append(element('strong', '', item.title), element('span', '', `${item.percentage}%`));
@@ -403,7 +422,7 @@ function renderDashboard(dashboard) {
     const trackValue = element('span');
     trackValue.style.width = `${item.percentage}%`;
     track.append(trackValue);
-    row.append(label, track, element('b', '', String(item.subprojects_count)));
+    row.append(label, track, element('b', '', String(item.projects_count)));
     row.title = `${item.projects_count} репозиториев, ${item.subprojects_count} подпроектов`;
     statistics.append(row);
   });
