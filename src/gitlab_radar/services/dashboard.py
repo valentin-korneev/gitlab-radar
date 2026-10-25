@@ -105,11 +105,7 @@ async def build_dashboard() -> Dashboard:
                 reverse=True,
             )
         ],
-        top_dependencies=[
-            DependencyStatistics(name=dependency.name, projects_count=dependency.projects_count)
-            for dependency in dependency_catalog
-            if dependency.level is not DependencyLevel.TRANSITIVE
-        ][:10],
+        top_dependencies=_top_dependencies(projects),
         company_requirements=[
             CompanyRequirement(
                 code=rule.code,
@@ -125,6 +121,15 @@ async def build_dashboard() -> Dashboard:
             python_versions=[
                 TechnologyUsage(name=f'Python {version}', projects_count=count)
                 for version, count in python_versions.most_common()
+            ] + [
+                TechnologyUsage(
+                    name='Python LTS',
+                    projects_count=sum(
+                        count
+                        for version, count in python_versions.items()
+                        if tuple(map(int, version.split('.'))) >= (3, 11)
+                    ),
+                ),
             ],
             dependencies=[
                 TechnologyUsage(name=dependency.name, projects_count=dependency.projects_count)
@@ -190,6 +195,26 @@ def _project_uses_dependency(project: Project, dependency_name: str) -> bool:
             ]
         )
     )
+
+
+def _top_dependencies(projects: list[Project]) -> list[DependencyStatistics]:
+    projects_by_dependency: dict[str, set[int]] = {}
+    for project in projects:
+        for subproject in project.subprojects:
+            dependencies = subproject.dependencies + [
+                dependency
+                for group in subproject.optional_dependencies
+                for dependency in group.dependencies
+            ]
+            for dependency in dependencies:
+                projects_by_dependency.setdefault(dependency.name, set()).add(project.id)
+    return [
+        DependencyStatistics(name=name, projects_count=len(project_ids))
+        for name, project_ids in sorted(
+            projects_by_dependency.items(),
+            key=lambda item: (-len(item[1]), item[0]),
+        )[:10]
+    ]
 
 
 def _technology_usage(projects_by_name: dict[str, set[int]]) -> list[TechnologyUsage]:

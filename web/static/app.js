@@ -42,6 +42,10 @@ function formatDuration(seconds) {
   return `${Math.floor(seconds / 60)} мин. ${Math.round(seconds % 60)} сек.`;
 }
 function projectPathParts(value) { return value.split('/').filter(Boolean); }
+function normalizePythonVersion(value) {
+  const match = value?.match(/(?:^|\D)(\d+)\.(\d+)/);
+  return match ? `${match[1]}.${match[2]}` : null;
+}
 function registryName(value) {
   try { return new URL(value.includes('://') ? value : `https://${value}`).host.toLowerCase(); }
   catch (error) { return value.split('/')[0].toLowerCase(); }
@@ -112,7 +116,12 @@ function projectMatchesFilters(project) {
   const query = document.querySelector('#project-search').value.trim().toLowerCase();
   const rules = [...document.querySelectorAll('.rule-switches input:checked')]
     .map((input) => input.dataset.rule);
-  const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')}`.toLowerCase();
+  const pythonVersions = project.subprojects
+    .map((item) => normalizePythonVersion(item.python_version || item.python_constraint))
+    .filter(Boolean)
+    .map((version) => `Python ${version}`)
+    .join(' ');
+  const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${pythonVersions}`.toLowerCase();
   return (!query || searchable.includes(query))
     && rules.every((rule) => project.company_rule_results?.[rule] === false);
 }
@@ -234,7 +243,7 @@ function appendGitLabComponents(container, project) {
       const group = element('section', 'image-registry-group');
       const badges = element('div', 'dependency-badges');
       components.forEach((component) => badges.append(dependencyBadge(
-        { ...component, name: component.name.slice(registry.length).replace(/^\//, '') || component.name },
+        { ...component, name: projectPathParts(component.name).slice(-3).join('/') || component.name },
         () => openDependency(component.name, 'ci'),
       )));
       group.append(element('h4', '', registry), badges);
@@ -312,10 +321,17 @@ function renderProjectDetail(view, subproject) {
   const pythonDetails = [
     normalizedPython ? `Python ${normalizedPython}` : 'Не определена',
     subproject.pythonConstraint,
-    subproject.pythonVersionSource,
   ].filter(Boolean).join(' · ');
   appendDetail(detail, 'Python', pythonDetails);
-  appendDetail(detail, 'Соответствие правилам компании', `${subproject.compliance}%`);
+  const compliance = element('p', 'detail-value compliance-value', `${subproject.compliance}%`);
+  compliance.classList.add(
+    subproject.compliance < 50
+      ? 'compliance-danger'
+      : subproject.compliance < 80
+        ? 'compliance-warning'
+        : 'compliance-success',
+  );
+  appendDetail(detail, 'Соответствие правилам компании', compliance);
   appendTechnologyStatuses(detail, project);
   appendRuleViolations(detail, subproject.ruleResults);
   appendProjectDependencies(detail, subproject);
@@ -340,6 +356,16 @@ function selectProject(view, subproject, row) {
 function compactStatRow(label, value) {
   const row = element('div');
   row.append(element('span', '', label), element('b', '', String(value)));
+  return row;
+}
+function pythonVersionLink(item) {
+  const version = item.version.split('.').map(Number);
+  const row = element('button', 'compact-stat-link');
+  row.type = 'button';
+  if (version[0] < 3 || (version[0] === 3 && version[1] <= 10)) row.classList.add('python-version-danger');
+  else if (version[0] === 3 && version[1] === 11) row.classList.add('python-version-warning');
+  row.append(element('span', '', `Python ${item.version}`), element('b', '', String(item.projects_count)));
+  row.addEventListener('click', () => openPythonVersion(item.version));
   return row;
 }
 function stableFraction(value) {
@@ -405,11 +431,11 @@ function renderDashboard(dashboard) {
   state.projectsCount = dashboard.projects_count;
   renderTechnologyTarget(dashboard.technology_target, dashboard.projects_count);
   const registries = document.querySelector('#registry-stats');
-  registries.replaceChildren(...dashboard.registries.map((item) => compactStatRow(item.name, item.projects_count)));
+  registries.replaceChildren(...dashboard.registries.slice(0, 10).map((item) => compactStatRow(item.name, item.projects_count)));
   if (!dashboard.registries.length) registries.append(element('p', 'empty-state', 'Registry не обнаружены.'));
 
   const pythonVersions = document.querySelector('#python-version-stats');
-  pythonVersions.replaceChildren(...dashboard.python_versions.map((item) => compactStatRow(`Python ${item.version}`, item.projects_count)));
+  pythonVersions.replaceChildren(...dashboard.python_versions.map(pythonVersionLink));
   if (!dashboard.python_versions.length) pythonVersions.append(element('p', 'empty-state', 'Версии не определены.'));
 
   const statistics = document.querySelector('#package-manager-stats');
@@ -615,6 +641,13 @@ async function openRuleViolations(code) {
   document.querySelectorAll('.rule-switches input').forEach((input) => {
     input.checked = input.dataset.rule === code;
   });
+  window.location.hash = 'projects';
+  await ensurePageLoaded('projects');
+  renderProjects();
+}
+async function openPythonVersion(version) {
+  document.querySelectorAll('.rule-switches input').forEach((input) => { input.checked = false; });
+  document.querySelector('#project-search').value = `Python ${version}`;
   window.location.hash = 'projects';
   await ensurePageLoaded('projects');
   renderProjects();

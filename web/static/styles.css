@@ -93,9 +93,13 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .dashboard-card { min-height: 0; }
 .dependency-count-card > strong { display: block; margin: 6px 0 24px; font-size: 4rem; line-height: 1; }
 .compact-statistics { display: grid; gap: 10px; }
-.compact-statistics span, .compact-list > div { display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); font-size: .76rem; }
+.compact-statistics span, .compact-list > div, .compact-list > button { display: flex; justify-content: space-between; gap: 16px; border: 0; border-top: 1px solid var(--line); padding: 10px 0 0; background: transparent; color: var(--muted); font-size: .76rem; }
 .compact-statistics b, .compact-list b { color: var(--text); }
 .compact-list { display: grid; gap: 12px; }
+.compact-stat-link { width: 100%; text-align: left; cursor: pointer; }
+.compact-stat-link:hover { color: var(--accent); }
+.compact-stat-link.python-version-danger, .compact-stat-link.python-version-danger b { color: var(--danger); }
+.compact-stat-link.python-version-warning, .compact-stat-link.python-version-warning b { color: var(--warning); }
 .infrastructure-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .infrastructure-card { display: flex; flex-direction: column; align-items: flex-start; aspect-ratio: 1; padding: 20px 24px; }
 .infrastructure-card p { margin: 0 0 5px; font-weight: 750; }
@@ -203,6 +207,10 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .project-list > .empty-state, .dependency-list > .empty-state { margin: 0; padding: 20px; }
 .detail-label { margin: 22px 0 6px; color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; }
 .detail-value { margin-bottom: 0; overflow-wrap: anywhere; }
+.compliance-value { font-weight: 750; }
+.compliance-danger { color: var(--danger); }
+.compliance-warning { color: var(--warning); }
+.compliance-success { color: var(--green); }
 .project-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .project-path span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); overflow-wrap: anywhere; }
 .project-path span:not(:last-child)::after { content: '›'; color: var(--path-separator); }
