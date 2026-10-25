@@ -30,7 +30,8 @@ const PHASE_TITLES = {
 };
 const state = {
   projects: [], dependencies: [], dependencyCache: {}, dependencySource: 'python', selectedId: null, selectedSubprojectPath: null,
-  selectedDependency: null, showTransitive: false, scanState: null, pollTimer: null,
+  selectedDependency: null, showTransitive: false, scanState: null, scanStatus: null,
+  scanSocket: null, scanReconnectTimer: null,
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
   requirements: [], requirementGroups: [], requirementCatalog: null,
   parameters: [],
@@ -1064,24 +1065,29 @@ function percentageParameterField(parameter) {
   const warning = element('span', 'threshold-warning');
   const success = element('span', 'threshold-success');
   preview.append(danger, warning, success);
-  const controls = element('div', 'threshold-controls');
+  const slider = element('div', 'threshold-slider');
   const lower = element('input');
   const upper = element('input');
   [lower, upper].forEach((input) => {
     input.type = 'range';
+    input.className = 'threshold-range-input';
     input.min = minimum;
     input.max = maximum;
     input.step = '1';
   });
+  lower.setAttribute('aria-label', 'Начало зоны предупреждения');
+  upper.setAttribute('aria-label', 'Начало успешной зоны');
   lower.value = lowerValue;
   upper.value = upperValue;
   const lowerOutput = element('output');
   const upperOutput = element('output');
-  const lowerLabel = element('label');
-  const upperLabel = element('label');
-  lowerLabel.append(element('span', '', 'Предупреждение начинается'), lower, lowerOutput);
-  upperLabel.append(element('span', '', 'Успешная зона начинается'), upper, upperOutput);
-  controls.append(lowerLabel, upperLabel);
+  const values = element('div', 'threshold-values');
+  const lowerLabel = element('span', 'threshold-value');
+  const upperLabel = element('span', 'threshold-value');
+  lowerLabel.append(element('span', '', 'Предупреждение'), lowerOutput);
+  upperLabel.append(element('span', '', 'Успешно'), upperOutput);
+  values.append(lowerLabel, upperLabel);
+  slider.append(preview, lower, upper);
   function update(changed) {
     lowerValue = Number(lower.value);
     upperValue = Number(upper.value);
@@ -1102,7 +1108,7 @@ function percentageParameterField(parameter) {
   lower.addEventListener('input', () => update(lower));
   upper.addEventListener('input', () => update(upper));
   update();
-  field.append(element('strong', '', parameter.title), preview, controls, hidden);
+  field.append(element('strong', '', parameter.title), slider, values, hidden);
   if (parameter.description) field.append(element('small', '', parameter.description));
   return field;
 }
@@ -1285,29 +1291,39 @@ function renderScanStatus(scan) {
   document.querySelector('#scan-errors-count').textContent = allErrors.length;
   errorList.replaceChildren(...allErrors.map((error) => element('p', '', error)));
 }
-async function refreshScanStatus() {
-  let retry = false;
-  try {
-    const previousState = state.scanState;
-    const scan = await api(API.scan);
-    state.scanState = scan.state;
-    renderScanStatus(scan);
-    if (previousState === 'running' && scan.state === 'completed') {
-      state.dependencyCache = {};
-      const reloads = [loadDashboard()];
-      if (state.loaded.projects) reloads.push(loadProjects());
-      if (state.loaded.dependencies) reloads.push(loadDependencies());
-      await Promise.all(reloads);
-    }
-  } catch (error) {
-    retry = true;
-    showError(error);
-  } finally {
-    window.clearTimeout(state.pollTimer);
-    state.pollTimer = state.scanState === 'running' || retry
-      ? window.setTimeout(refreshScanStatus, retry ? 10000 : 3000)
-      : null;
+function connectScanStatusSocket() {
+  const socketProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  window.clearTimeout(state.scanReconnectTimer);
+  if (state.scanSocket?.readyState === WebSocket.OPEN || state.scanSocket?.readyState === WebSocket.CONNECTING) return;
+  const socket = new WebSocket(`${socketProtocol}//${window.location.host}/api/scan/ws`);
+  state.scanSocket = socket;
+  socket.addEventListener('message', (event) => {
+    handleScanStatus(JSON.parse(event.data)).catch(showError);
+  });
+  socket.addEventListener('close', () => {
+    if (state.scanSocket === socket) state.scanSocket = null;
+    state.scanReconnectTimer = window.setTimeout(connectScanStatusSocket, 3000);
+  });
+  socket.addEventListener('error', () => socket.close());
+}
+async function handleScanStatus(scan) {
+  const previousState = state.scanState;
+  state.scanState = scan.state;
+  state.scanStatus = scan;
+  renderScanStatus(scan);
+  if (previousState === 'running' && scan.state === 'completed') {
+    state.dependencyCache = {};
+    const reloads = [loadDashboard()];
+    if (state.loaded.projects) reloads.push(loadProjects());
+    if (state.loaded.dependencies) reloads.push(loadDependencies());
+    await Promise.all(reloads);
   }
+}
+function updateScanDuration() {
+  const scan = state.scanStatus;
+  if (scan?.state !== 'running' || !scan.started_at) return;
+  const seconds = Math.max(0, (Date.now() - new Date(scan.started_at).getTime()) / 1000);
+  document.querySelector('#scan-duration').textContent = formatDuration(seconds);
 }
 function showError(error) {
   const toast = document.querySelector('#global-error');
@@ -1340,8 +1356,10 @@ themeToggle.addEventListener('change', () => {
   try { localStorage.setItem('radar-theme', theme); } catch (error) { /* Тема сохранится до перезагрузки. */ }
 });
 document.querySelector('#scan-button').addEventListener('click', async () => {
-  try { await api(API.scan, { method: 'POST' }); } catch (error) { showError(error); }
-  await refreshScanStatus();
+  try {
+    const scan = await api(API.scan, { method: 'POST' });
+    await handleScanStatus(scan);
+  } catch (error) { showError(error); }
 });
 document.querySelector('#parameters-form').addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1464,4 +1482,5 @@ document.querySelector('#requirement-form').addEventListener('submit', async (ev
   } catch (error) { showError(error); }
 });
 showPage();
-refreshScanStatus();
+connectScanStatusSocket();
+window.setInterval(updateScanDuration, 1000);

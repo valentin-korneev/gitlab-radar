@@ -1,10 +1,8 @@
 from fastapi import APIRouter, HTTPException, Response, status
 from tortoise.exceptions import IntegrityError
 
-from gitlab_radar.database.models import (
-    CompanyRequirement,
-    CompanyRequirementGroup as CompanyRequirementGroupModel,
-)
+from gitlab_radar.database.models import CompanyRequirement
+from gitlab_radar.database.models import CompanyRequirementGroup as CompanyRequirementGroupModel
 from gitlab_radar.database.repository import invalidate_project_cache
 from gitlab_radar.schemas.company_requirement import (
     CompanyRequirementGroup,

@@ -1,5 +1,6 @@
 import re
 from collections import Counter
+from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from gitlab_radar.database.repository import latest_published_scan
@@ -31,22 +32,24 @@ PACKAGE_MANAGER_TITLES = {
     PackageManager.UNKNOWN: 'Не определен',
 }
 
-_dashboard_cache_scan_id: int | None = None
-_dashboard_cache: Dashboard | None = None
+@dataclass(slots=True)
+class _DashboardCache:
+    scan_id: int | None = None
+    value: Dashboard | None = None
+
+
+_DASHBOARD_CACHE = _DashboardCache()
 
 
 def invalidate_dashboard_cache() -> None:
-    global _dashboard_cache, _dashboard_cache_scan_id  # noqa: PLW0603
-    _dashboard_cache_scan_id = None
-    _dashboard_cache = None
+    _DASHBOARD_CACHE.scan_id = None
+    _DASHBOARD_CACHE.value = None
 
 
 async def build_dashboard() -> Dashboard:
-    global _dashboard_cache, _dashboard_cache_scan_id  # noqa: PLW0603
-
     scan = await latest_published_scan()
-    if scan is not None and _dashboard_cache_scan_id == scan.id and _dashboard_cache is not None:
-        return _dashboard_cache.model_copy(deep=True)
+    if scan is not None and _DASHBOARD_CACHE.scan_id == scan.id and _DASHBOARD_CACHE.value is not None:
+        return _DASHBOARD_CACHE.value.model_copy(deep=True)
 
     projects = await load_projects()
     requirements = await load_company_requirements()
@@ -56,13 +59,6 @@ async def build_dashboard() -> Dashboard:
     )
     total_projects = len(projects)
     subprojects = [subproject for project in projects for subproject in project.subprojects]
-    subproject_managers = Counter(subproject.package_manager for subproject in subprojects)
-    projects_by_manager = Counter(
-        (project.package_manager or PackageManager.UNKNOWN)
-        if project.subprojects
-        else PackageManager.UNKNOWN
-        for project in projects
-    )
     dependency_catalog = await build_dependency_catalog(projects)
     rule_matches = Counter(
         code
@@ -70,31 +66,8 @@ async def build_dashboard() -> Dashboard:
         for code, matches in project.company_rule_results.items()
         if matches
     )
-    dependency_names = {
-        level: {dependency.name for dependency in dependency_catalog if dependency.level is level}
-        for level in DependencyLevel
-    }
-    direct_names = dependency_names[DependencyLevel.DIRECT]
-    optional_names = dependency_names[DependencyLevel.OPTIONAL] - direct_names
-    transitive_names = dependency_names[DependencyLevel.TRANSITIVE] - direct_names - optional_names
-    python_versions: Counter[str] = Counter()
-    for project in projects:
-        project_versions = {
-            _normalize_python_version(subproject.python_version or subproject.python_constraint)
-            for subproject in project.subprojects
-        }
-        python_versions.update(version for version in project_versions if version)
-
-    image_projects: dict[str, set[int]] = {}
-    registry_projects: dict[str, set[int]] = {}
-    for project in projects:
-        for image in project.container_images:
-            image_projects.setdefault(f'{image.registry}/{image.image}', set()).add(project.id)
-            registry_projects.setdefault(_registry_name(image.registry), set()).add(project.id)
-        for registry in project.package_registries:
-            registry_projects.setdefault(_registry_name(registry), set()).add(project.id)
-
-    registry_statistics = _technology_usage(registry_projects)
+    python_versions = _python_versions(projects)
+    image_statistics, registry_statistics = _registry_statistics(projects)
 
     dashboard = Dashboard(
         projects_count=total_projects,
@@ -102,22 +75,8 @@ async def build_dashboard() -> Dashboard:
         gitlab_ci_projects_count=sum(project.has_gitlab_ci for project in projects),
         fastapi_projects_count=sum(_project_uses_dependency(project, 'fastapi') for project in projects),
         django_projects_count=sum(_project_uses_dependency(project, 'django') for project in projects),
-        package_managers=[
-            PackageManagerStatistics(
-                package_manager=package_manager,
-                title=title,
-                projects_count=projects_by_manager[package_manager],
-                subprojects_count=subproject_managers[package_manager],
-                percentage=_percentage(projects_by_manager[package_manager], total_projects),
-            )
-            for package_manager, title in PACKAGE_MANAGER_TITLES.items()
-        ],
-        dependency_counts=DependencyCountStatistics(
-            total=len(direct_names | optional_names | transitive_names),
-            direct=len(direct_names),
-            optional=len(optional_names),
-            transitive=len(transitive_names),
-        ),
+        package_managers=_package_manager_statistics(projects, subprojects),
+        dependency_counts=_dependency_count_statistics(dependency_catalog),
         python_versions=[
             PythonVersionStatistics(version=version, projects_count=count)
             for version, count in sorted(
@@ -157,7 +116,7 @@ async def build_dashboard() -> Dashboard:
                 for dependency in dependency_catalog
                 if dependency.level is not DependencyLevel.TRANSITIVE
             ],
-            images=_technology_usage(image_projects),
+            images=image_statistics,
             registries=registry_statistics,
         ),
         registries=registry_statistics,
@@ -189,9 +148,75 @@ async def build_dashboard() -> Dashboard:
         ),
     )
     if scan is not None:
-        _dashboard_cache_scan_id = scan.id
-        _dashboard_cache = dashboard
+        _DASHBOARD_CACHE.scan_id = scan.id
+        _DASHBOARD_CACHE.value = dashboard
     return dashboard.model_copy(deep=True)
+
+
+def _package_manager_statistics(
+    projects: list[Project],
+    subprojects: list,
+) -> list[PackageManagerStatistics]:
+    subproject_managers = Counter(subproject.package_manager for subproject in subprojects)
+    projects_by_manager = Counter(
+        (project.package_manager or PackageManager.UNKNOWN)
+        if project.subprojects
+        else PackageManager.UNKNOWN
+        for project in projects
+    )
+    return [
+        PackageManagerStatistics(
+            package_manager=package_manager,
+            title=title,
+            projects_count=projects_by_manager[package_manager],
+            subprojects_count=subproject_managers[package_manager],
+            percentage=_percentage(projects_by_manager[package_manager], len(projects)),
+        )
+        for package_manager, title in PACKAGE_MANAGER_TITLES.items()
+    ]
+
+
+def _dependency_count_statistics(
+    dependency_catalog: list,
+) -> DependencyCountStatistics:
+    names = {
+        level: {dependency.name for dependency in dependency_catalog if dependency.level is level}
+        for level in DependencyLevel
+    }
+    direct = names[DependencyLevel.DIRECT]
+    optional = names[DependencyLevel.OPTIONAL] - direct
+    transitive = names[DependencyLevel.TRANSITIVE] - direct - optional
+    return DependencyCountStatistics(
+        total=len(direct | optional | transitive),
+        direct=len(direct),
+        optional=len(optional),
+        transitive=len(transitive),
+    )
+
+
+def _python_versions(projects: list[Project]) -> Counter[str]:
+    versions: Counter[str] = Counter()
+    for project in projects:
+        project_versions = {
+            _normalize_python_version(subproject.python_version or subproject.python_constraint)
+            for subproject in project.subprojects
+        }
+        versions.update(version for version in project_versions if version)
+    return versions
+
+
+def _registry_statistics(
+    projects: list[Project],
+) -> tuple[list[TechnologyUsage], list[TechnologyUsage]]:
+    image_projects: dict[str, set[int]] = {}
+    registry_projects: dict[str, set[int]] = {}
+    for project in projects:
+        for image in project.container_images:
+            image_projects.setdefault(f'{image.registry}/{image.image}', set()).add(project.id)
+            registry_projects.setdefault(_registry_name(image.registry), set()).add(project.id)
+        for registry in project.package_registries:
+            registry_projects.setdefault(_registry_name(registry), set()).add(project.id)
+    return _technology_usage(image_projects), _technology_usage(registry_projects)
 
 
 def _normalize_python_version(value: str | None) -> str | None:

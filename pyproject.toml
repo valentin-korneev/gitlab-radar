@@ -10,6 +10,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "tortoise-orm>=1.1.9",
     "uvicorn>=0.54.0",
+    "websockets>=17.3",
 ]
 
 [dependency-groups]

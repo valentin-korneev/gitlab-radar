@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Mapping
-from configparser import ConfigParser, Error as ConfigParserError
+from configparser import ConfigParser
+from configparser import Error as ConfigParserError
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class ProjectMetadata:
+class ProjectMetadata:  # pylint: disable=too-many-instance-attributes
     python_version: str | None
     python_constraint: str | None
     python_version_source: str | None
@@ -112,13 +113,7 @@ def _package_registries(
     *,
     has_dependencies: bool,
 ) -> list[str]:
-    registries = set(lock_registries)
-    tool = pyproject.get('tool')
-    if isinstance(tool, Mapping):
-        for name in ('uv', 'poetry', 'pip'):
-            section = tool.get(name)
-            if isinstance(section, Mapping):
-                registries.update(_index_urls(section))
+    registries = set(lock_registries) | _pyproject_registries(pyproject)
 
     uv_content = files.get('uv.toml')
     if uv_content:
@@ -126,20 +121,38 @@ def _package_registries(
 
     pip_content = files.get('pip.conf')
     if pip_content:
-        parser = ConfigParser(interpolation=None)
-        try:
-            parser.read_string(pip_content.decode('utf-8'))
-        except (ConfigParserError, UnicodeDecodeError):
-            logger.warning('Не удалось разобрать pip.conf')
-        else:
-            for section in parser.sections():
-                for key in ('index-url', 'extra-index-url'):
-                    if parser.has_option(section, key):
-                        registries.update(parser.get(section, key).split())
+        registries.update(_pip_registries(pip_content))
 
     if not registries and has_dependencies:
         registries.add('https://pypi.org/simple')
     return sorted(registry.strip().rstrip('/') for registry in registries if registry.strip())
+
+
+def _pyproject_registries(pyproject: Mapping[str, object]) -> set[str]:
+    registries: set[str] = set()
+    tool = pyproject.get('tool')
+    if isinstance(tool, Mapping):
+        for name in ('uv', 'poetry', 'pip'):
+            section = tool.get(name)
+            if isinstance(section, Mapping):
+                registries.update(_index_urls(section))
+    return registries
+
+
+def _pip_registries(content: bytes) -> set[str]:
+    parser = ConfigParser(interpolation=None)
+    try:
+        parser.read_string(content.decode('utf-8'))
+    except (ConfigParserError, UnicodeDecodeError):
+        logger.warning('Не удалось разобрать pip.conf')
+        return set()
+    return {
+        registry
+        for section in parser.sections()
+        for key in ('index-url', 'extra-index-url')
+        if parser.has_option(section, key)
+        for registry in parser.get(section, key).split()
+    }
 
 
 def _index_urls(section: Mapping[str, object]) -> set[str]:

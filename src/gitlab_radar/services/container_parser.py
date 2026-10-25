@@ -44,27 +44,50 @@ def _parse_dockerfile(content: bytes, path: str) -> list[ContainerImage]:
     stages: set[str] = set()
     result: list[ContainerImage] = []
     for line in _logical_lines(text):
-        argument = _ARG_PATTERN.match(line)
-        if argument and argument.group(2):
-            arguments[argument.group(1)] = argument.group(2).strip()
+        if _collect_argument(line, arguments):
             continue
         instruction = _FROM_PATTERN.match(line)
         if not instruction:
-            for match in _COPY_FROM_PATTERN.finditer(line):
-                value = _resolve_variables(match.group(1), arguments)
-                if value.lower() not in stages and not value.isdigit():
-                    image = _container_image(value, ContainerSource.DOCKERFILE, path)
-                    if image is not None:
-                        result.append(image)
+            result.extend(_copy_from_images(line, arguments, stages, path))
             continue
         value = _resolve_variables(instruction.group(1), arguments)
-        if value.lower() != 'scratch' and value.lower() not in stages:
-            image = _container_image(value, ContainerSource.DOCKERFILE, path)
-            if image is not None:
-                result.append(image)
+        image = _stage_image(value, stages, path)
+        if image is not None:
+            result.append(image)
         if instruction.group(2):
             stages.add(instruction.group(2).lower())
     return result
+
+
+def _collect_argument(line: str, arguments: dict[str, str]) -> bool:
+    match = _ARG_PATTERN.match(line)
+    if not match or not match.group(2):
+        return False
+    arguments[match.group(1)] = match.group(2).strip()
+    return True
+
+
+def _copy_from_images(
+    line: str,
+    arguments: dict[str, str],
+    stages: set[str],
+    path: str,
+) -> list[ContainerImage]:
+    result: list[ContainerImage] = []
+    for match in _COPY_FROM_PATTERN.finditer(line):
+        value = _resolve_variables(match.group(1), arguments)
+        if value.lower() in stages or value.isdigit():
+            continue
+        image = _container_image(value, ContainerSource.DOCKERFILE, path)
+        if image is not None:
+            result.append(image)
+    return result
+
+
+def _stage_image(value: str, stages: set[str], path: str) -> ContainerImage | None:
+    if value.lower() == 'scratch' or value.lower() in stages:
+        return None
+    return _container_image(value, ContainerSource.DOCKERFILE, path)
 
 
 def _parse_compose(content: bytes, path: str) -> list[ContainerImage]:

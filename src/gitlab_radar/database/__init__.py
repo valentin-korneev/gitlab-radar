@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from tortoise.contrib.fastapi import RegisterTortoise
-from fastapi import FastAPI
+lazy from fastapi import FastAPI
 
 from gitlab_radar.config import settings
 from gitlab_radar.database.fixtures import load_database_fixtures

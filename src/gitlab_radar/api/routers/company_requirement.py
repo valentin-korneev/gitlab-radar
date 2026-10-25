@@ -1,10 +1,8 @@
 from fastapi import APIRouter, HTTPException, Response, status
 from tortoise.exceptions import IntegrityError
 
-from gitlab_radar.database.models import (
-    CompanyRequirement as CompanyRequirementModel,
-    CompanyRequirementGroup,
-)
+from gitlab_radar.database.models import CompanyRequirement as CompanyRequirementModel
+from gitlab_radar.database.models import CompanyRequirementGroup
 from gitlab_radar.database.repository import invalidate_project_cache
 from gitlab_radar.schemas.company_requirement import (
     CompanyRequirement,
@@ -16,7 +14,10 @@ from gitlab_radar.schemas.company_requirement import (
     RequirementCatalog,
     RequirementOption,
 )
-from gitlab_radar.services.company_rules import load_company_requirements
+from gitlab_radar.services.company_rules import (
+    load_company_requirements,
+    serialize_company_requirement,
+)
 from gitlab_radar.services.dashboard import invalidate_dashboard_cache
 
 router = APIRouter()
@@ -136,18 +137,7 @@ async def delete_requirement(requirement_id: int) -> Response:
 
 
 def _serialize(row: CompanyRequirementModel) -> CompanyRequirement:
-    return CompanyRequirement.model_validate(
-        {
-            'id': row.id,
-            'code': row.code,
-            'title': row.title,
-            'group_id': row.group_id,
-            'description': row.description,
-            'condition': row.condition,
-            'enabled': row.enabled,
-            'sort_order': row.sort_order,
-        },
-    )
+    return serialize_company_requirement(row)
 
 
 def _invalidate_requirement_caches() -> None:
@@ -162,4 +152,7 @@ async def _ensure_group_exists(group_id: int) -> None:
 
 async def _ensure_group_has_space(group_id: int) -> None:
     if await CompanyRequirementModel.filter(group_id=group_id).count() >= MAX_REQUIREMENTS_PER_GROUP:
-        raise HTTPException(status_code=409, detail=f'В группе может быть не больше {MAX_REQUIREMENTS_PER_GROUP} требований')
+        raise HTTPException(
+            status_code=409,
+            detail=f'В группе может быть не больше {MAX_REQUIREMENTS_PER_GROUP} требований',
+        )

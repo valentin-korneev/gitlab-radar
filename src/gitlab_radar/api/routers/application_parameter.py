@@ -26,7 +26,7 @@ async def update_parameters(payload: ApplicationParameterUpdate) -> list[Applica
     rows_by_key = {row.key: row for row in rows}
     unknown_keys = payload.values.keys() - rows_by_key.keys()
     if unknown_keys:
-        raise HTTPException(status_code=404, detail=f'Параметр не найден: {sorted(unknown_keys)[0]}')
+        raise HTTPException(status_code=404, detail=f'Параметр не найден: {min(unknown_keys)}')
     for key, raw_value in payload.values.items():
         value = raw_value.strip()
         row = rows_by_key[key]

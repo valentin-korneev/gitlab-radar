@@ -43,6 +43,15 @@ class ScanTask:
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self._status = ScanStatus()
+        self._subscribers: set[asyncio.Queue[ScanStatus]] = set()
+
+    def subscribe(self) -> asyncio.Queue[ScanStatus]:
+        queue: asyncio.Queue[ScanStatus] = asyncio.Queue(maxsize=1)
+        self._subscribers.add(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[ScanStatus]) -> None:
+        self._subscribers.discard(queue)
 
     async def start(self) -> bool:
         async with self._lock:
@@ -62,6 +71,7 @@ class ScanTask:
                 started_at=started_at,
             )
             self._task = asyncio.create_task(self._run(scan), name='gitlab-radar-scan')
+            self._broadcast(self._status)
         logger.info('Сканирование поставлено на выполнение: запуск %d', scan.id)
         return True
 
@@ -96,6 +106,7 @@ class ScanTask:
                         'error': 'Сканирование остановлено вместе с приложением',
                     },
                 )
+                self._broadcast(self._status)
             logger.info('Сканирование остановлено вместе с приложением')
 
     async def _run(self, scan: ScanRun) -> None:
@@ -115,7 +126,7 @@ class ScanTask:
                 collected = await self._collect_projects(scan, projects, errors, request_counter)
                 await self._analyze_projects(scan, collected, errors)
                 await self._publish(scan, len(projects), total_steps, errors, request_counter.count)
-            except Exception as error:
+            except Exception as error:  # pylint: disable=broad-exception-caught
                 logger.exception('Сканирование проектов завершилось из-за ошибки')
                 await self._fail(scan, errors, error, request_counter.count)
 
@@ -153,7 +164,7 @@ class ScanTask:
             project.revision = revision
             try:
                 await asyncio.to_thread(collector.collect_hooks, project)
-            except Exception as error:
+            except Exception as error:  # pylint: disable=broad-exception-caught
                 errors.append(f'{project.path_with_namespace}: не удалось получить webhooks: {error}')
                 logger.exception('Не удалось получить webhooks проекта %s', project.path_with_namespace)
             reusable = await find_reusable_project(project.id, revision)
@@ -164,7 +175,7 @@ class ScanTask:
             files = await asyncio.to_thread(collector.collect, project, revision)
             snapshot = await save_collected_project(scan, project, revision, files)
             return CollectedSnapshot(snapshot.id, project, False, True)
-        except Exception as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             errors.append(f'{project.path_with_namespace}: {error}')
             project.scan_error = str(error)
             project.package_manager = PackageManager.UNKNOWN
@@ -226,7 +237,7 @@ class ScanTask:
             files = await project_files(item.snapshot_id)
             project = await asyncio.to_thread(analyze_project, project, files, project.revision)
             await save_analysis(item.snapshot_id, project)
-        except Exception as error:
+        except Exception as error:  # pylint: disable=broad-exception-caught
             project.scan_error = str(error)
             project.package_manager = PackageManager.UNKNOWN
             restored = await restore_previous_analysis(item.snapshot_id, project, str(error))
@@ -262,7 +273,7 @@ class ScanTask:
         try:
             parameter_values = await application_parameter_values()
             await trim_old_scans(int(parameter_values['retained_scan_count']))
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             logger.exception('Не удалось удалить старые снимки сканирования')
         logger.info(
             'Сканирование завершено: проектов %d, обращений к GitLab %d, ошибок %d, длительность %.2f секунды',
@@ -302,6 +313,13 @@ class ScanTask:
             }
             status_values.setdefault('projects_count', scan.projects_count)
             self._status = self._status.model_copy(update=status_values)
+            self._broadcast(self._status)
+
+    def _broadcast(self, status: ScanStatus) -> None:
+        for queue in self._subscribers:
+            if queue.full():
+                queue.get_nowait()
+            queue.put_nowait(status.model_copy(deep=True))
 
 
 def _scan_status(scan: ScanRun) -> ScanStatus:

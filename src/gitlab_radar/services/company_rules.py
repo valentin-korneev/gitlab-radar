@@ -10,7 +10,7 @@ from gitlab_radar.schemas.company_requirement import (
     RequirementOperator,
     RequirementSource,
 )
-from gitlab_radar.schemas.project import GitLabComponent, Project, ProjectHook, ProjectSubproject
+from gitlab_radar.schemas.project import Project, ProjectSubproject
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,29 +30,30 @@ async def load_company_requirements(*, enabled: bool | None = True) -> list[Comp
         query = query.filter(enabled=enabled)
     rows = await query.order_by('sort_order', 'id')
     return [
-        CompanyRequirement.model_validate(
-            {
-                'id': row.id,
-                'code': row.code,
-                'title': row.title,
-                'group_id': row.group_id,
-                'description': row.description,
-                'condition': row.condition,
-                'enabled': row.enabled,
-                'sort_order': row.sort_order,
-            },
-        )
+        serialize_company_requirement(row)
         for row in rows
     ]
+
+
+def serialize_company_requirement(row: CompanyRequirementModel) -> CompanyRequirement:
+    return CompanyRequirement.model_validate(
+        {
+            'id': row.id,
+            'code': row.code,
+            'title': row.title,
+            'group_id': row.group_id,
+            'description': row.description,
+            'condition': row.condition,
+            'enabled': row.enabled,
+            'sort_order': row.sort_order,
+        },
+    )
 
 
 def subproject_rule_results(
     subproject: ProjectSubproject,
     requirements: list[CompanyRequirement],
-    components: list[GitLabComponent] | None = None,
-    package_registries: set[str] | None = None,
-    container_registries: set[str] | None = None,
-    hooks: list[ProjectHook] | None = None,
+    project: Project | None = None,
 ) -> dict[str, bool]:
     dependencies = {
         dependency.name.lower()
@@ -65,18 +66,18 @@ def subproject_rule_results(
         package_manager={subproject.package_manager.value.lower()},
         dependencies=dependencies,
         tools={tool.lower() for tool in subproject.configured_tools},
-        components={component.name.lower() for component in components or []},
-        hooks={hook.url.lower() for hook in hooks or []},
+        components={component.name.lower() for component in project.gitlab_ci_components} if project else set(),
+        hooks={hook.url.lower() for hook in project.webhooks} if project else set(),
         package_registries={
             _registry_domain(value)
-            for value in (package_registries if package_registries is not None else set(subproject.package_registries))
+            for value in (set(project.package_registries) if project else set(subproject.package_registries))
         },
         container_registries={
             _registry_domain(value)
             for value in (
-                container_registries
-                if container_registries is not None
-                else {image.registry for image in subproject.container_images}
+                _project_container_registries(project)
+                if project
+                else _subproject_container_registries(subproject)
             )
         },
     )
@@ -135,6 +136,10 @@ def _project_container_registries(project: Project) -> set[str]:
     return {image.registry for image in project.container_images}
 
 
+def _subproject_container_registries(subproject: ProjectSubproject) -> set[str]:
+    return {image.registry for image in subproject.container_images}
+
+
 def _registry_domain(registry: str) -> str:
     parsed = urlsplit(registry if '://' in registry else f'//{registry}')
     return (parsed.hostname or registry.partition('/')[0]).lower()
@@ -156,18 +161,9 @@ def _compliance_percentage(results: dict[str, bool]) -> float:
 
 
 def apply_company_compliance(project: Project, requirements: list[CompanyRequirement]) -> None:
-    package_registries = set(project.package_registries)
-    container_registries = _project_container_registries(project)
     subproject_results: list[dict[str, bool]] = []
     for subproject in project.subprojects:
-        results = subproject_rule_results(
-            subproject,
-            requirements,
-            project.gitlab_ci_components,
-            package_registries,
-            container_registries,
-            project.webhooks,
-        )
+        results = subproject_rule_results(subproject, requirements, project)
         subproject.company_rule_results = results
         subproject.company_compliance_percentage = _compliance_percentage(results)
         subproject_results.append(results)

@@ -1,5 +1,6 @@
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 
 from packaging.version import InvalidVersion, Version
 
@@ -16,24 +17,29 @@ from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.services.project import load_projects
 
 UsageEntry = tuple[Project, str, Dependency, DependencyLevel]
-_dependency_cache_scan_id: int | None = None
-_dependency_cache: dict[DependencySource, list[DependencyUsage]] = {}
+
+
+@dataclass(slots=True)
+class _DependencyCache:
+    scan_id: int | None = None
+    values: dict[DependencySource, list[DependencyUsage]] = field(default_factory=dict)
+
+
+_DEPENDENCY_CACHE = _DependencyCache()
 
 
 async def build_dependency_catalog(
         projects: list[Project] | None = None,
         source: DependencySource = DependencySource.PYTHON,
 ) -> list[DependencyUsage]:
-    global _dependency_cache_scan_id  # noqa: PLW0603
-
     cacheable = projects is None
     if cacheable:
         scan = await latest_published_scan()
         scan_id = scan.id if scan is not None else None
-        if _dependency_cache_scan_id != scan_id:
-            _dependency_cache_scan_id = scan_id
-            _dependency_cache.clear()
-        cached = _dependency_cache.get(source)
+        if _DEPENDENCY_CACHE.scan_id != scan_id:
+            _DEPENDENCY_CACHE.scan_id = scan_id
+            _DEPENDENCY_CACHE.values.clear()
+        cached = _DEPENDENCY_CACHE.values.get(source)
         if cached is not None:
             return [item.model_copy(deep=True) for item in cached]
         projects = await load_projects()
@@ -45,7 +51,7 @@ async def build_dependency_catalog(
     }[source](projects)
     catalog = _build_catalog(entries)
     if cacheable:
-        _dependency_cache[source] = catalog
+        _DEPENDENCY_CACHE.values[source] = catalog
     return [item.model_copy(deep=True) for item in catalog]
 
 
