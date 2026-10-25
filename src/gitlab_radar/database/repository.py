@@ -10,7 +10,19 @@ from gitlab_radar.schemas.scan import ScanState
 from gitlab_radar.services.company_rules import apply_company_compliance
 
 logger = logging.getLogger(__name__)
-ANALYSIS_VERSION = 2
+REUSED_PROJECT_METADATA_FIELDS = {
+    'id',
+    'name',
+    'path_with_namespace',
+    'default_branch',
+    'web_url',
+    'last_activity_at',
+    'webhooks',
+    'webhooks_accessible',
+    'gitlab_access_level',
+    'revision',
+    'scan_error',
+}
 
 
 class ProjectCache:
@@ -109,7 +121,6 @@ async def find_reusable_project(gitlab_id: int, revision: str | None) -> Project
             revision=revision,
             analyzed=True,
             scan__published=True,
-            analysis_version=ANALYSIS_VERSION,
         )
         .order_by('-scan_id')
         .first()
@@ -122,14 +133,16 @@ async def clone_project(
         project: Project,
 ) -> ProjectSnapshot:
     payload = dict(source.payload)
-    current = _project_payload(project)
-    current.pop('subprojects', None)
-    payload.update(current)
+    payload.update(
+        project.model_dump(
+            mode='json',
+            include=REUSED_PROJECT_METADATA_FIELDS,
+        ),
+    )
     snapshot = await ProjectSnapshot.create(
         scan=scan,
         gitlab_id=project.id,
         revision=source.revision,
-        analysis_version=ANALYSIS_VERSION,
         payload=payload,
         collected=True,
         analyzed=True,
@@ -161,7 +174,6 @@ async def save_collected_project(
         scan=scan,
         gitlab_id=project.id,
         revision=revision,
-        analysis_version=ANALYSIS_VERSION,
         payload=_project_payload(project),
         collected=error is None,
         error=error,
@@ -192,6 +204,34 @@ async def save_analysis(snapshot_id: int, project: Project, error: str | None = 
         analyzed=error is None,
         error=error,
     )
+
+
+async def restore_previous_analysis(snapshot_id: int, project: Project, error: str) -> bool:
+    source = (
+        await ProjectSnapshot.filter(
+            gitlab_id=project.id,
+            analyzed=True,
+            scan__published=True,
+        )
+        .order_by('-scan_id')
+        .first()
+    )
+    if source is None:
+        return False
+    payload = dict(source.payload)
+    payload.update(
+        project.model_dump(
+            mode='json',
+            include=REUSED_PROJECT_METADATA_FIELDS,
+        ),
+    )
+    payload['revision'] = source.revision
+    await ProjectSnapshot.filter(id=snapshot_id).update(
+        payload=payload,
+        analyzed=False,
+        error=error,
+    )
+    return True
 
 
 async def trim_old_scans(keep: int = 5) -> None:

@@ -46,8 +46,3 @@ async def _ensure_database_columns() -> None:
         await connection.execute_query(
             'ALTER TABLE "scanrun" ADD COLUMN "gitlab_requests" INT NOT NULL DEFAULT 0',
         )
-    project_columns = await connection.execute_query_dict('PRAGMA table_info("projectsnapshot")')
-    if not any(column.get('name') == 'analysis_version' for column in project_columns):
-        await connection.execute_query(
-            'ALTER TABLE "projectsnapshot" ADD COLUMN "analysis_version" INT NOT NULL DEFAULT 1',
-        )

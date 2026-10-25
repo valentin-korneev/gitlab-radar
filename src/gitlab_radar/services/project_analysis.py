@@ -97,7 +97,7 @@ def _project_package_manager(subprojects: list[ProjectSubproject]) -> PackageMan
     if not subprojects:
         return PackageManager.UNKNOWN
     managers = {subproject.package_manager for subproject in subprojects}
-    return managers.pop() if len(managers) == 1 else PackageManager.UNKNOWN
+    return managers.pop() if len(managers) == 1 else PackageManager.MIXED
 
 
 def _parent_directory(path: str) -> str:

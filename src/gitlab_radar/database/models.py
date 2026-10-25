@@ -27,7 +27,6 @@ class ProjectSnapshot(Model):
     scan = fields.ForeignKeyField('models.ScanRun', related_name='projects', on_delete=fields.CASCADE)
     gitlab_id = fields.BigIntField(index=True)
     revision = fields.CharField(max_length=128, null=True, index=True)
-    analysis_version = fields.IntField(default=1)
     payload = fields.JSONField()
     collected = fields.BooleanField(default=False)
     analyzed = fields.BooleanField(default=False)

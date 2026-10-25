@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -12,6 +13,7 @@ from gitlab_radar.database.repository import (
     invalidate_project_cache,
     latest_scan,
     project_files,
+    restore_previous_analysis,
     save_analysis,
     save_collected_project,
     trim_old_scans,
@@ -24,6 +26,7 @@ from gitlab_radar.services.project_analysis import analyze_project
 from gitlab_radar.services.project_collection import ProjectCollector
 
 logger = logging.getLogger(__name__)
+LOCAL_ANALYSIS_CONCURRENCY = max(1, min(8, os.cpu_count() or 1))
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,7 +150,11 @@ class ScanTask:
         try:
             revision = await asyncio.to_thread(collector.revision, project)
             project.revision = revision
-            await asyncio.to_thread(collector.collect_hooks, project)
+            try:
+                await asyncio.to_thread(collector.collect_hooks, project)
+            except Exception as error:
+                errors.append(f'{project.path_with_namespace}: не удалось получить webhooks: {error}')
+                logger.exception('Не удалось получить webhooks проекта %s', project.path_with_namespace)
             reusable = await find_reusable_project(project.id, revision)
             if reusable is not None:
                 snapshot = await clone_project(reusable, scan, project)
@@ -161,6 +168,7 @@ class ScanTask:
             project.scan_error = str(error)
             project.package_manager = PackageManager.UNKNOWN
             snapshot = await save_collected_project(scan, project, project.revision, {}, str(error))
+            await restore_previous_analysis(snapshot.id, project, str(error))
             logger.exception('Не удалось собрать файлы проекта %s', project.path_with_namespace)
             return CollectedSnapshot(snapshot.id, project, False, False)
 
@@ -173,37 +181,59 @@ class ScanTask:
         await self._update(scan, phase=ScanPhase.ANALYZING, current_project=None)
         logger.info('Сбор файлов завершён; начинается локальный анализ проектов')
         total = len(collected)
-        for number, item in enumerate(collected, start=1):
-            await self._update(scan, current_project=item.project.path_with_namespace)
-            logger.info('Анализ проекта %d/%d: %s', number, total, item.project.path_with_namespace)
-            values: dict[str, object] = {}
+
+        semaphore = asyncio.Semaphore(LOCAL_ANALYSIS_CONCURRENCY)
+
+        async def analyze(item: CollectedSnapshot) -> tuple[CollectedSnapshot, str, str | None]:
             if item.reused:
-                values['reused_projects'] = scan.reused_projects + 1
-            elif not item.collection_succeeded:
-                values['skipped_projects'] = scan.skipped_projects + 1
-            else:
-                await self._analyze_snapshot(item, errors)
-            await self._update(
-                scan,
-                analyzed_projects=number,
-                completed_steps=total + number,
-                errors=errors,
-                **values,
-            )
+                return item, 'reused', None
+            if not item.collection_succeeded:
+                return item, 'skipped', None
+            async with semaphore:
+                logger.info('Локальный анализ проекта: %s', item.project.path_with_namespace)
+                error = await self._analyze_snapshot(item)
+            return item, 'analyzed', error
+
+        tasks = [asyncio.create_task(analyze(item)) for item in collected]
+        try:
+            for number, completed in enumerate(asyncio.as_completed(tasks), start=1):
+                _, result, error = await completed
+                if error is not None:
+                    errors.append(error)
+                values: dict[str, object] = {}
+                if result == 'reused':
+                    values['reused_projects'] = scan.reused_projects + 1
+                elif result == 'skipped':
+                    values['skipped_projects'] = scan.skipped_projects + 1
+                await self._update(
+                    scan,
+                    analyzed_projects=number,
+                    completed_steps=total + number,
+                    errors=errors,
+                    **values,
+                )
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     @staticmethod
-    async def _analyze_snapshot(item: CollectedSnapshot, errors: list[str]) -> None:
+    async def _analyze_snapshot(item: CollectedSnapshot) -> str | None:
         project = item.project
         try:
             files = await project_files(item.snapshot_id)
             project = await asyncio.to_thread(analyze_project, project, files, project.revision)
             await save_analysis(item.snapshot_id, project)
         except Exception as error:
-            errors.append(f'{project.path_with_namespace}: {error}')
             project.scan_error = str(error)
             project.package_manager = PackageManager.UNKNOWN
-            await save_analysis(item.snapshot_id, project, str(error))
+            restored = await restore_previous_analysis(item.snapshot_id, project, str(error))
+            if not restored:
+                await save_analysis(item.snapshot_id, project, str(error))
             logger.exception('Не удалось проанализировать проект %s', project.path_with_namespace)
+            return f'{project.path_with_namespace}: {error}'
+        return None
 
     async def _publish(
             self,
@@ -228,7 +258,10 @@ class ScanTask:
             gitlab_requests=gitlab_requests,
         )
         invalidate_project_cache()
-        await trim_old_scans()
+        try:
+            await trim_old_scans()
+        except Exception:
+            logger.exception('Не удалось удалить старые снимки сканирования')
         logger.info(
             'Сканирование завершено: проектов %d, обращений к GitLab %d, ошибок %d, длительность %.2f секунды',
             projects_count,

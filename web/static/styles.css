@@ -164,7 +164,6 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .dependency-top-row b { font-size: .78rem; }
 .dependency-rank { color: var(--muted); font-family: ui-monospace, monospace; font-size: .68rem; }
 .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
-#projects .section-head, #dependencies .section-head { align-items: stretch; flex-direction: column; }
 .project-controls, .dependency-controls { display: flex; align-items: center; justify-content: space-between; gap: 18px; width: 100%; margin-bottom: 36px; }
 .dependency-controls { min-height: 42px; }
 .dependency-filters { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 18px; }
@@ -311,6 +310,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 
 @media (max-width: 540px) {
   .section-head { align-items: stretch; flex-direction: column; }
+  .section-head .intro { margin-bottom: 0; }
   .project-controls, .dependency-controls { justify-content: stretch; }
   .project-controls > *, .dependency-controls > * { width: 100%; }
   .scan-card { align-items: flex-start; flex-direction: column; }

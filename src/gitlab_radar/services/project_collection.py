@@ -71,9 +71,8 @@ class ProjectCollector:
 
     def collect(self, project: Project, revision: str) -> dict[str, Path]:
         gitlab_project = self._gitlab_project(project)
-        default_branch = self._default_branch(project)
-        paths = self._find_target_paths(gitlab_project, default_branch)
-        contents = self._read_files(gitlab_project, paths, default_branch)
+        paths = self._find_target_paths(gitlab_project, revision)
+        contents = self._read_files(gitlab_project, paths, revision)
         files = self._save_files(project, revision, contents)
         logger.info(
             'Файлы проекта %s собраны: найдено %d',

@@ -18,21 +18,30 @@ from gitlab_radar.schemas.dashboard import (
 from gitlab_radar.schemas.dependency import DependencyLevel
 from gitlab_radar.schemas.project import Project
 from gitlab_radar.schemas.technology import PackageManager
-from gitlab_radar.services.company_rules import COMPANY_RULES, project_rule_results
+from gitlab_radar.services.company_rules import COMPANY_RULES
 from gitlab_radar.services.dependency import build_dependency_catalog
 from gitlab_radar.services.project import load_projects
 
 PACKAGE_MANAGER_TITLES = {
     PackageManager.UV: 'uv',
-    PackageManager.POETRY: 'Poetry',
     PackageManager.PIP: 'pip',
+    PackageManager.POETRY: 'Poetry',
+    PackageManager.MIXED: 'Смешанный',
     PackageManager.UNKNOWN: 'Не определён',
 }
 
+_dashboard_cache_scan_id: int | None = None
+_dashboard_cache: Dashboard | None = None
+
 
 async def build_dashboard() -> Dashboard:
-    projects = await load_projects()
+    global _dashboard_cache, _dashboard_cache_scan_id  # noqa: PLW0603
+
     scan = await latest_published_scan()
+    if scan is not None and _dashboard_cache_scan_id == scan.id and _dashboard_cache is not None:
+        return _dashboard_cache.model_copy(deep=True)
+
+    projects = await load_projects()
     total_projects = len(projects)
     subprojects = [subproject for project in projects for subproject in project.subprojects]
     subproject_managers = Counter(subproject.package_manager for subproject in subprojects)
@@ -46,7 +55,7 @@ async def build_dashboard() -> Dashboard:
     rule_matches = Counter(
         code
         for project in projects
-        for code, matches in project_rule_results(project).items()
+        for code, matches in project.company_rule_results.items()
         if matches
     )
     dependency_names = {
@@ -75,7 +84,7 @@ async def build_dashboard() -> Dashboard:
 
     registry_statistics = _technology_usage(registry_projects)
 
-    return Dashboard(
+    dashboard = Dashboard(
         projects_count=total_projects,
         docker_projects_count=sum(project.has_docker for project in projects),
         gitlab_ci_projects_count=sum(project.has_gitlab_ci for project in projects),
@@ -167,6 +176,10 @@ async def build_dashboard() -> Dashboard:
             else None
         ),
     )
+    if scan is not None:
+        _dashboard_cache_scan_id = scan.id
+        _dashboard_cache = dashboard
+    return dashboard.model_copy(deep=True)
 
 
 def _normalize_python_version(value: str | None) -> str | None:

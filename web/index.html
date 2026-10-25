@@ -119,19 +119,19 @@
       <section id="projects" class="page">
         <div class="section-head">
           <div class="intro"><p>Каталог</p><h2>Проекты</h2></div>
-          <div class="project-controls">
-            <div class="rule-switches" aria-label="Нарушенные правила">
-              <span class="control-label">Нарушения правил</span>
-              <label class="switch"><input type="checkbox" data-rule="uv-required"><span></span>uv</label>
-              <label class="switch"><input type="checkbox" data-rule="ruff-required"><span></span>ruff</label>
-              <label class="switch"><input type="checkbox" data-rule="bandit-required"><span></span>bandit</label>
-              <label class="switch"><input type="checkbox" data-rule="pylint-required"><span></span>pylint</label>
-              <label class="switch"><input type="checkbox" data-rule="python-linters-component-required"><span></span>python-linters</label>
-              <label class="switch"><input type="checkbox" data-rule="sonar-component-required"><span></span>sonar</label>
-              <label class="switch"><input type="checkbox" data-rule="approved-registry-required"><span></span>approved-registry</label>
-              <label class="switch"><input type="checkbox" data-rule="aist-reviewer-hook-required"><span></span>aist.reviewer</label>
-            </div>
-            <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
+          <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
+        </div>
+        <div class="project-controls">
+          <div class="rule-switches" aria-label="Нарушенные правила">
+            <span class="control-label">Нарушения правил</span>
+            <label class="switch"><input type="checkbox" data-rule="uv-required"><span></span>uv</label>
+            <label class="switch"><input type="checkbox" data-rule="ruff-required"><span></span>ruff</label>
+            <label class="switch"><input type="checkbox" data-rule="bandit-required"><span></span>bandit</label>
+            <label class="switch"><input type="checkbox" data-rule="pylint-required"><span></span>pylint</label>
+            <label class="switch"><input type="checkbox" data-rule="python-linters-component-required"><span></span>python-linters</label>
+            <label class="switch"><input type="checkbox" data-rule="sonar-component-required"><span></span>sonar</label>
+            <label class="switch"><input type="checkbox" data-rule="approved-registry-required"><span></span>approved-registry</label>
+            <label class="switch"><input type="checkbox" data-rule="aist-reviewer-hook-required"><span></span>aist.reviewer</label>
           </div>
         </div>
         <div class="projects-layout">
@@ -145,11 +145,11 @@
       <section id="dependencies" class="page">
         <div class="section-head">
           <div class="intro"><p>Каталог</p><h2 id="catalog-title">Зависимости</h2></div>
-          <div class="dependency-controls">
-            <div class="dependency-filters">
-              <label id="transitive-filter" class="switch"><input id="show-transitive" type="checkbox"><span></span>Показывать транзитивные</label>
-            </div>
-            <label class="search"><span>⌕</span><input id="dependency-search" type="search" placeholder="Найти зависимость"></label>
+          <label class="search"><span>⌕</span><input id="dependency-search" type="search" placeholder="Найти зависимость"></label>
+        </div>
+        <div class="dependency-controls">
+          <div class="dependency-filters">
+            <label id="transitive-filter" class="switch"><input id="show-transitive" type="checkbox"><span></span>Показывать транзитивные</label>
           </div>
         </div>
         <div class="dependencies-layout">

@@ -1,6 +1,9 @@
 from collections import defaultdict
 from collections.abc import Iterable
 
+from packaging.version import InvalidVersion, Version
+
+from gitlab_radar.database.repository import latest_published_scan
 from gitlab_radar.schemas.dependency import (
     Dependency,
     DependencyLevel,
@@ -13,20 +16,37 @@ from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.services.project import load_projects
 
 UsageEntry = tuple[Project, str, Dependency, DependencyLevel]
+_dependency_cache_scan_id: int | None = None
+_dependency_cache: dict[DependencySource, list[DependencyUsage]] = {}
 
 
 async def build_dependency_catalog(
         projects: list[Project] | None = None,
         source: DependencySource = DependencySource.PYTHON,
 ) -> list[DependencyUsage]:
-    projects = await load_projects() if projects is None else projects
+    global _dependency_cache_scan_id  # noqa: PLW0603
+
+    cacheable = projects is None
+    if cacheable:
+        scan = await latest_published_scan()
+        scan_id = scan.id if scan is not None else None
+        if _dependency_cache_scan_id != scan_id:
+            _dependency_cache_scan_id = scan_id
+            _dependency_cache.clear()
+        cached = _dependency_cache.get(source)
+        if cached is not None:
+            return [item.model_copy(deep=True) for item in cached]
+        projects = await load_projects()
     entries = {
         DependencySource.PYTHON: _python_entries,
         DependencySource.DOCKER: _docker_entries,
         DependencySource.CI: _ci_entries,
         DependencySource.WEBHOOK: _webhook_entries,
     }[source](projects)
-    return _build_catalog(entries)
+    catalog = _build_catalog(entries)
+    if cacheable:
+        _dependency_cache[source] = catalog
+    return [item.model_copy(deep=True) for item in catalog]
 
 
 def _python_entries(projects: list[Project]) -> Iterable[UsageEntry]:
@@ -100,12 +120,31 @@ def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
                     )
                     for version, projects_by_version in sorted(
                         versions.items(),
-                        key=lambda item: (item[0] is None, item[0] or ''),
+                        key=_version_sort_key,
+                        reverse=True,
                     )
                 ],
             ),
         )
     return sorted(catalog, key=lambda item: (-item.projects_count, item.name))
+
+
+def _version_sort_key(
+        item: tuple[str | None, dict[int, DependencyProject]],
+) -> tuple[bool, Version, str]:
+    value = item[0]
+    if value is None:
+        return False, Version('0'), ''
+    candidate = value.strip()
+    if candidate.startswith('=='):
+        candidate = candidate[2:].strip()
+    if candidate[:1].lower() == 'v':
+        candidate = candidate[1:]
+    try:
+        version = Version(candidate)
+    except InvalidVersion:
+        return False, Version('0'), value
+    return True, version, value
 
 
 def project_dependency_names(project: Project) -> set[str]:

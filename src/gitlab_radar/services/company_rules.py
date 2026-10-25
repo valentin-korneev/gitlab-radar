@@ -105,12 +105,18 @@ def _matches_rule(
     if rule.dependency:
         return rule.dependency in context.dependencies or rule.dependency in context.tools
     if rule.registry_policy:
-        return all(
+        package_registries_match = bool(context.package_registries) and all(
             'artifactory' in _registry_domain(registry)
             for registry in context.package_registries
-        ) and all(
+        )
+        container_registries_match = bool(context.container_registries) and all(
             any(allowed in _registry_domain(registry) for allowed in ('artifactory', 'gitlab-registry'))
             for registry in context.container_registries
+        )
+        return (
+            (not context.dependencies or package_registries_match)
+            and (not context.container_registries or container_registries_match)
+            and bool(context.package_registries or context.container_registries)
         )
     return subproject.package_manager is PackageManager.UV
 
@@ -135,6 +141,10 @@ def project_rule_results(project: Project) -> dict[str, bool]:
         )
         for subproject in project.subprojects
     ]
+    return _project_rule_results(subproject_results)
+
+
+def _project_rule_results(subproject_results: list[dict[str, bool]]) -> dict[str, bool]:
     return {
         rule.code: bool(subproject_results) and all(result[rule.code] for result in subproject_results)
         for rule in COMPANY_RULES
@@ -155,6 +165,10 @@ def subproject_compliance_percentage(
         container_registries,
         hooks,
     )
+    return _compliance_percentage(results)
+
+
+def _compliance_percentage(results: dict[str, bool]) -> float:
     return round(sum(results.values()) / len(results) * 100, 1)
 
 
@@ -180,20 +194,25 @@ def project_compliance_percentage(project: Project) -> float:
 def apply_company_compliance(project: Project) -> None:
     package_registries = set(project.package_registries)
     container_registries = _project_container_registries(project)
+    subproject_results: list[dict[str, bool]] = []
     for subproject in project.subprojects:
-        subproject.company_rule_results = subproject_rule_results(
+        results = subproject_rule_results(
             subproject,
             project.gitlab_ci_components,
             package_registries,
             container_registries,
             project.webhooks,
         )
-        subproject.company_compliance_percentage = subproject_compliance_percentage(
-            subproject,
-            project.gitlab_ci_components,
-            package_registries,
-            container_registries,
-            project.webhooks,
+        subproject.company_rule_results = results
+        subproject.company_compliance_percentage = _compliance_percentage(results)
+        subproject_results.append(results)
+    project.company_rule_results = _project_rule_results(subproject_results)
+    project.company_compliance_percentage = (
+        round(
+            sum(subproject.company_compliance_percentage for subproject in project.subprojects)
+            / len(project.subprojects),
+            1,
         )
-    project.company_rule_results = project_rule_results(project)
-    project.company_compliance_percentage = project_compliance_percentage(project)
+        if project.subprojects
+        else 0.0
+    )

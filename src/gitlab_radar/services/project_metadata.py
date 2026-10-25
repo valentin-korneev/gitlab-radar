@@ -51,7 +51,7 @@ def parse_project_metadata(
         for filename, content in sorted(files.items())
         if is_requirements_filename(filename)
     ]
-    if not pyproject_content and not dependencies:
+    if not dependencies:
         dependencies.extend(
             dependency
             for content in requirements_files
