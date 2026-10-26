@@ -4,20 +4,25 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from asyncpg import Connection
+
 from gitlab_radar.clients.gitlab import GitLabRequestCounter
-from gitlab_radar.config import settings
 from gitlab_radar.database.models import ScanRun
 from gitlab_radar.database.repository import (
     clone_project,
+    delete_project_files,
+    delete_scan_files,
     find_reusable_project,
     invalidate_project_cache,
     latest_scan,
     project_files,
+    recover_stale_scans,
     restore_previous_analysis,
     save_analysis,
     save_collected_project,
     trim_old_scans,
 )
+from gitlab_radar.database.scan_lock import acquire_scan_lock, release_scan_lock
 from gitlab_radar.schemas.project import Project
 from gitlab_radar.schemas.scan import ScanPhase, ScanState, ScanStatus
 from gitlab_radar.schemas.technology import PackageManager
@@ -42,28 +47,30 @@ class ScanTask:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
+        self._database_lock: Connection | None = None
         self._status = ScanStatus()
-        self._subscribers: set[asyncio.Queue[ScanStatus]] = set()
-
-    def subscribe(self) -> asyncio.Queue[ScanStatus]:
-        queue: asyncio.Queue[ScanStatus] = asyncio.Queue(maxsize=1)
-        self._subscribers.add(queue)
-        return queue
-
-    def unsubscribe(self, queue: asyncio.Queue[ScanStatus]) -> None:
-        self._subscribers.discard(queue)
 
     async def start(self) -> bool:
         async with self._lock:
             if self._task is not None and not self._task.done():
                 logger.warning('Запуск отклонен: сканирование уже выполняется')
                 return False
-            started_at = datetime.now(UTC)
-            scan = await ScanRun.create(
-                state=ScanState.RUNNING,
-                phase=ScanPhase.COLLECTING,
-                started_at=started_at,
-            )
+            database_lock = await acquire_scan_lock()
+            if database_lock is None:
+                logger.warning('Запуск отклонен: сканирование выполняется другой репликой')
+                return False
+            try:
+                await recover_stale_scans()
+                started_at = datetime.now(UTC)
+                scan = await ScanRun.create(
+                    state=ScanState.RUNNING,
+                    phase=ScanPhase.COLLECTING,
+                    started_at=started_at,
+                )
+            except Exception:
+                await release_scan_lock(database_lock)
+                raise
+            self._database_lock = database_lock
             self._status = ScanStatus(
                 id=scan.id,
                 state=ScanState.RUNNING,
@@ -71,7 +78,6 @@ class ScanTask:
                 started_at=started_at,
             )
             self._task = asyncio.create_task(self._run(scan), name='gitlab-radar-scan')
-            self._broadcast(self._status)
         logger.info('Сканирование поставлено на выполнение: запуск %d', scan.id)
         return True
 
@@ -93,6 +99,7 @@ class ScanTask:
         except asyncio.CancelledError:
             completed_at = datetime.now(UTC)
             if self._status.id is not None:
+                await delete_scan_files(self._status.id)
                 await ScanRun.filter(id=self._status.id).update(
                     state=ScanState.FAILED,
                     completed_at=completed_at,
@@ -106,7 +113,6 @@ class ScanTask:
                         'error': 'Сканирование остановлено вместе с приложением',
                     },
                 )
-                self._broadcast(self._status)
             logger.info('Сканирование остановлено вместе с приложением')
 
     async def _run(self, scan: ScanRun) -> None:
@@ -129,15 +135,20 @@ class ScanTask:
             except Exception as error:  # pylint: disable=broad-exception-caught
                 logger.exception('Сканирование проектов завершилось из-за ошибки')
                 await self._fail(scan, errors, error, request_counter.count)
+            finally:
+                database_lock = self._database_lock
+                self._database_lock = None
+                if database_lock is not None:
+                    await release_scan_lock(database_lock)
 
     async def _collect_projects(
-            self,
-            scan: ScanRun,
-            projects: list[Project],
-            errors: list[str],
-            request_counter: GitLabRequestCounter,
+        self,
+        scan: ScanRun,
+        projects: list[Project],
+        errors: list[str],
+        request_counter: GitLabRequestCounter,
     ) -> list[CollectedSnapshot]:
-        collector = ProjectCollector(settings.application.projects_dir)
+        collector = ProjectCollector()
         collected: list[CollectedSnapshot] = []
         for number, project in enumerate(projects, start=1):
             await self._update(scan, current_project=project.path_with_namespace)
@@ -154,10 +165,10 @@ class ScanTask:
 
     @staticmethod
     async def _collect_project(
-            scan: ScanRun,
-            collector: ProjectCollector,
-            project: Project,
-            errors: list[str],
+        scan: ScanRun,
+        collector: ProjectCollector,
+        project: Project,
+        errors: list[str],
     ) -> CollectedSnapshot:
         try:
             revision = await asyncio.to_thread(collector.revision, project)
@@ -185,10 +196,10 @@ class ScanTask:
             return CollectedSnapshot(snapshot.id, project, False, False)
 
     async def _analyze_projects(
-            self,
-            scan: ScanRun,
-            collected: list[CollectedSnapshot],
-            errors: list[str],
+        self,
+        scan: ScanRun,
+        collected: list[CollectedSnapshot],
+        errors: list[str],
     ) -> None:
         await self._update(scan, phase=ScanPhase.ANALYZING, current_project=None)
         logger.info('Сбор файлов завершен; начинается локальный анализ проектов')
@@ -245,15 +256,17 @@ class ScanTask:
                 await save_analysis(item.snapshot_id, project, str(error))
             logger.exception('Не удалось проанализировать проект %s', project.path_with_namespace)
             return f'{project.path_with_namespace}: {error}'
+        finally:
+            await delete_project_files(item.snapshot_id)
         return None
 
     async def _publish(
-            self,
-            scan: ScanRun,
-            projects_count: int,
-            total_steps: int,
-            errors: list[str],
-            gitlab_requests: int,
+        self,
+        scan: ScanRun,
+        projects_count: int,
+        total_steps: int,
+        errors: list[str],
+        gitlab_requests: int,
     ) -> None:
         await self._update(scan, phase=ScanPhase.PUBLISHING, current_project=None)
         logger.info('Локальный анализ завершен; результаты публикуются')
@@ -284,12 +297,13 @@ class ScanTask:
         )
 
     async def _fail(
-            self,
-            scan: ScanRun,
-            errors: list[str],
-            error: Exception,
-            gitlab_requests: int,
+        self,
+        scan: ScanRun,
+        errors: list[str],
+        error: Exception,
+        gitlab_requests: int,
     ) -> None:
+        await delete_scan_files(scan.id)
         await self._update(
             scan,
             state=ScanState.FAILED,
@@ -307,19 +321,10 @@ class ScanTask:
         await scan.save(update_fields=list(database_values))
         async with self._lock:
             status_values = {
-                key: value
-                for key, value in values.items()
-                if ScanStatus.model_fields.get(key) is not None
+                key: value for key, value in values.items() if ScanStatus.model_fields.get(key) is not None
             }
             status_values.setdefault('projects_count', scan.projects_count)
             self._status = self._status.model_copy(update=status_values)
-            self._broadcast(self._status)
-
-    def _broadcast(self, status: ScanStatus) -> None:
-        for queue in self._subscribers:
-            if queue.full():
-                queue.get_nowait()
-            queue.put_nowait(status.model_copy(deep=True))
 
 
 def _scan_status(scan: ScanRun) -> ScanStatus:

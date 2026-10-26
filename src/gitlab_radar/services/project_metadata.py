@@ -33,8 +33,8 @@ class ProjectMetadata:  # pylint: disable=too-many-instance-attributes
 
 
 def parse_project_metadata(
-        files: Mapping[str, bytes],
-        pyproject: dict[str, Any] | None = None,
+    files: Mapping[str, bytes],
+    pyproject: dict[str, Any] | None = None,
 ) -> ProjectMetadata:
     pyproject_content = files.get('pyproject.toml')
     pyproject = parse_pyproject_document(pyproject_content) if pyproject is None else pyproject
@@ -49,17 +49,9 @@ def parse_project_metadata(
     optional_dependencies = merge_dependency_groups(
         [group for declaration in declarations for group in declaration.optional_dependencies],
     )
-    requirements_files = [
-        content
-        for filename, content in sorted(files.items())
-        if is_requirements_filename(filename)
-    ]
+    requirements_files = [content for filename, content in sorted(files.items()) if is_requirements_filename(filename)]
     if not dependencies:
-        dependencies.extend(
-            dependency
-            for content in requirements_files
-            for dependency in parse_requirements(content)
-        )
+        dependencies.extend(dependency for content in requirements_files for dependency in parse_requirements(content))
 
     dependencies = resolve_locked_versions(unique_dependencies(dependencies), lock.dependencies)
     optional_dependencies = [
@@ -71,11 +63,7 @@ def parse_project_metadata(
     ]
     direct_names = {dependency.name for dependency in dependencies}
     optional_dependencies = _without_direct_dependencies(optional_dependencies, direct_names)
-    optional_names = {
-        dependency.name
-        for group in optional_dependencies
-        for dependency in group.dependencies
-    }
+    optional_names = {dependency.name for group in optional_dependencies for dependency in group.dependencies}
     project_names = {declaration.project_name for declaration in declarations if declaration.project_name}
     excluded_names = direct_names | optional_names | project_names | {'python'}
     python_version = _python_version_file(files.get('.python-version'))
@@ -143,7 +131,7 @@ def _pip_registries(content: bytes) -> set[str]:
     parser = ConfigParser(interpolation=None)
     try:
         parser.read_string(content.decode('utf-8'))
-    except (ConfigParserError, UnicodeDecodeError):
+    except ConfigParserError, UnicodeDecodeError:
         logger.warning('Не удалось разобрать pip.conf')
         return set()
     return {
@@ -174,8 +162,8 @@ def _index_urls(section: Mapping[str, object]) -> set[str]:
 
 
 def _without_direct_dependencies(
-        groups: list[DependencyGroup],
-        direct_names: set[str],
+    groups: list[DependencyGroup],
+    direct_names: set[str],
 ) -> list[DependencyGroup]:
     result: list[DependencyGroup] = []
     for group in groups:

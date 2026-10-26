@@ -32,6 +32,7 @@ PACKAGE_MANAGER_TITLES = {
     PackageManager.UNKNOWN: 'Не определен',
 }
 
+
 @dataclass(slots=True)
 class _DashboardCache:
     scan_id: int | None = None
@@ -61,10 +62,7 @@ async def build_dashboard() -> Dashboard:
     subprojects = [subproject for project in projects for subproject in project.subprojects]
     dependency_catalog = await build_dependency_catalog(projects)
     rule_matches = Counter(
-        code
-        for project in projects
-        for code, matches in project.company_rule_results.items()
-        if matches
+        code for project in projects for code, matches in project.company_rule_results.items() if matches
     )
     python_versions = _python_versions(projects)
     image_statistics, registry_statistics = _registry_statistics(projects)
@@ -101,7 +99,8 @@ async def build_dashboard() -> Dashboard:
             python_versions=[
                 TechnologyUsage(name=f'Python {version}', projects_count=count)
                 for version, count in python_versions.most_common()
-            ] + [
+            ]
+            + [
                 TechnologyUsage(
                     name='Python LTS',
                     projects_count=sum(
@@ -126,8 +125,7 @@ async def build_dashboard() -> Dashboard:
                 subproject.package_manager is PackageManager.UNKNOWN for subproject in subprojects
             ),
             unknown_python_version=sum(
-                not (subproject.python_version or subproject.python_constraint)
-                for subproject in subprojects
+                not (subproject.python_version or subproject.python_constraint) for subproject in subprojects
             ),
             projects_without_subprojects=sum(not project.subprojects for project in projects),
             analysis_errors=sum(bool(project.scan_error) for project in projects),
@@ -159,9 +157,7 @@ def _package_manager_statistics(
 ) -> list[PackageManagerStatistics]:
     subproject_managers = Counter(subproject.package_manager for subproject in subprojects)
     projects_by_manager = Counter(
-        (project.package_manager or PackageManager.UNKNOWN)
-        if project.subprojects
-        else PackageManager.UNKNOWN
+        (project.package_manager or PackageManager.UNKNOWN) if project.subprojects else PackageManager.UNKNOWN
         for project in projects
     )
     return [
@@ -238,11 +234,7 @@ def _project_uses_dependency(project: Project, dependency_name: str) -> bool:
         for subproject in project.subprojects
         for dependency in (
             subproject.dependencies
-            + [
-                dependency
-                for group in subproject.optional_dependencies
-                for dependency in group.dependencies
-            ]
+            + [dependency for group in subproject.optional_dependencies for dependency in group.dependencies]
         )
     )
 
@@ -252,9 +244,7 @@ def _top_dependencies(projects: list[Project]) -> list[DependencyStatistics]:
     for project in projects:
         for subproject in project.subprojects:
             dependencies = subproject.dependencies + [
-                dependency
-                for group in subproject.optional_dependencies
-                for dependency in group.dependencies
+                dependency for group in subproject.optional_dependencies for dependency in group.dependencies
             ]
             for dependency in dependencies:
                 projects_by_dependency.setdefault(dependency.name, set()).add(project.id)

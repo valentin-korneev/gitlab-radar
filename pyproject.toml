@@ -6,12 +6,16 @@ dependencies = [
     "fastapi>=0.162.0",
     "packaging>=26.3",
     "pydantic-settings>=2.16.1",
+    "pyjwt[crypto]>=2.15.1",
     "python-gitlab>=8.6.0",
     "pyyaml>=6.0.3",
-    "tortoise-orm>=1.1.9",
+    "tortoise-orm[asyncpg]>=1.1.9",
     "uvicorn>=0.54.0",
     "websockets>=17.3",
 ]
+
+[tool.tortoise]
+tortoise_orm = "gitlab_radar.database.config.TORTOISE_ORM"
 
 [dependency-groups]
 dev = [
@@ -33,6 +37,7 @@ packages = ["src/gitlab_radar"]
 [tool.ruff]
 exclude = [
     '.venv',
+    'src/gitlab_radar/database/migrations',
 ]
 line-length = 120
 
@@ -68,6 +73,9 @@ quote-style = "single"
 [tool.pylint.main]
 ignore = [
     ".venv",
+]
+ignore-paths = [
+    "^src/gitlab_radar/database/migrations/.*$",
 ]
 max-line-length = 120
 py-version = "3.15"

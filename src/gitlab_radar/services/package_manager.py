@@ -110,8 +110,7 @@ def _uses_build_system(
     if not isinstance(requirements, list):
         return False
     return any(
-        isinstance(requirement, str) and _requirement_name(requirement) == package
-        for requirement in requirements
+        isinstance(requirement, str) and _requirement_name(requirement) == package for requirement in requirements
     )
 
 

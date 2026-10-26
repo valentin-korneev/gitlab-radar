@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from tortoise.exceptions import IntegrityError
 
+from gitlab_radar.auth import management_access_dependency
 from gitlab_radar.database.models import CompanyRequirement
 from gitlab_radar.database.models import CompanyRequirementGroup as CompanyRequirementGroupModel
 from gitlab_radar.database.repository import invalidate_project_cache
@@ -21,7 +22,7 @@ async def get_groups() -> list[CompanyRequirementGroup]:
     return [_serialize(row) for row in rows]
 
 
-@router.post('/', status_code=status.HTTP_201_CREATED)
+@router.post('/', status_code=status.HTTP_201_CREATED, dependencies=[Depends(management_access_dependency)])
 async def create_group(payload: CompanyRequirementGroupCreate) -> CompanyRequirementGroup:
     try:
         row = await CompanyRequirementGroupModel.create(**payload.model_dump())
@@ -31,7 +32,7 @@ async def create_group(payload: CompanyRequirementGroupCreate) -> CompanyRequire
     return _serialize(row)
 
 
-@router.put('/order')
+@router.put('/order', dependencies=[Depends(management_access_dependency)])
 async def reorder_groups(payload: CompanyRequirementGroupOrder) -> list[CompanyRequirementGroup]:
     existing_ids = set(await CompanyRequirementGroupModel.all().values_list('id', flat=True))
     if len(payload.group_ids) != len(existing_ids) or set(payload.group_ids) != existing_ids:
@@ -42,7 +43,7 @@ async def reorder_groups(payload: CompanyRequirementGroupOrder) -> list[CompanyR
     return await get_groups()
 
 
-@router.put('/{group_id}')
+@router.put('/{group_id}', dependencies=[Depends(management_access_dependency)])
 async def update_group(group_id: int, payload: CompanyRequirementGroupUpdate) -> CompanyRequirementGroup:
     row = await CompanyRequirementGroupModel.get_or_none(id=group_id)
     if row is None:
@@ -58,7 +59,11 @@ async def update_group(group_id: int, payload: CompanyRequirementGroupUpdate) ->
     return _serialize(row)
 
 
-@router.delete('/{group_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    '/{group_id}',
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(management_access_dependency)],
+)
 async def delete_group(group_id: int) -> Response:
     row = await CompanyRequirementGroupModel.get_or_none(id=group_id)
     if row is None:

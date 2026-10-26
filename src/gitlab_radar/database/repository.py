@@ -1,5 +1,7 @@
 import logging
-from pathlib import Path
+from datetime import UTC, datetime
+
+from tortoise.transactions import in_transaction
 
 from gitlab_radar.database.models import ProjectFile, ProjectSnapshot, ScanRun
 from gitlab_radar.schemas.project import Project
@@ -53,7 +55,7 @@ async def load_projects() -> list[Project]:
             apply_company_compliance(project, requirements)
         PROJECT_CACHE.scan_id = scan.id
         PROJECT_CACHE.projects = projects
-        logger.info('Снимок %d загружен из SQLite: проектов %d', scan.id, len(projects))
+        logger.info('Снимок %d загружен из PostgreSQL: проектов %d', scan.id, len(projects))
     return [project.model_copy(deep=True) for project in PROJECT_CACHE.projects]
 
 
@@ -77,9 +79,9 @@ async def find_reusable_project(gitlab_id: int, revision: str | None) -> Project
 
 
 async def clone_project(
-        source: ProjectSnapshot,
-        scan: ScanRun,
-        project: Project,
+    source: ProjectSnapshot,
+    scan: ScanRun,
+    project: Project,
 ) -> ProjectSnapshot:
     payload = dict(source.payload)
     payload.update(
@@ -88,7 +90,7 @@ async def clone_project(
             include=REUSED_PROJECT_METADATA_FIELDS,
         ),
     )
-    snapshot = await ProjectSnapshot.create(
+    return await ProjectSnapshot.create(
         scan=scan,
         gitlab_id=project.id,
         revision=source.revision,
@@ -97,53 +99,52 @@ async def clone_project(
         analyzed=True,
         reused=True,
     )
-    source_files = await ProjectFile.filter(project=source)
-    await ProjectFile.bulk_create(
-        [
-            ProjectFile(
-                project=snapshot,
-                path=file.path,
-                local_path=file.local_path,
-                size=file.size,
-            )
-            for file in source_files
-        ],
-    )
-    return snapshot
 
 
 async def save_collected_project(
-        scan: ScanRun,
-        project: Project,
-        revision: str | None,
-        files: dict[str, Path],
-        error: str | None = None,
+    scan: ScanRun,
+    project: Project,
+    revision: str | None,
+    files: dict[str, str],
+    error: str | None = None,
 ) -> ProjectSnapshot:
-    snapshot = await ProjectSnapshot.create(
-        scan=scan,
-        gitlab_id=project.id,
-        revision=revision,
-        payload=_project_payload(project),
-        collected=error is None,
-        error=error,
-    )
-    await ProjectFile.bulk_create(
-        [
-            ProjectFile(
-                project=snapshot,
-                path=path,
-                local_path=str(local_path),
-                size=local_path.stat().st_size,
-            )
-            for path, local_path in files.items()
-        ],
-    )
+    async with in_transaction() as connection:
+        snapshot = await ProjectSnapshot.create(
+            scan=scan,
+            gitlab_id=project.id,
+            revision=revision,
+            payload=_project_payload(project),
+            collected=error is None,
+            error=error,
+            using_db=connection,
+        )
+        await ProjectFile.bulk_create(
+            [
+                ProjectFile(
+                    project=snapshot,
+                    path=path,
+                    content=content,
+                )
+                for path, content in files.items()
+            ],
+            using_db=connection,
+        )
     return snapshot
 
 
-async def project_files(snapshot_id: int) -> dict[str, Path]:
-    rows = await ProjectFile.filter(project_id=snapshot_id).values('path', 'local_path')
-    return {row['path']: Path(row['local_path']) for row in rows}
+async def project_files(snapshot_id: int) -> dict[str, str]:
+    rows = await ProjectFile.filter(project_id=snapshot_id).values('path', 'content')
+    return {row['path']: row['content'] for row in rows}
+
+
+async def delete_project_files(snapshot_id: int) -> None:
+    await ProjectFile.filter(project_id=snapshot_id).delete()
+
+
+async def delete_scan_files(scan_id: int) -> None:
+    snapshot_ids = await ProjectSnapshot.filter(scan_id=scan_id).values_list('id', flat=True)
+    if snapshot_ids:
+        await ProjectFile.filter(project_id__in=snapshot_ids).delete()
 
 
 async def save_analysis(snapshot_id: int, project: Project, error: str | None = None) -> None:
@@ -187,6 +188,19 @@ async def trim_old_scans(keep: int) -> None:
     retained_ids = await ScanRun.filter(published=True).order_by('-id').limit(keep).values_list('id', flat=True)
     if retained_ids:
         await ScanRun.filter(published=True).exclude(id__in=retained_ids).delete()
+
+
+async def recover_stale_scans() -> None:
+    scan_ids = await ScanRun.filter(state='running').values_list('id', flat=True)
+    if not scan_ids:
+        return
+    for scan_id in scan_ids:
+        await delete_scan_files(scan_id)
+    await ScanRun.filter(id__in=scan_ids).update(
+        state='failed',
+        completed_at=datetime.now(UTC),
+        error='Приложение было остановлено до завершения сканирования',
+    )
 
 
 def _project_payload(project: Project) -> dict:

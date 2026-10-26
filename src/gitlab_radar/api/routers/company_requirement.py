@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from tortoise.exceptions import IntegrityError
 
+from gitlab_radar.auth import management_access_dependency
 from gitlab_radar.database.models import CompanyRequirement as CompanyRequirementModel
 from gitlab_radar.database.models import CompanyRequirementGroup
 from gitlab_radar.database.repository import invalidate_project_cache
@@ -47,7 +48,7 @@ async def get_requirements() -> list[CompanyRequirement]:
     return await load_company_requirements(enabled=None)
 
 
-@router.get('/catalog')
+@router.get('/catalog', dependencies=[Depends(management_access_dependency)])
 async def get_requirement_catalog() -> RequirementCatalog:
     return RequirementCatalog(
         sources=[RequirementOption(value=value, title=title) for value, title in SOURCE_TITLES.items()],
@@ -55,7 +56,7 @@ async def get_requirement_catalog() -> RequirementCatalog:
     )
 
 
-@router.post('/', status_code=status.HTTP_201_CREATED)
+@router.post('/', status_code=status.HTTP_201_CREATED, dependencies=[Depends(management_access_dependency)])
 async def create_requirement(payload: CompanyRequirementCreate) -> CompanyRequirement:
     await _ensure_group_exists(payload.group_id)
     await _ensure_group_has_space(payload.group_id)
@@ -67,7 +68,7 @@ async def create_requirement(payload: CompanyRequirementCreate) -> CompanyRequir
     return _serialize(row)
 
 
-@router.put('/order')
+@router.put('/order', dependencies=[Depends(management_access_dependency)])
 async def reorder_requirements(payload: CompanyRequirementOrder) -> list[CompanyRequirement]:
     existing_ids = set(
         await CompanyRequirementModel.filter(group_id=payload.group_id).values_list('id', flat=True),
@@ -80,7 +81,7 @@ async def reorder_requirements(payload: CompanyRequirementOrder) -> list[Company
     return await load_company_requirements(enabled=None)
 
 
-@router.put('/{requirement_id}')
+@router.put('/{requirement_id}', dependencies=[Depends(management_access_dependency)])
 async def update_requirement(requirement_id: int, payload: CompanyRequirementUpdate) -> CompanyRequirement:
     row = await CompanyRequirementModel.get_or_none(id=requirement_id)
     if row is None:
@@ -98,7 +99,7 @@ async def update_requirement(requirement_id: int, payload: CompanyRequirementUpd
     return _serialize(row)
 
 
-@router.patch('/{requirement_id}/enabled')
+@router.patch('/{requirement_id}/enabled', dependencies=[Depends(management_access_dependency)])
 async def set_requirement_enabled(
     requirement_id: int,
     payload: CompanyRequirementEnabled,
@@ -112,7 +113,7 @@ async def set_requirement_enabled(
     return _serialize(row)
 
 
-@router.patch('/{requirement_id}/group')
+@router.patch('/{requirement_id}/group', dependencies=[Depends(management_access_dependency)])
 async def move_requirement(requirement_id: int, payload: CompanyRequirementMove) -> CompanyRequirement:
     row = await CompanyRequirementModel.get_or_none(id=requirement_id)
     if row is None:
@@ -127,7 +128,11 @@ async def move_requirement(requirement_id: int, payload: CompanyRequirementMove)
     return _serialize(row)
 
 
-@router.delete('/{requirement_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    '/{requirement_id}',
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(management_access_dependency)],
+)
 async def delete_requirement(requirement_id: int) -> Response:
     deleted = await CompanyRequirementModel.filter(id=requirement_id).delete()
     if not deleted:

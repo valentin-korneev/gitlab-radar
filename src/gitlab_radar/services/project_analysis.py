@@ -1,5 +1,5 @@
 import logging
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 from gitlab_radar.config import settings
 from gitlab_radar.schemas.project import Project, ProjectSubproject
@@ -20,14 +20,10 @@ from gitlab_radar.services.project_metadata import parse_project_metadata
 logger = logging.getLogger(__name__)
 
 
-def analyze_project(project: Project, files: dict[str, Path], revision: str | None) -> Project:
-    contents = {path: local_path.read_bytes() for path, local_path in files.items()}
+def analyze_project(project: Project, files: dict[str, str], revision: str | None) -> Project:
+    contents = {path: content.encode() for path, content in files.items()}
     file_sets = _build_file_sets(contents)
-    ci_files = {
-        path: content
-        for path, content in contents.items()
-        if PurePosixPath(path).name in GITLAB_CI_FILENAMES
-    }
+    ci_files = {path: content for path, content in contents.items() if PurePosixPath(path).name in GITLAB_CI_FILENAMES}
     project.revision = revision
     project.subprojects = [_build_subproject(path, file_set) for path, file_set in file_sets]
     project.package_manager = _project_package_manager(project.subprojects)
@@ -36,7 +32,8 @@ def analyze_project(project: Project, files: dict[str, Path], revision: str | No
     project.gitlab_ci_components = parse_gitlab_components(ci_files, settings.gitlab.url)
     project.container_images = parse_container_images(contents)
     project.package_registries = sorted(
-        {registry for item in project.subprojects for registry in item.package_registries})
+        {registry for item in project.subprojects for registry in item.package_registries}
+    )
     project.scan_error = None
     logger.info(
         'Проект %s проанализирован: подпроектов %d, файлов %d',
@@ -49,14 +46,10 @@ def analyze_project(project: Project, files: dict[str, Path], revision: str | No
 
 def _build_file_sets(files: dict[str, bytes]) -> list[tuple[str, dict[str, bytes]]]:
     subproject_files = {
-        path: content
-        for path, content in files.items()
-        if is_subproject_filename(PurePosixPath(path).name)
+        path: content for path, content in files.items() if is_subproject_filename(PurePosixPath(path).name)
     }
     directories = {
-        _parent_directory(path)
-        for path in subproject_files
-        if is_package_discovery_filename(PurePosixPath(path).name)
+        _parent_directory(path) for path in subproject_files if is_package_discovery_filename(PurePosixPath(path).name)
     }
     return [
         (

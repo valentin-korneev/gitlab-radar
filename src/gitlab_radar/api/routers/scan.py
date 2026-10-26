@@ -1,7 +1,8 @@
 import asyncio
 
-from fastapi import APIRouter, HTTPException, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect, status
 
+from gitlab_radar.auth import consume_websocket_ticket, management_access_dependency
 from gitlab_radar.schemas.scan import ScanStatus
 from gitlab_radar.tasks.scan import scan_task
 
@@ -10,39 +11,35 @@ router = APIRouter()
 
 @router.websocket('/ws')
 async def scan_status_socket(websocket: WebSocket) -> None:
+    ticket = websocket.query_params.get('ticket')
+    if ticket is None or not await consume_websocket_ticket(ticket):
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
-    updates = scan_task.subscribe()
+    previous_status: dict | None = None
     try:
-        await websocket.send_json((await scan_task.status()).model_dump(mode='json'))
         while True:
-            update_task = asyncio.create_task(updates.get())
-            disconnect_task = asyncio.create_task(websocket.receive())
-            done, pending = await asyncio.wait(
-                {update_task, disconnect_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*pending, return_exceptions=True)
-            if disconnect_task in done:
-                message = disconnect_task.result()
-                if message['type'] == 'websocket.disconnect':
-                    break
+            status_payload = (await scan_task.status()).model_dump(mode='json')
+            if status_payload != previous_status:
+                await websocket.send_json(status_payload)
+                previous_status = status_payload
+            try:
+                message = await asyncio.wait_for(websocket.receive(), timeout=1)
+            except TimeoutError:
                 continue
-            await websocket.send_json(update_task.result().model_dump(mode='json'))
+            if message['type'] == 'websocket.disconnect':
+                break
     except WebSocketDisconnect:
         pass
-    finally:
-        scan_task.unsubscribe(updates)
 
 
-@router.get('/', response_model=ScanStatus)
+@router.get('/', response_model=ScanStatus, dependencies=[Depends(management_access_dependency)])
 async def get_scan_status(response: Response) -> ScanStatus:
     response.headers['Cache-Control'] = 'no-store'
     return await scan_task.status()
 
 
-@router.post('/', status_code=status.HTTP_202_ACCEPTED)
+@router.post('/', status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(management_access_dependency)])
 async def scan(response: Response) -> ScanStatus:
     response.headers['Cache-Control'] = 'no-store'
     if not await scan_task.start():

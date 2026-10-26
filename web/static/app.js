@@ -1,9 +1,13 @@
 const API = {
+  authConfig: '/api/auth/config',
+  authSession: '/api/auth/session',
+  websocketTicket: '/api/auth/websocket-ticket',
   dashboard: '/api/dashboard/', dependencies: '/api/dependency/', projects: '/api/project/', scan: '/api/scan/',
   requirements: '/api/company-requirement/', requirementCatalog: '/api/company-requirement/catalog',
   requirementGroups: '/api/company-requirement-group/',
   parameters: '/api/application-parameter/',
 };
+const MANAGEMENT_ROUTES = new Set(['requirements', 'parameters', 'admin']);
 const PAGE_ROUTES = {
   dashboard: { page: 'dashboard' },
   projects: { page: 'projects' },
@@ -35,12 +39,169 @@ const state = {
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
   requirements: [], requirementGroups: [], requirementCatalog: null,
   parameters: [],
+  auth: { config: null, tokens: null, user: null },
+  currentRoute: null,
   selectedRequirementGroupId: null,
   loaded: { dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false, admin: false }, loading: {},
 };
 
+function base64Url(bytes) {
+  return btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
+}
+function decodeToken(token) {
+  const encoded = token.split('.')[1].replaceAll('-', '+').replaceAll('_', '/');
+  const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, '=');
+  return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(padded), (character) => character.charCodeAt(0))));
+}
+function tokenEndpoint() {
+  return `${state.auth.config.issuer}/protocol/openid-connect/token`;
+}
+function saveTokens(tokens) {
+  const payload = decodeToken(tokens.access_token);
+  state.auth.tokens = { ...state.auth.tokens, ...tokens, expires_at: payload.exp };
+  sessionStorage.setItem('radar-auth-tokens', JSON.stringify(state.auth.tokens));
+}
+function clearTokens() {
+  state.auth.tokens = null;
+  state.auth.user = null;
+  sessionStorage.removeItem('radar-auth-tokens');
+  renderAuth();
+}
+async function accessToken() {
+  if (!state.auth.tokens) return null;
+  if (state.auth.tokens.expires_at * 1000 > Date.now() + 30000) return state.auth.tokens.access_token;
+  if (!state.auth.tokens.refresh_token) {
+    clearTokens();
+    return null;
+  }
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    client_id: state.auth.config.client_id,
+    refresh_token: state.auth.tokens.refresh_token,
+  });
+  const response = await fetch(tokenEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (!response.ok) {
+    clearTokens();
+    return null;
+  }
+  saveTokens(await response.json());
+  return state.auth.tokens.access_token;
+}
+async function startLogin(routeName = window.location.hash.slice(1) || 'dashboard') {
+  const redirectUrl = new URL(state.auth.config.redirect_uri);
+  if (window.location.origin !== redirectUrl.origin) {
+    redirectUrl.searchParams.set('login', '1');
+    redirectUrl.hash = routeName;
+    window.location.assign(redirectUrl);
+    return;
+  }
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('Авторизация требует безопасный адрес. Откройте приложение через 127.0.0.1 или HTTPS.');
+  }
+  const verifier = base64Url(crypto.getRandomValues(new Uint8Array(48)));
+  const challenge = base64Url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))));
+  const oauthState = base64Url(crypto.getRandomValues(new Uint8Array(24)));
+  sessionStorage.setItem('radar-auth-verifier', verifier);
+  sessionStorage.setItem('radar-auth-state', oauthState);
+  sessionStorage.setItem('radar-auth-route', routeName);
+  const parameters = new URLSearchParams({
+    client_id: state.auth.config.client_id,
+    redirect_uri: state.auth.config.redirect_uri,
+    response_type: 'code',
+    scope: 'openid profile email',
+    state: oauthState,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+  });
+  window.location.assign(`${state.auth.config.issuer}/protocol/openid-connect/auth?${parameters}`);
+}
+async function finishLogin(code, returnedState) {
+  const expectedState = sessionStorage.getItem('radar-auth-state');
+  const verifier = sessionStorage.getItem('radar-auth-verifier');
+  if (!expectedState || returnedState !== expectedState || !verifier) throw new Error('Не удалось проверить ответ авторизации');
+  const response = await fetch(tokenEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: state.auth.config.client_id,
+      redirect_uri: state.auth.config.redirect_uri,
+      code,
+      code_verifier: verifier,
+    }),
+  });
+  if (!response.ok) throw new Error('Keycloak отклонил авторизацию');
+  saveTokens(await response.json());
+  const route = sessionStorage.getItem('radar-auth-route') || 'dashboard';
+  ['radar-auth-state', 'radar-auth-verifier', 'radar-auth-route'].forEach((key) => sessionStorage.removeItem(key));
+  window.history.replaceState(null, '', `${window.location.pathname}#${route}`);
+}
+async function logout() {
+  const idToken = state.auth.tokens?.id_token;
+  clearTokens();
+  if (!idToken) return;
+  const parameters = new URLSearchParams({
+    client_id: state.auth.config.client_id,
+    id_token_hint: idToken,
+    post_logout_redirect_uri: state.auth.config.redirect_uri,
+  });
+  window.location.assign(`${state.auth.config.issuer}/protocol/openid-connect/logout?${parameters}`);
+}
+function renderAuth() {
+  const panel = document.querySelector('#auth-panel');
+  const authenticated = Boolean(state.auth.user);
+  document.querySelectorAll('.management-navigation').forEach((item) => {
+    item.hidden = !authenticated;
+  });
+  panel.hidden = false;
+  document.querySelector('#auth-user').textContent = authenticated
+    ? state.auth.user.preferred_username || state.auth.user.name || 'Пользователь'
+    : 'Управление защищено';
+  document.querySelector('#auth-button').textContent = authenticated ? 'Выйти' : 'Войти';
+}
+async function initializeAuth() {
+  const response = await fetch(API.authConfig, { cache: 'no-store' });
+  if (!response.ok) throw new Error('Не удалось загрузить настройки авторизации');
+  state.auth.config = await response.json();
+  const stored = sessionStorage.getItem('radar-auth-tokens');
+  if (stored) {
+    try {
+      state.auth.tokens = JSON.parse(stored);
+    } catch (error) {
+      clearTokens();
+    }
+  }
+  const parameters = new URLSearchParams(window.location.search);
+  if (parameters.has('error')) throw new Error(parameters.get('error_description') || 'Авторизация отменена');
+  if (parameters.has('code')) await finishLogin(parameters.get('code'), parameters.get('state'));
+  if (parameters.get('login') === '1') {
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+    await startLogin(window.location.hash.slice(1) || 'dashboard');
+    return;
+  }
+  if (state.auth.tokens) {
+    try {
+      state.auth.user = await api(API.authSession);
+    } catch (error) {
+      clearTokens();
+      showError(error);
+      if (MANAGEMENT_ROUTES.has(window.location.hash.slice(1))) {
+        window.history.replaceState(null, '', `${window.location.pathname}#dashboard`);
+      }
+    }
+  }
+  renderAuth();
+}
+
 async function api(path, options = {}) {
-  const response = await fetch(path, { cache: 'no-store', ...options });
+  const headers = new Headers(options.headers || {});
+  const token = await accessToken();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const response = await fetch(path, { cache: 'no-store', ...options, headers });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.detail || `HTTP ${response.status}`);
@@ -48,11 +209,11 @@ async function api(path, options = {}) {
   return response.status === 204 ? null : response.json();
 }
 function activeRequirements() { return state.requirements.filter((requirement) => requirement.enabled); }
-async function ensureRequirements() {
+async function ensureRequirements(includeCatalog = false) {
   const requests = [];
   if (!state.requirements.length) requests.push(api(API.requirements).then((items) => { state.requirements = items; }));
   if (!state.requirementGroups.length) requests.push(api(API.requirementGroups).then((items) => { state.requirementGroups = items; }));
-  if (!state.requirementCatalog) requests.push(api(API.requirementCatalog).then((catalog) => { state.requirementCatalog = catalog; }));
+  if (includeCatalog && !state.requirementCatalog) requests.push(api(API.requirementCatalog).then((catalog) => { state.requirementCatalog = catalog; }));
   await Promise.all(requests);
   renderRuleFilters();
 }
@@ -179,6 +340,12 @@ async function showPage() {
   const requestedRoute = window.location.hash.slice(1);
   const routeName = PAGE_ROUTES[requestedRoute] ? requestedRoute : 'dashboard';
   const route = PAGE_ROUTES[routeName];
+  if (state.currentRoute === 'projects' && routeName !== 'projects') resetProjectFilters();
+  if (MANAGEMENT_ROUTES.has(routeName) && !await accessToken()) {
+    await startLogin(routeName);
+    return;
+  }
+  state.currentRoute = routeName;
   document.querySelectorAll('.nav-item, .page').forEach((node) => node.classList.remove('active'));
   document.querySelector(`.nav-item[data-route="${routeName}"]`).classList.add('active');
   document.querySelector(`#${route.page}`).classList.add('active');
@@ -223,6 +390,10 @@ function projectMatchesFilters(project) {
   const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${pythonVersions}`.toLowerCase();
   return (!query || searchable.includes(query))
     && rules.every((rule) => project.company_rule_results?.[rule] === false);
+}
+function resetProjectFilters() {
+  document.querySelector('#project-search').value = '';
+  document.querySelectorAll('.rule-switches input').forEach((input) => { input.checked = false; });
 }
 function renderProjects() {
   const projects = state.projects.filter(projectMatchesFilters);
@@ -1134,10 +1305,11 @@ async function loadAdmin() {
   const dashboard = await api(API.dashboard);
   renderLastScan(dashboard.last_scan);
   renderDataQuality(dashboard.data_quality);
+  await connectScanStatusSocket();
   state.loaded.admin = true;
 }
 async function loadRequirementsPage() {
-  await ensureRequirements();
+  await ensureRequirements(true);
   renderRequirementGroups();
   if (!document.querySelector('.requirement-condition')) addRequirementCondition();
   state.loaded.requirements = true;
@@ -1291,18 +1463,22 @@ function renderScanStatus(scan) {
   document.querySelector('#scan-errors-count').textContent = allErrors.length;
   errorList.replaceChildren(...allErrors.map((error) => element('p', '', error)));
 }
-function connectScanStatusSocket() {
+async function connectScanStatusSocket() {
+  const token = await accessToken();
+  if (!token) return;
   const socketProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   window.clearTimeout(state.scanReconnectTimer);
   if (state.scanSocket?.readyState === WebSocket.OPEN || state.scanSocket?.readyState === WebSocket.CONNECTING) return;
-  const socket = new WebSocket(`${socketProtocol}//${window.location.host}/api/scan/ws`);
+  const ticket = (await api(API.websocketTicket, { method: 'POST' })).ticket;
+  const query = `?ticket=${encodeURIComponent(ticket)}`;
+  const socket = new WebSocket(`${socketProtocol}//${window.location.host}/api/scan/ws${query}`);
   state.scanSocket = socket;
   socket.addEventListener('message', (event) => {
     handleScanStatus(JSON.parse(event.data)).catch(showError);
   });
   socket.addEventListener('close', () => {
     if (state.scanSocket === socket) state.scanSocket = null;
-    state.scanReconnectTimer = window.setTimeout(connectScanStatusSocket, 3000);
+    if (window.location.hash === '#admin') state.scanReconnectTimer = window.setTimeout(connectScanStatusSocket, 3000);
   });
   socket.addEventListener('error', () => socket.close());
 }
@@ -1333,9 +1509,22 @@ function showError(error) {
 }
 
 document.querySelectorAll('.nav-item').forEach((item) => {
-  item.addEventListener('click', () => { window.location.hash = item.dataset.route; });
+  item.addEventListener('click', () => {
+    if (item.dataset.route === 'projects' && state.currentRoute === 'projects') {
+      resetProjectFilters();
+      renderProjects();
+      return;
+    }
+    window.location.hash = item.dataset.route;
+  });
 });
-window.addEventListener('hashchange', showPage);
+document.querySelector('#auth-button').addEventListener('click', async () => {
+  try {
+    if (state.auth.user) await logout();
+    else await startLogin();
+  } catch (error) { showError(error); }
+});
+window.addEventListener('hashchange', () => { showPage().catch(showError); });
 document.querySelector('#project-search').addEventListener('input', renderProjects);
 document.querySelector('#dependency-search').addEventListener('input', renderDependencies);
 document.querySelector('#show-transitive').addEventListener('change', (event) => {
@@ -1481,6 +1670,11 @@ document.querySelector('#requirement-form').addEventListener('submit', async (ev
     document.querySelector('#requirement-dialog').close();
   } catch (error) { showError(error); }
 });
-showPage();
-connectScanStatusSocket();
-window.setInterval(updateScanDuration, 1000);
+async function startApplication() {
+  try {
+    await initializeAuth();
+    await showPage();
+  } catch (error) { showError(error); }
+  window.setInterval(updateScanDuration, 1000);
+}
+startApplication();

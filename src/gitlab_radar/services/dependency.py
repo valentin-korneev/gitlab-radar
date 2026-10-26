@@ -29,8 +29,8 @@ _DEPENDENCY_CACHE = _DependencyCache()
 
 
 async def build_dependency_catalog(
-        projects: list[Project] | None = None,
-        source: DependencySource = DependencySource.PYTHON,
+    projects: list[Project] | None = None,
+    source: DependencySource = DependencySource.PYTHON,
 ) -> list[DependencyUsage]:
     cacheable = projects is None
     if cacheable:
@@ -136,7 +136,7 @@ def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
 
 
 def _version_sort_key(
-        item: tuple[str | None, dict[int, DependencyProject]],
+    item: tuple[str | None, dict[int, DependencyProject]],
 ) -> tuple[bool, Version, str]:
     value = item[0]
     if value is None:
@@ -154,11 +154,7 @@ def _version_sort_key(
 
 
 def project_dependency_names(project: Project) -> set[str]:
-    return {
-        dependency.name
-        for subproject in project.subprojects
-        for dependency in subproject_dependencies(subproject)
-    }
+    return {dependency.name for subproject in project.subprojects for dependency in subproject_dependencies(subproject)}
 
 
 def subproject_dependencies(subproject: ProjectSubproject) -> Iterable[Dependency]:
@@ -167,7 +163,7 @@ def subproject_dependencies(subproject: ProjectSubproject) -> Iterable[Dependenc
 
 
 def subproject_dependency_entries(
-        subproject: ProjectSubproject,
+    subproject: ProjectSubproject,
 ) -> Iterable[tuple[Dependency, DependencyLevel]]:
     yield from ((dependency, DependencyLevel.DIRECT) for dependency in subproject.dependencies)
     yield from (
@@ -175,7 +171,4 @@ def subproject_dependency_entries(
         for group in subproject.optional_dependencies
         for dependency in group.dependencies
     )
-    yield from (
-        (dependency, DependencyLevel.TRANSITIVE)
-        for dependency in subproject.transitive_dependencies
-    )
+    yield from ((dependency, DependencyLevel.TRANSITIVE) for dependency in subproject.transitive_dependencies)

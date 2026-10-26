@@ -23,8 +23,7 @@ async def load_database_fixtures() -> None:
         return
 
     groups = [
-        CompanyRequirementGroupCreate.model_validate(item)
-        for item in _read_fixture('company_requirement_groups.yaml')
+        CompanyRequirementGroupCreate.model_validate(item) for item in _read_fixture('company_requirement_groups.yaml')
     ]
     groups_by_name: dict[str, CompanyRequirementGroup] = {}
     for group in groups:
@@ -55,8 +54,7 @@ async def _load_application_parameters() -> None:
     if await DataFixture.filter(name=fixture_name).exists():
         return
     parameters = [
-        ApplicationParameterSchema.model_validate(item)
-        for item in _read_fixture('application_parameters.yaml')
+        ApplicationParameterSchema.model_validate(item) for item in _read_fixture('application_parameters.yaml')
     ]
     await ApplicationParameter.bulk_create(
         [ApplicationParameter(**parameter.model_dump(mode='json')) for parameter in parameters],

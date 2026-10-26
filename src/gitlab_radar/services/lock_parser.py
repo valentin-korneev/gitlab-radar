@@ -28,8 +28,8 @@ def parse_lock_metadata(files: dict[str, bytes]) -> LockMetadata:
 
 
 def resolve_locked_versions(
-        dependencies: list[Dependency],
-        locked_dependencies: list[Dependency],
+    dependencies: list[Dependency],
+    locked_dependencies: list[Dependency],
 ) -> list[Dependency]:
     locked_versions: dict[str, set[str]] = {}
     for dependency in locked_dependencies:
@@ -39,10 +39,7 @@ def resolve_locked_versions(
     for dependency in dependencies:
         versions = locked_versions.get(dependency.name, set())
         if versions:
-            resolved.extend(
-                Dependency(name=dependency.name, version=version)
-                for version in sorted(versions)
-            )
+            resolved.extend(Dependency(name=dependency.name, version=version) for version in sorted(versions))
         else:
             resolved.append(dependency)
     return unique_dependencies(resolved)

@@ -26,8 +26,7 @@ def parse_container_images(files: dict[str, bytes]) -> list[ContainerImage]:
             key = (image.registry, image.image, image.version)
             existing = images.get(key)
             if existing is None or (
-                image.source is ContainerSource.COMPOSE
-                and existing.source is not ContainerSource.COMPOSE
+                image.source is ContainerSource.COMPOSE and existing.source is not ContainerSource.COMPOSE
             ):
                 images[key] = image
     return sorted(
@@ -120,15 +119,10 @@ def _container_image(value: str, source: ContainerSource, path: str) -> Containe
     last_slash = reference.rfind('/')
     last_colon = reference.rfind(':')
     if last_colon > last_slash:
-        reference, version = reference[:last_colon], reference[last_colon + 1:]
+        reference, version = reference[:last_colon], reference[last_colon + 1 :]
     parts = reference.split('/')
     first = parts[0]
-    if len(parts) > 1 and (
-        '.' in first
-        or ':' in first
-        or first == 'localhost'
-        or first.startswith('$')
-    ):
+    if len(parts) > 1 and ('.' in first or ':' in first or first == 'localhost' or first.startswith('$')):
         registry = first
         image = '/'.join(parts[1:])
     else:

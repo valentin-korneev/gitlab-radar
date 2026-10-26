@@ -118,7 +118,7 @@ def parse_requirements(content: bytes) -> list[Dependency]:
 def parse_toml(content: bytes, filename: str) -> dict[str, Any]:
     try:
         return tomllib.loads(content.decode('utf-8'))
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError):
+    except UnicodeDecodeError, tomllib.TOMLDecodeError:
         logger.warning('Не удалось разобрать %s', filename)
         return {}
 

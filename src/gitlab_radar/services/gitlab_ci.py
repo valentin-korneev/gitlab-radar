@@ -18,7 +18,7 @@ def parse_gitlab_components(files: Mapping[str, bytes], gitlab_url: str) -> list
     for path, content in files.items():
         try:
             document = yaml.safe_load(content.decode('utf-8'))
-        except (UnicodeDecodeError, yaml.YAMLError):
+        except UnicodeDecodeError, yaml.YAMLError:
             logger.warning('Не удалось разобрать конфигурацию GitLab CI: %s', path)
             continue
         if not isinstance(document, dict):

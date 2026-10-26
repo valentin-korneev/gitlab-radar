@@ -1,7 +1,8 @@
 import re
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from gitlab_radar.auth import management_access_dependency
 from gitlab_radar.database.models import ApplicationParameter as ApplicationParameterModel
 from gitlab_radar.schemas.application_parameter import (
     ApplicationParameter,
@@ -20,7 +21,7 @@ async def get_parameters() -> list[ApplicationParameter]:
     return [ApplicationParameter.model_validate(row, from_attributes=True) for row in rows]
 
 
-@router.put('/')
+@router.put('/', dependencies=[Depends(management_access_dependency)])
 async def update_parameters(payload: ApplicationParameterUpdate) -> list[ApplicationParameter]:
     rows = await ApplicationParameterModel.all().order_by('sort_order', 'key')
     rows_by_key = {row.key: row for row in rows}

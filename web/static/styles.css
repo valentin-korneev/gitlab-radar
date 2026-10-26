@@ -70,6 +70,9 @@ button { color: inherit; }
 .nav-item:hover, .nav-item.active { background: var(--surface-high); color: var(--text); }
 .nav-item.active { box-shadow: inset 2px 0 var(--accent); }
 .sidebar-footer { display: grid; gap: 18px; margin-top: auto; padding: 0 10px; }
+.auth-panel { display: grid; gap: 7px; border-top: 1px solid var(--line); padding-top: 16px; }
+.auth-panel span { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.auth-button { width: max-content; border: 0; padding: 0; background: transparent; color: var(--accent); font-size: .74rem; font-weight: 750; cursor: pointer; }
 .sidebar-note { margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.6; text-transform: uppercase; letter-spacing: .08em; }
 .theme-switch { width: max-content; }
 .content { min-width: 0; padding: 0 48px 60px; }

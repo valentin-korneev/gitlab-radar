@@ -28,12 +28,16 @@
         <button class="nav-item" data-route="images">Образы контейнеров</button>
         <button class="nav-item" data-route="components">CI-компоненты</button>
         <button class="nav-item" data-route="webhooks">Webhooks</button>
-        <hr class="nav-divider">
-        <button class="nav-item" data-route="requirements">Требования</button>
-        <button class="nav-item" data-route="parameters">Параметры</button>
-        <button class="nav-item" data-route="admin">Управление</button>
+        <hr class="nav-divider management-navigation" hidden>
+        <button class="nav-item management-navigation" data-route="requirements" hidden>Требования</button>
+        <button class="nav-item management-navigation" data-route="parameters" hidden>Параметры</button>
+        <button class="nav-item management-navigation" data-route="admin" hidden>Управление</button>
       </nav>
       <div class="sidebar-footer">
+        <div id="auth-panel" class="auth-panel" hidden>
+          <span id="auth-user">Не авторизован</span>
+          <button id="auth-button" class="auth-button" type="button">Войти</button>
+        </div>
         <p class="sidebar-note">Технологический обзор<br>проектов GitLab</p>
         <label class="switch theme-switch">Светлая<input id="theme-toggle" type="checkbox"><span></span>Темная</label>
       </div>

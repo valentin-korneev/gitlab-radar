@@ -10,4 +10,4 @@ def configure_logging() -> None:
         force=True,
     )
     logging.getLogger('tortoise').setLevel(logging.WARNING)
-    logging.getLogger('aiosqlite').setLevel(logging.WARNING)
+    logging.getLogger('asyncpg').setLevel(logging.WARNING)

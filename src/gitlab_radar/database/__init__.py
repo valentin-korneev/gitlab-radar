@@ -1,37 +1,27 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
-from pathlib import Path
 
 from tortoise.contrib.fastapi import RegisterTortoise
 lazy from fastapi import FastAPI
 
-from gitlab_radar.config import settings
+from gitlab_radar.database.config import TORTOISE_ORM
 from gitlab_radar.database.fixtures import load_database_fixtures
-from gitlab_radar.database.models import ScanRun
-from gitlab_radar.schemas.scan import ScanState
-
-
-def _database_url(path: Path) -> str:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return f'sqlite://{path}'
+from gitlab_radar.database.repository import recover_stale_scans
+from gitlab_radar.database.scan_lock import acquire_scan_lock, release_scan_lock
 
 
 @asynccontextmanager
 async def database_lifespan(app: FastAPI) -> AsyncIterator[None]:
     registration = RegisterTortoise(
         app=app,
-        db_url=_database_url(settings.application.database_path),
-        modules={'models': ['gitlab_radar.database.models']},
-        generate_schemas=True,
-        use_tz=True,
-        timezone='UTC',
+        config=TORTOISE_ORM,
     )
     async with registration:
+        scan_lock = await acquire_scan_lock()
+        if scan_lock is not None:
+            try:
+                await recover_stale_scans()
+            finally:
+                await release_scan_lock(scan_lock)
         await load_database_fixtures()
-        await ScanRun.filter(state=ScanState.RUNNING).update(
-            state=ScanState.FAILED,
-            completed_at=datetime.now(UTC),
-            error='Приложение было остановлено до завершения сканирования',
-        )
         yield

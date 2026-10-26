@@ -29,10 +29,7 @@ async def load_company_requirements(*, enabled: bool | None = True) -> list[Comp
     if enabled is not None:
         query = query.filter(enabled=enabled)
     rows = await query.order_by('sort_order', 'id')
-    return [
-        serialize_company_requirement(row)
-        for row in rows
-    ]
+    return [serialize_company_requirement(row) for row in rows]
 
 
 def serialize_company_requirement(row: CompanyRequirementModel) -> CompanyRequirement:
@@ -75,9 +72,7 @@ def subproject_rule_results(
         container_registries={
             _registry_domain(value)
             for value in (
-                _project_container_registries(project)
-                if project
-                else _subproject_container_registries(subproject)
+                _project_container_registries(project) if project else _subproject_container_registries(subproject)
             )
         },
     )
@@ -150,8 +145,7 @@ def _project_rule_results(
     requirements: list[CompanyRequirement],
 ) -> dict[str, bool]:
     return {
-        requirement.code: bool(subproject_results)
-        and all(result[requirement.code] for result in subproject_results)
+        requirement.code: bool(subproject_results) and all(result[requirement.code] for result in subproject_results)
         for requirement in requirements
     }
 

@@ -2,7 +2,12 @@ from tortoise import fields
 from tortoise.models import Model
 
 
-class ScanRun(Model):
+class RadarModel(Model):
+    class Meta:
+        abstract = True
+
+
+class ScanRun(RadarModel):
     id = fields.IntField(primary_key=True)
     state = fields.CharField(max_length=20)
     phase = fields.CharField(max_length=20, default='idle')
@@ -21,8 +26,7 @@ class ScanRun(Model):
     errors = fields.JSONField(default=list)
     published = fields.BooleanField(default=False, index=True)
 
-
-class ProjectSnapshot(Model):
+class ProjectSnapshot(RadarModel):
     id = fields.IntField(primary_key=True)
     scan = fields.ForeignKeyField('models.ScanRun', related_name='projects', on_delete=fields.CASCADE)
     gitlab_id = fields.BigIntField(index=True)
@@ -37,25 +41,27 @@ class ProjectSnapshot(Model):
         unique_together = (('scan', 'gitlab_id'),)
 
 
-class ProjectFile(Model):
+class ProjectFile(RadarModel):
     id = fields.IntField(primary_key=True)
     project = fields.ForeignKeyField('models.ProjectSnapshot', related_name='files', on_delete=fields.CASCADE)
     path = fields.CharField(max_length=1000)
-    local_path = fields.CharField(max_length=2000)
-    size = fields.IntField()
+    content = fields.TextField()
 
     class Meta:
         unique_together = (('project', 'path'),)
 
 
-class CompanyRequirementGroup(Model):
+class WebSocketTicket(RadarModel):
+    token_hash = fields.CharField(max_length=64, primary_key=True)
+    expires_at = fields.DatetimeField(index=True)
+
+class CompanyRequirementGroup(RadarModel):
     id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=100, unique=True)
     description = fields.TextField(default='')
     sort_order = fields.IntField(default=0)
 
-
-class CompanyRequirement(Model):
+class CompanyRequirement(RadarModel):
     id = fields.IntField(primary_key=True)
     code = fields.CharField(max_length=100, unique=True)
     title = fields.CharField(max_length=200)
@@ -69,8 +75,7 @@ class CompanyRequirement(Model):
     enabled = fields.BooleanField(default=True, index=True)
     sort_order = fields.IntField(default=0)
 
-
-class ApplicationParameter(Model):
+class ApplicationParameter(RadarModel):
     key = fields.CharField(max_length=100, primary_key=True)
     title = fields.CharField(max_length=200)
     description = fields.TextField(default='')
@@ -80,6 +85,5 @@ class ApplicationParameter(Model):
     max_value = fields.IntField(null=True)
     sort_order = fields.IntField(default=0)
 
-
-class DataFixture(Model):
+class DataFixture(RadarModel):
     name = fields.CharField(max_length=100, primary_key=True)
