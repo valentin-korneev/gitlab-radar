@@ -14,7 +14,7 @@ GitLab Radar собирает сведения о Python-проектах в Git
 - статистика версий Python, registry и технологий;
 - конструктор требований компании;
 - повторное использование результатов для неизменившихся ревизий;
-- авторизация управляющих разделов через Keycloak.
+- опциональная авторизация управляющих разделов через Keycloak.
 
 ## Запуск через Compose
 
@@ -25,7 +25,7 @@ GITLAB_URL=https://gitlab.example.com
 GITLAB_PRIVATE_TOKEN=<token>
 ```
 
-Остальные значения в шаблоне поднимают готовое локальное окружение PostgreSQL и Keycloak.
+Остальные значения в шаблоне поднимают готовое локальное окружение PostgreSQL без авторизации.
 `GITLAB_PRIVATE_TOKEN` должен принадлежать пользователю с доступом к анализируемым проектам.
 
 Запустите сервисы:
@@ -34,10 +34,7 @@ GITLAB_PRIVATE_TOKEN=<token>
 docker compose up --build
 ```
 
-Приложение будет доступно по адресу `http://127.0.0.1:8000`. Учетная запись локального Keycloak:
-
-- логин: `radar`;
-- пароль: `radar`.
+Приложение будет доступно по адресу `http://127.0.0.1:8000`.
 
 ## Развертывание в OpenShift
 
@@ -61,18 +58,34 @@ psql --host=<postgres-host> --dbname=<database> --username=<admin-user> \
 
 ### Keycloak
 
-В Keycloak требуется публичный OIDC-клиент:
+Для включения авторизации установите `RADAR_AUTH_REQUIRED=true`. В Keycloak требуется публичный
+OIDC-клиент:
 
 - Standard flow — включен;
 - PKCE method — `S256`;
 - Valid redirect URI — `https://<application-host>/*`;
 - Web origin — `https://<application-host>`;
-- Valid post logout redirect URI — `https://<application-host>/*`;
-- access token содержит audience, равный идентификатору клиента.
+- Valid post logout redirect URI — `https://<application-host>/*`.
 
-Сейчас членство в группах Keycloak не проверяется. Доступ к управляющим разделам получает любой
-пользователь с валидным access token указанного клиента. Для ограничения доступа по группе нужно добавить
-group mapper в Keycloak и проверку claim в приложении.
+Первоначальный список администраторов задаётся через запятую по claim `preferred_username`:
+
+```dotenv
+RADAR_AUTH_PREFERRED_USERNAMES=user.one,user.two
+```
+
+При включённой авторизации список должен содержать хотя бы одного пользователя.
+
+Любой пользователь Keycloak может войти в приложение и автоматически добавляется в список пользователей
+без административных прав. Администраторы назначают роли и блокируют пользователей в разделе
+«Пользователи»; там же можно заранее добавить или удалить локальную запись. Удалённый пользователь снова
+появится после следующего входа, поэтому для запрета доступа используется блокировка. Роль пользователей из
+`RADAR_AUTH_PREFERRED_USERNAMES` управляется через окружение.
+
+Отключённого пользователя не авторизует Keycloak. Для немедленного запрета доступа пользователю с уже
+выданным токеном используется блокировка в приложении.
+
+При `RADAR_AUTH_REQUIRED=false` Keycloak не используется, а управляющие разделы доступны без проверки
+пользователя.
 
 ### Контейнер приложения
 
@@ -96,15 +109,18 @@ RADAR_HOST=0.0.0.0
 RADAR_PORT=8000
 RADAR_RELOAD=false
 APP_PUBLIC_URL=https://<application-host>
+RADAR_AUTH_REQUIRED=true
+RADAR_AUTH_PREFERRED_USERNAMES=user.one,user.two
 RADAR_AUTH_PUBLIC_URL=https://<keycloak-public-host>
 RADAR_AUTH_INTERNAL_URL=http://<keycloak-service>:8080
 RADAR_AUTH_REALM=<realm>
 RADAR_AUTH_CLIENT_ID=<client-id>
 ```
 
-`RADAR_AUTH_PUBLIC_URL` должен совпадать с issuer токена и быть доступен браузеру.
-`RADAR_AUTH_INTERNAL_URL` должен вести к тому же Keycloak из pod приложения. `POSTGRES_USER`,
-`POSTGRES_PASSWORD` и переменные `KC_*` контейнеру приложения не нужны.
+При обязательной авторизации `RADAR_AUTH_PUBLIC_URL` должен совпадать с issuer токена и быть доступен
+браузеру, а `RADAR_AUTH_INTERNAL_URL` должен вести к тому же Keycloak из pod приложения. При отключённой
+авторизации параметры Keycloak не передаются. `POSTGRES_USER` и `POSTGRES_PASSWORD` контейнеру приложения
+не нужны.
 
 Перед запуском приложения нужно применить миграции:
 

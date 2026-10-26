@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from asyncpg import Connection
+lazy from asyncpg import Connection
 
 from gitlab_radar.clients.gitlab import GitLabRequestCounter
 from gitlab_radar.database.models import ScanRun

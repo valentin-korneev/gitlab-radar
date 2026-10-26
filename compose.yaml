@@ -8,27 +8,10 @@ services:
       - postgres-data:/var/lib/postgresql
       - ./deploy/postgres/init.sh:/docker-entrypoint-initdb.d/10-init-services.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d radar"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 3s
       timeout: 3s
       retries: 20
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.4.2
-    command: start-dev --import-realm
-    env_file: .env
-    environment:
-      KC_DB_URL_HOST: ${POSTGRES_HOST}
-      KC_DB_URL_PORT: ${POSTGRES_PORT}
-      KC_DB_URL_DATABASE: ${POSTGRES_DB}
-      KC_HOSTNAME: ${RADAR_AUTH_PUBLIC_URL}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "8080:8080"
-    volumes:
-      - ./deploy/keycloak/gitlab-radar-realm.json:/opt/keycloak/data/import/gitlab-radar-realm.json:ro
 
   app:
     build: .
@@ -36,8 +19,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      keycloak:
-        condition: service_started
     ports:
       - "8000:8000"
 

@@ -6,8 +6,10 @@ const API = {
   requirements: '/api/company-requirement/', requirementCatalog: '/api/company-requirement/catalog',
   requirementGroups: '/api/company-requirement-group/',
   parameters: '/api/application-parameter/',
+  authorizedUsers: '/api/authorized-user/',
 };
-const MANAGEMENT_ROUTES = new Set(['requirements', 'parameters', 'admin']);
+const AUTHENTICATED_ROUTES = new Set(['admin']);
+const ADMINISTRATOR_ROUTES = new Set(['requirements', 'parameters', 'users']);
 const PAGE_ROUTES = {
   dashboard: { page: 'dashboard' },
   projects: { page: 'projects' },
@@ -17,6 +19,7 @@ const PAGE_ROUTES = {
   webhooks: { page: 'dependencies', source: 'webhook', title: 'Webhooks', search: 'Найти webhook' },
   requirements: { page: 'requirements' },
   parameters: { page: 'parameters' },
+  users: { page: 'users' },
   admin: { page: 'admin' },
 };
 const SOURCE_ROUTES = { python: 'dependencies', docker: 'images', ci: 'components', webhook: 'webhooks' };
@@ -38,11 +41,11 @@ const state = {
   scanSocket: null, scanReconnectTimer: null,
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
   requirements: [], requirementGroups: [], requirementCatalog: null,
-  parameters: [],
+  parameters: [], authorizedUsers: [],
   auth: { config: null, tokens: null, user: null },
   currentRoute: null,
   selectedRequirementGroupId: null,
-  loaded: { dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false, admin: false }, loading: {},
+  loaded: { dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false, users: false, admin: false }, loading: {},
 };
 
 function base64Url(bytes) {
@@ -68,6 +71,7 @@ function clearTokens() {
   renderAuth();
 }
 async function accessToken() {
+  if (!state.auth.config?.required) return null;
   if (!state.auth.tokens) return null;
   if (state.auth.tokens.expires_at * 1000 > Date.now() + 30000) return state.auth.tokens.access_token;
   if (!state.auth.tokens.refresh_token) {
@@ -154,9 +158,16 @@ async function logout() {
 function renderAuth() {
   const panel = document.querySelector('#auth-panel');
   const authenticated = Boolean(state.auth.user);
-  document.querySelectorAll('.management-navigation').forEach((item) => {
-    item.hidden = !authenticated;
+  const administrator = !state.auth.config?.required || Boolean(state.auth.user?.is_admin);
+  document.querySelectorAll('.authenticated-navigation').forEach((item) => {
+    item.hidden = Boolean(state.auth.config?.required) && !authenticated;
   });
+  document.querySelectorAll('.administrator-navigation').forEach((item) => { item.hidden = !administrator; });
+  if (state.scanStatus) renderScanStatus(state.scanStatus);
+  if (!state.auth.config?.required) {
+    panel.hidden = true;
+    return;
+  }
   panel.hidden = false;
   document.querySelector('#auth-user').textContent = authenticated
     ? state.auth.user.preferred_username || state.auth.user.name || 'Пользователь'
@@ -167,6 +178,13 @@ async function initializeAuth() {
   const response = await fetch(API.authConfig, { cache: 'no-store' });
   if (!response.ok) throw new Error('Не удалось загрузить настройки авторизации');
   state.auth.config = await response.json();
+  if (!state.auth.config.required) {
+    state.auth.tokens = null;
+    state.auth.user = null;
+    sessionStorage.removeItem('radar-auth-tokens');
+    renderAuth();
+    return;
+  }
   const stored = sessionStorage.getItem('radar-auth-tokens');
   if (stored) {
     try {
@@ -189,7 +207,7 @@ async function initializeAuth() {
     } catch (error) {
       clearTokens();
       showError(error);
-      if (MANAGEMENT_ROUTES.has(window.location.hash.slice(1))) {
+      if (AUTHENTICATED_ROUTES.has(window.location.hash.slice(1)) || ADMINISTRATOR_ROUTES.has(window.location.hash.slice(1))) {
         window.history.replaceState(null, '', `${window.location.pathname}#dashboard`);
       }
     }
@@ -341,8 +359,13 @@ async function showPage() {
   const routeName = PAGE_ROUTES[requestedRoute] ? requestedRoute : 'dashboard';
   const route = PAGE_ROUTES[routeName];
   if (state.currentRoute === 'projects' && routeName !== 'projects') resetProjectFilters();
-  if (MANAGEMENT_ROUTES.has(routeName) && !await accessToken()) {
+  const protectedRoute = AUTHENTICATED_ROUTES.has(routeName) || ADMINISTRATOR_ROUTES.has(routeName);
+  if (state.auth.config?.required && protectedRoute && !await accessToken()) {
     await startLogin(routeName);
+    return;
+  }
+  if (state.auth.config?.required && ADMINISTRATOR_ROUTES.has(routeName) && !state.auth.user?.is_admin) {
+    window.location.hash = 'dashboard';
     return;
   }
   state.currentRoute = routeName;
@@ -371,7 +394,7 @@ async function ensurePageLoaded(pageName) {
   if (!state.loading[pageName]) {
     const loaders = {
       dashboard: loadDashboard, projects: loadProjects, dependencies: loadDependencies,
-      requirements: loadRequirementsPage, parameters: loadParametersPage, admin: loadAdmin,
+      requirements: loadRequirementsPage, parameters: loadParametersPage, users: loadAuthorizedUsersPage, admin: loadAdmin,
     };
     state.loading[pageName] = loaders[pageName]().finally(() => { delete state.loading[pageName]; });
   }
@@ -1301,6 +1324,96 @@ async function saveParameters() {
   state.loaded.dashboard = false;
   renderParameters();
 }
+function renderAuthorizedUsers() {
+  const list = document.querySelector('#authorized-user-list');
+  list.replaceChildren();
+  if (!state.authorizedUsers.length) {
+    list.append(element('p', 'empty-state', 'Список пользователей пуст.'));
+    return;
+  }
+  state.authorizedUsers.forEach((user) => {
+    const row = element('div', 'authorized-user-row');
+    const summary = element('div', 'authorized-user-summary');
+    summary.append(
+      element('strong', '', user.preferred_username),
+      element('small', '', user.source === 'environment' ? 'Администратор из окружения' : 'Пользователь Keycloak'),
+    );
+    row.append(summary);
+    const actions = element('div', 'authorized-user-actions');
+    const adminLabel = element('label', 'switch');
+    const adminInput = element('input');
+    adminInput.type = 'checkbox';
+    adminInput.checked = user.is_admin;
+    adminInput.disabled = user.source === 'environment';
+    adminInput.addEventListener('change', () => updateAuthorizedUser(user, { is_admin: adminInput.checked }).catch(showError));
+    adminLabel.append(adminInput, element('span'), document.createTextNode('Админ'));
+    const blockedLabel = element('label', 'switch');
+    const blockedInput = element('input');
+    blockedInput.type = 'checkbox';
+    blockedInput.checked = user.is_blocked;
+    blockedInput.addEventListener('change', () => updateAuthorizedUser(user, { is_blocked: blockedInput.checked }).catch(showError));
+    blockedLabel.append(blockedInput, element('span'), document.createTextNode('Заблокирован'));
+    actions.append(adminLabel, blockedLabel);
+    if (user.source === 'database') {
+      const remove = iconButton('trash', 'danger-button', 'Удалить пользователя');
+      remove.addEventListener('click', () => removeAuthorizedUser(user).catch(showError));
+      actions.append(remove);
+    }
+    row.append(actions);
+    list.append(row);
+  });
+}
+async function loadAuthorizedUsersPage() {
+  state.authorizedUsers = await api(API.authorizedUsers);
+  renderAuthorizedUsers();
+  state.loaded.users = true;
+}
+async function addAuthorizedUser() {
+  const input = document.querySelector('#authorized-user-name');
+  const user = await api(API.authorizedUsers, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preferred_username: input.value.trim() }),
+  });
+  const existing = state.authorizedUsers.findIndex((item) => item.preferred_username === user.preferred_username);
+  if (existing === -1) state.authorizedUsers.push(user);
+  else state.authorizedUsers[existing] = user;
+  state.authorizedUsers.sort((left, right) => left.preferred_username.localeCompare(right.preferred_username));
+  input.value = '';
+  renderAuthorizedUsers();
+}
+async function updateAuthorizedUser(user, changes) {
+  try {
+    const updated = await api(API.authorizedUsers, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        preferred_username: user.preferred_username,
+        is_admin: user.is_admin,
+        is_blocked: user.is_blocked,
+        ...changes,
+      }),
+    });
+    state.authorizedUsers = state.authorizedUsers.map((item) => (
+      item.preferred_username === updated.preferred_username ? updated : item
+    ));
+  } finally {
+    renderAuthorizedUsers();
+  }
+}
+async function removeAuthorizedUser(user) {
+  const confirmed = await confirmAction(
+    'Удалить пользователя',
+    `Запись «${user.preferred_username}» будет удалена. При следующем входе через Keycloak она появится снова.`,
+    'Удалить пользователя',
+  );
+  if (!confirmed) return;
+  await api(`${API.authorizedUsers}?preferred_username=${encodeURIComponent(user.preferred_username)}`, {
+    method: 'DELETE',
+  });
+  state.authorizedUsers = state.authorizedUsers.filter((item) => item.preferred_username !== user.preferred_username);
+  renderAuthorizedUsers();
+}
 async function loadAdmin() {
   const dashboard = await api(API.dashboard);
   renderLastScan(dashboard.last_scan);
@@ -1443,7 +1556,8 @@ async function openPythonVersion(version) {
 
 function renderScanStatus(scan) {
   document.querySelector('#scan-state').textContent = scan.state_title;
-  document.querySelector('#scan-button').disabled = scan.state === 'running';
+  const administrator = !state.auth.config?.required || Boolean(state.auth.user?.is_admin);
+  document.querySelector('#scan-button').disabled = scan.state === 'running' || !administrator;
   document.querySelector('#scan-dot').className = scan.state;
   let description = 'Сканирование еще не запускалось.';
   if (scan.state === 'running') description = `${PHASE_TITLES[scan.phase]} · запущено ${formatDate(scan.started_at)}`;
@@ -1465,12 +1579,14 @@ function renderScanStatus(scan) {
 }
 async function connectScanStatusSocket() {
   const token = await accessToken();
-  if (!token) return;
+  if (state.auth.config?.required && !token) return;
   const socketProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   window.clearTimeout(state.scanReconnectTimer);
   if (state.scanSocket?.readyState === WebSocket.OPEN || state.scanSocket?.readyState === WebSocket.CONNECTING) return;
-  const ticket = (await api(API.websocketTicket, { method: 'POST' })).ticket;
-  const query = `?ticket=${encodeURIComponent(ticket)}`;
+  const ticket = state.auth.config?.required
+    ? (await api(API.websocketTicket, { method: 'POST' })).ticket
+    : null;
+  const query = ticket ? `?ticket=${encodeURIComponent(ticket)}` : '';
   const socket = new WebSocket(`${socketProtocol}//${window.location.host}/api/scan/ws${query}`);
   state.scanSocket = socket;
   socket.addEventListener('message', (event) => {
@@ -1553,6 +1669,10 @@ document.querySelector('#scan-button').addEventListener('click', async () => {
 document.querySelector('#parameters-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   try { await saveParameters(); } catch (error) { showError(error); }
+});
+document.querySelector('#authorized-user-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try { await addAuthorizedUser(); } catch (error) { showError(error); }
 });
 document.querySelector('#add-condition').addEventListener('click', () => addRequirementCondition());
 document.querySelector('#add-condition-group').addEventListener('click', () => addRequirementConditionGroup());

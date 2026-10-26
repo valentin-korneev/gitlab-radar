@@ -28,10 +28,11 @@
         <button class="nav-item" data-route="images">Образы контейнеров</button>
         <button class="nav-item" data-route="components">CI-компоненты</button>
         <button class="nav-item" data-route="webhooks">Webhooks</button>
-        <hr class="nav-divider management-navigation" hidden>
-        <button class="nav-item management-navigation" data-route="requirements" hidden>Требования</button>
-        <button class="nav-item management-navigation" data-route="parameters" hidden>Параметры</button>
-        <button class="nav-item management-navigation" data-route="admin" hidden>Управление</button>
+        <hr class="nav-divider authenticated-navigation" hidden>
+        <button class="nav-item administrator-navigation" data-route="requirements" hidden>Требования</button>
+        <button class="nav-item administrator-navigation" data-route="parameters" hidden>Параметры</button>
+        <button class="nav-item administrator-navigation" data-route="users" hidden>Пользователи</button>
+        <button class="nav-item authenticated-navigation" data-route="admin" hidden>Управление</button>
       </nav>
       <div class="sidebar-footer">
         <div id="auth-panel" class="auth-panel" hidden>
@@ -245,6 +246,21 @@
         </article>
       </section>
 
+      <section id="users" class="page">
+        <div class="intro"><p>Управление доступом</p><h2>Пользователи</h2></div>
+        <article class="dashboard-card authorized-users-card">
+          <div class="card-heading"><p>Пользователи Keycloak</p><span>preferred_username</span></div>
+          <form id="authorized-user-form" class="authorized-user-form">
+            <label>
+              <span>Имя пользователя</span>
+              <input id="authorized-user-name" required maxlength="255" autocomplete="off" placeholder="user.name">
+            </label>
+            <button class="primary-button" type="submit">Добавить</button>
+          </form>
+          <div id="authorized-user-list" class="authorized-user-list"></div>
+        </article>
+      </section>
+
       <section id="admin" class="page">
         <div class="intro"><p>Управление</p><h2>Сканирование GitLab</h2></div>
         <div class="admin-grid">
@@ -259,7 +275,7 @@
             </div>
           </article>
           <article class="scan-actions">
-            <button id="scan-button" class="primary-button">Запустить сканирование <span>→</span></button>
+            <button id="scan-button" class="primary-button" disabled>Запустить сканирование <span>→</span></button>
             <p>Получит актуальный список Python-проектов из GitLab и обновит локальный snapshot.</p>
           </article>
           <article class="dashboard-card admin-last-scan">

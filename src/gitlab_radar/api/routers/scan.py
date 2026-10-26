@@ -2,7 +2,12 @@ import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect, status
 
-from gitlab_radar.auth import consume_websocket_ticket, management_access_dependency
+from gitlab_radar.auth import (
+    authenticated_access_dependency,
+    consume_websocket_ticket,
+    management_access_dependency,
+)
+from gitlab_radar.config import settings
 from gitlab_radar.schemas.scan import ScanStatus
 from gitlab_radar.tasks.scan import scan_task
 
@@ -11,10 +16,11 @@ router = APIRouter()
 
 @router.websocket('/ws')
 async def scan_status_socket(websocket: WebSocket) -> None:
-    ticket = websocket.query_params.get('ticket')
-    if ticket is None or not await consume_websocket_ticket(ticket):
-        await websocket.close(code=4401)
-        return
+    if settings.auth.required:
+        ticket = websocket.query_params.get('ticket')
+        if ticket is None or not await consume_websocket_ticket(ticket):
+            await websocket.close(code=4401)
+            return
     await websocket.accept()
     previous_status: dict | None = None
     try:
@@ -33,7 +39,7 @@ async def scan_status_socket(websocket: WebSocket) -> None:
         pass
 
 
-@router.get('/', response_model=ScanStatus, dependencies=[Depends(management_access_dependency)])
+@router.get('/', response_model=ScanStatus, dependencies=[Depends(authenticated_access_dependency)])
 async def get_scan_status(response: Response) -> ScanStatus:
     response.headers['Cache-Control'] = 'no-store'
     return await scan_task.status()

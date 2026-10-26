@@ -165,4 +165,14 @@ class Migration(migrations.Migration):
             options={'table': 'websocketticket', 'app': 'models', 'pk_attr': 'token_hash'},
             bases=['RadarModel'],
         ),
+        ops.CreateModel(
+            name='AuthorizedUser',
+            fields=[
+                ('preferred_username', fields.CharField(primary_key=True, unique=True, db_index=True, max_length=255)),
+                ('is_admin', fields.BooleanField(default=False)),
+                ('is_blocked', fields.BooleanField(default=False)),
+            ],
+            options={'table': 'authorized_user', 'app': 'models', 'pk_attr': 'preferred_username'},
+            bases=['RadarModel'],
+        ),
     ]

@@ -55,6 +55,15 @@ class WebSocketTicket(RadarModel):
     token_hash = fields.CharField(max_length=64, primary_key=True)
     expires_at = fields.DatetimeField(index=True)
 
+
+class AuthorizedUser(RadarModel):
+    preferred_username = fields.CharField(max_length=255, primary_key=True)
+    is_admin = fields.BooleanField(default=False)
+    is_blocked = fields.BooleanField(default=False)
+
+    class Meta:
+        table = 'authorized_user'
+
 class CompanyRequirementGroup(RadarModel):
     id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=100, unique=True)

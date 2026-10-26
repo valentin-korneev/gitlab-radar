@@ -279,6 +279,17 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .parameter-value-input:focus { border-color: var(--accent); }
 .parameter-field small { grid-column: 1 / -1; color: var(--muted); line-height: 1.45; }
 .parameter-actions { display: flex; justify-content: flex-end; }
+.authorized-users-card { max-width: 760px; }
+.authorized-user-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.authorized-user-form label { display: grid; gap: 7px; color: var(--muted); font-size: .72rem; }
+.authorized-user-form input { min-width: 0; border: 1px solid var(--line); border-radius: 9px; padding: 12px 13px; outline: 0; background: var(--surface-low); color: var(--text); font: inherit; }
+.authorized-user-form input:focus { border-color: var(--accent); }
+.authorized-user-list { display: grid; margin-top: 24px; }
+.authorized-user-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-top: 1px solid var(--line); padding: 14px 0; }
+.authorized-user-summary { min-width: 0; }
+.authorized-user-summary strong, .authorized-user-summary small { display: block; overflow-wrap: anywhere; }
+.authorized-user-summary small { margin-top: 5px; color: var(--muted); font-size: .7rem; }
+.authorized-user-actions { display: flex; align-items: center; gap: 18px; }
 .percentage-parameter { grid-template-columns: 1fr; }
 .threshold-slider { position: relative; grid-column: 1 / -1; height: 24px; }
 .threshold-preview { position: absolute; top: 6px; right: 0; left: 0; display: flex; height: 12px; overflow: hidden; border-radius: 999px; background: var(--surface-high); }
@@ -432,6 +443,8 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .requirement-form > * { grid-column: 1; }
   .requirement-condition { grid-template-columns: 1fr; }
   .parameter-field { grid-template-columns: 1fr; }
+  .authorized-user-form { grid-template-columns: 1fr; }
+  .authorized-user-row { align-items: flex-start; flex-direction: column; }
   .threshold-values { align-items: flex-start; flex-direction: column; gap: 8px; }
   .requirements-head { align-items: stretch; }
   .requirements-actions { margin-bottom: 0; }
