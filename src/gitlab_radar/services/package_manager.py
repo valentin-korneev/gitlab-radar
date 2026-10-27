@@ -56,10 +56,13 @@ def detect_package_manager(
     if detected:
         return PackageManager.UNKNOWN
 
-    if any(is_requirements_filename(filename) for filename in available_files):
+    if (
+        PIP_CONFIG_FILENAME in available_files
+        or any(is_requirements_filename(filename) for filename in available_files)
+    ):
         return PackageManager.PIP
     if PYPROJECT_FILENAME not in available_files:
-        return PackageManager.PIP
+        return PackageManager.UNKNOWN
     return PackageManager.UNKNOWN
 
 

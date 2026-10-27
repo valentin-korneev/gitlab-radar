@@ -1,5 +1,8 @@
+import re
 from dataclasses import dataclass
 from urllib.parse import urlsplit
+
+from packaging.version import InvalidVersion, Version
 
 from gitlab_radar.database.models import CompanyRequirement as CompanyRequirementModel
 from gitlab_radar.schemas.company_requirement import (
@@ -12,9 +15,16 @@ from gitlab_radar.schemas.company_requirement import (
 )
 from gitlab_radar.schemas.project import Project, ProjectSubproject
 
+PYTHON_CONSTRAINT_VERSION_PATTERN = re.compile(
+    r'(?P<operator>===|==|~=|>=|<=|!=|\^|~|>|<)?\s*(?P<version>\d+(?:\.\d+){0,2})(?:\.\*)?',
+)
+PYTHON_LOWER_BOUND_OPERATORS = {None, '===', '==', '~=', '>=', '>', '^', '~'}
+
 
 @dataclass(frozen=True, slots=True)
 class RuleContext:
+    application_parameters: dict[str, str]
+    python_versions: set[str]
     package_manager: set[str]
     dependencies: set[str]
     tools: set[str]
@@ -51,6 +61,7 @@ def subproject_rule_results(
     subproject: ProjectSubproject,
     requirements: list[CompanyRequirement],
     project: Project | None = None,
+    application_parameters: dict[str, str] | None = None,
 ) -> dict[str, bool]:
     dependencies = {
         dependency.name.lower()
@@ -59,7 +70,10 @@ def subproject_rule_results(
             *(dependency for group in subproject.optional_dependencies for dependency in group.dependencies),
         )
     }
+    python_version = _subproject_python_version(subproject)
     context = RuleContext(
+        application_parameters=application_parameters or {},
+        python_versions={str(python_version)} if python_version else set(),
         package_manager={subproject.package_manager.value.lower()},
         dependencies=dependencies,
         tools={tool.lower() for tool in subproject.configured_tools},
@@ -100,7 +114,15 @@ def _matches_condition(condition: RequirementCondition, context: RuleContext) ->
     if not candidates:
         return condition.empty_result
 
-    values = {value.strip().lower() for value in condition.values if value.strip()}
+    values = {
+        resolved.strip().lower()
+        for value in condition.values
+        if (resolved := _resolve_condition_value(value, context.application_parameters)).strip()
+    }
+    if not values:
+        return False
+    if condition.operator in {RequirementOperator.GREATER_THAN, RequirementOperator.GREATER_THAN_OR_EQUAL}:
+        return _has_version_at_least(candidates, values)
     if condition.operator is RequirementOperator.EQUALS:
         return bool(candidates & values)
     if condition.operator is RequirementOperator.NOT_EQUALS:
@@ -115,6 +137,7 @@ def _matches_condition(condition: RequirementCondition, context: RuleContext) ->
 
 def _source_values(source: RequirementSource, context: RuleContext) -> set[str]:
     values = {
+        RequirementSource.PYTHON_VERSION: context.python_versions,
         RequirementSource.PACKAGE_MANAGER: context.package_manager,
         RequirementSource.DEPENDENCY: context.dependencies,
         RequirementSource.TOOL: context.tools,
@@ -125,6 +148,58 @@ def _source_values(source: RequirementSource, context: RuleContext) -> set[str]:
         RequirementSource.CONTAINER_REGISTRY: context.container_registries,
     }
     return values[source]
+
+
+def _subproject_python_version(subproject: ProjectSubproject) -> Version | None:
+    exact_version = _first_python_version(subproject.python_version)
+    if exact_version is not None:
+        return exact_version
+    return _minimum_python_version(subproject.python_constraint)
+
+
+def _first_python_version(value: str | None) -> Version | None:
+    if not value:
+        return None
+    match = PYTHON_CONSTRAINT_VERSION_PATTERN.search(value)
+    if match is None:
+        return None
+    try:
+        return Version(match.group('version'))
+    except InvalidVersion:
+        return None
+
+
+def _minimum_python_version(value: str | None) -> Version | None:
+    if not value:
+        return None
+    branch_minimums: list[Version] = []
+    for branch in value.split('||'):
+        lower_bounds: list[Version] = []
+        for match in PYTHON_CONSTRAINT_VERSION_PATTERN.finditer(branch):
+            if match.group('operator') not in PYTHON_LOWER_BOUND_OPERATORS:
+                continue
+            try:
+                lower_bounds.append(Version(match.group('version')))
+            except InvalidVersion:
+                continue
+        if lower_bounds:
+            branch_minimums.append(max(lower_bounds))
+    return min(branch_minimums) if branch_minimums else None
+
+
+def _has_version_at_least(candidates: set[str], values: set[str]) -> bool:
+    try:
+        candidate_versions = [Version(value) for value in candidates]
+        thresholds = [Version(value) for value in values]
+    except InvalidVersion:
+        return False
+    return any(candidate >= threshold for candidate in candidate_versions for threshold in thresholds)
+
+
+def _resolve_condition_value(value: str, application_parameters: dict[str, str]) -> str:
+    if not value.startswith('$'):
+        return value
+    return application_parameters.get(value.removeprefix('$'), '')
 
 
 def _project_container_registries(project: Project) -> set[str]:
@@ -154,10 +229,14 @@ def _compliance_percentage(results: dict[str, bool]) -> float:
     return round(sum(results.values()) / len(results) * 100, 1) if results else 100.0
 
 
-def apply_company_compliance(project: Project, requirements: list[CompanyRequirement]) -> None:
+def apply_company_compliance(
+    project: Project,
+    requirements: list[CompanyRequirement],
+    application_parameters: dict[str, str] | None = None,
+) -> None:
     subproject_results: list[dict[str, bool]] = []
     for subproject in project.subprojects:
-        results = subproject_rule_results(subproject, requirements, project)
+        results = subproject_rule_results(subproject, requirements, project, application_parameters)
         subproject.company_rule_results = results
         subproject.company_compliance_percentage = _compliance_percentage(results)
         subproject_results.append(results)

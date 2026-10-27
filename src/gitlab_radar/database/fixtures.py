@@ -20,6 +20,7 @@ async def load_database_fixtures() -> None:
     await _load_application_parameters()
     fixture_name = 'company-requirements'
     if await DataFixture.filter(name=fixture_name).exists():
+        await _load_python_version_requirement()
         return
 
     groups = [
@@ -47,6 +48,51 @@ async def load_database_fixtures() -> None:
     )
     logger.info('Загружены fixtures требований компании: %d', len(requirements))
     await DataFixture.create(name=fixture_name)
+    await _load_python_version_requirement()
+
+
+async def _load_python_version_requirement() -> None:
+    fixture_name = 'company-requirement-python-version-inclusive'
+    if await DataFixture.filter(name=fixture_name).exists():
+        return
+
+    requirement_item = next(
+        item for item in _read_fixture('company_requirements.yaml') if item['code'] == 'python-version-current'
+    )
+    group_name = str(requirement_item['group'])
+    group_item = next(
+        item for item in _read_fixture('company_requirement_groups.yaml') if item['name'] == group_name
+    )
+    group, _ = await CompanyRequirementGroup.get_or_create(
+        name=group_name,
+        defaults={
+            'description': group_item.get('description', ''),
+            'sort_order': group_item.get('sort_order', 0),
+        },
+    )
+    requirement = _requirement_from_fixture(
+        requirement_item,
+        {group_name: group},
+    )
+    row = await CompanyRequirement.get_or_none(code=requirement.code)
+    if row is None:
+        await CompanyRequirement.create(**requirement.model_dump(mode='json'))
+        logger.info('Загружен fixture требования компании: %s', requirement.code)
+    elif _migrate_python_version_operator(row.condition):
+        await row.save(update_fields=['condition'])
+        logger.info('Обновлен оператор fixture требования компании: %s', requirement.code)
+    await DataFixture.create(name=fixture_name)
+
+
+def _migrate_python_version_operator(node: dict) -> bool:
+    changed = False
+    if node.get('source') == 'python_version' and node.get('operator') == 'greater_than':
+        node['operator'] = 'greater_than_or_equal'
+        changed = True
+    for item in node.get('items', []):
+        if isinstance(item, dict):
+            changed = _migrate_python_version_operator(item) or changed
+    return changed
 
 
 async def _load_application_parameters() -> None:

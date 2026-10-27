@@ -90,3 +90,14 @@
         operator: all_contain_any
         values: [artifactory, gitlab-registry]
         empty_result: true
+
+- code: python-version-current
+  title: Версия Python выше заданной
+  group: Python
+  description: Проект использует версию Python выше установленной минимальной актуальной версии.
+  condition:
+    logic: and
+    items:
+      - source: python_version
+        operator: greater_than_or_equal
+        values: ['$python_oldest_current_version']

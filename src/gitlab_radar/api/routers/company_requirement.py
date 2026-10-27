@@ -15,6 +15,7 @@ from gitlab_radar.schemas.company_requirement import (
     RequirementCatalog,
     RequirementOption,
 )
+from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.company_rules import (
     load_company_requirements,
     serialize_company_requirement,
@@ -26,6 +27,7 @@ MAX_REQUIREMENTS_PER_GROUP = 4
 
 SOURCE_TITLES = {
     'package_manager': 'Пакетный менеджер',
+    'python_version': 'Версия Python',
     'dependency': 'Зависимость',
     'tool': 'Настроенный инструмент',
     'dependency_and_tool': 'Зависимость и настроенный инструмент',
@@ -36,6 +38,7 @@ SOURCE_TITLES = {
 }
 OPERATOR_TITLES = {
     'equals': 'Равно одному из значений',
+    'greater_than_or_equal': 'Не ниже указанной версии',
     'not_equals': 'Не равно указанным значениям',
     'contains': 'Содержит одно из значений',
     'not_contains': 'Не содержит указанные значения',
@@ -50,8 +53,18 @@ async def get_requirements() -> list[CompanyRequirement]:
 
 @router.get('/catalog', dependencies=[Depends(management_access_dependency)])
 async def get_requirement_catalog() -> RequirementCatalog:
+    parameters = await application_parameter_values()
+    python_version = parameters.get('python_oldest_current_version')
     return RequirementCatalog(
-        sources=[RequirementOption(value=value, title=title) for value, title in SOURCE_TITLES.items()],
+        sources=[
+            RequirementOption(
+                value=value,
+                title=title,
+                default_operator='greater_than_or_equal' if value == 'python_version' else None,
+                default_values=[python_version] if value == 'python_version' and python_version else [],
+            )
+            for value, title in SOURCE_TITLES.items()
+        ],
         operators=[RequirementOption(value=value, title=title) for value, title in OPERATOR_TITLES.items()],
     )
 

@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class RequirementSource(StrEnum):
+    PYTHON_VERSION = 'python_version'
     PACKAGE_MANAGER = 'package_manager'
     DEPENDENCY = 'dependency'
     TOOL = 'tool'
@@ -17,6 +18,8 @@ class RequirementSource(StrEnum):
 
 
 class RequirementOperator(StrEnum):
+    GREATER_THAN = 'greater_than'
+    GREATER_THAN_OR_EQUAL = 'greater_than_or_equal'
     EQUALS = 'equals'
     NOT_EQUALS = 'not_equals'
     CONTAINS = 'contains'
@@ -101,6 +104,8 @@ class CompanyRequirementGroupOrder(BaseModel):
 class RequirementOption(BaseModel):
     value: str
     title: str
+    default_operator: str | None = None
+    default_values: list[str] = Field(default_factory=list)
 
 
 class RequirementCatalog(BaseModel):

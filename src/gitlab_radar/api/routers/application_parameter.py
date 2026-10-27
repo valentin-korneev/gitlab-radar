@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from gitlab_radar.auth import management_access_dependency
 from gitlab_radar.database.models import ApplicationParameter as ApplicationParameterModel
+from gitlab_radar.database.repository import invalidate_project_cache
 from gitlab_radar.schemas.application_parameter import (
     ApplicationParameter,
     ApplicationParameterUpdate,
@@ -36,6 +37,7 @@ async def update_parameters(payload: ApplicationParameterUpdate) -> list[Applica
         rows_by_key[key].value = raw_value.strip()
         await rows_by_key[key].save(update_fields=['value'])
     invalidate_dashboard_cache()
+    invalidate_project_cache()
     return [ApplicationParameter.model_validate(row, from_attributes=True) for row in rows]
 
 

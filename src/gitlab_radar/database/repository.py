@@ -1,10 +1,13 @@
+import asyncio
 import logging
 from datetime import UTC, datetime
 
 from tortoise.transactions import in_transaction
 
 from gitlab_radar.database.models import ProjectFile, ProjectSnapshot, ScanRun
-from gitlab_radar.schemas.project import Project
+from gitlab_radar.schemas.project import Project, ProjectSubproject
+from gitlab_radar.schemas.technology import PackageManager
+from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.company_rules import apply_company_compliance, load_company_requirements
 
 logger = logging.getLogger(__name__)
@@ -48,11 +51,16 @@ async def load_projects() -> list[Project]:
     if scan is None:
         return []
     if PROJECT_CACHE.scan_id != scan.id:
-        requirements = await load_company_requirements()
+        requirements, parameter_values = await asyncio.gather(
+            load_company_requirements(),
+            application_parameter_values(),
+        )
         rows = await ProjectSnapshot.filter(scan_id=scan.id).order_by('gitlab_id').values_list('payload', flat=True)
         projects = [Project.model_validate(payload) for payload in rows]
         for project in projects:
-            apply_company_compliance(project, requirements)
+            if not project.subprojects:
+                project.subprojects.append(ProjectSubproject(path='.', package_manager=PackageManager.UNKNOWN))
+            apply_company_compliance(project, requirements, parameter_values)
         PROJECT_CACHE.scan_id = scan.id
         PROJECT_CACHE.projects = projects
         logger.info('Снимок %d загружен из PostgreSQL: проектов %d', scan.id, len(projects))

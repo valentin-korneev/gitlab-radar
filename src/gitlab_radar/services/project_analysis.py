@@ -51,6 +51,8 @@ def _build_file_sets(files: dict[str, bytes]) -> list[tuple[str, dict[str, bytes
     directories = {
         _parent_directory(path) for path in subproject_files if is_package_discovery_filename(PurePosixPath(path).name)
     }
+    if not directories:
+        return [('.', subproject_files)]
     return [
         (
             directory or '.',
