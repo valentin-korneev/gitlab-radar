@@ -61,10 +61,20 @@ function updateScanDuration() {
   const seconds = Math.max(0, (Date.now() - new Date(scan.started_at).getTime()) / 1000);
   document.querySelector('#scan-duration').textContent = formatDuration(seconds);
 }
-function showError(error) {
+let toastTimer = null;
+function showToast(message, type) {
   const toast = document.querySelector('#global-error');
-  toast.textContent = error.message;
+  toast.textContent = message;
+  toast.classList.toggle('success', type === 'success');
+  toast.classList.toggle('error', type === 'error');
   toast.hidden = false;
-  window.setTimeout(() => { toast.hidden = true; }, 5000);
+  if (toastTimer) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => { toast.hidden = true; }, 4000);
+}
+function showSuccess(message) {
+  showToast(message, 'success');
+}
+function showError(error) {
+  showToast(error.message, 'error');
 }
 

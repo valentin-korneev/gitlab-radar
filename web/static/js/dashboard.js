@@ -20,6 +20,12 @@ function parameterValue(key) {
 function parameterRange(key) {
   return parameterValue(key).split(',').map(Number);
 }
+function complianceTone(value, parameterKey) {
+  const [dangerThreshold, successThreshold] = parameterRange(parameterKey);
+  if (value < dangerThreshold) return 'danger';
+  if (value < successThreshold) return 'warning';
+  return 'success';
+}
 function compareVersions(left, right) {
   const leftParts = left.split('.').map(Number);
   const rightParts = right.split('.').map(Number);
@@ -136,7 +142,8 @@ function renderDashboard(dashboard) {
     const group = element('section', 'requirement-group');
     const items = element('div', 'requirement-group-items');
     itemsForGroup.forEach((item) => {
-      const card = element('button', 'requirement');
+      const tone = complianceTone(item.compliance_percentage, 'company_requirement_thresholds');
+      const card = element('button', `requirement requirement-${tone}`);
       card.type = 'button';
       const progress = element('div', 'requirement-progress');
       const progressValue = element('span');

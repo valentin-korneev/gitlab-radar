@@ -22,3 +22,12 @@
   min_value: 0
   max_value: 100
   sort_order: 3
+
+- key: company_requirement_thresholds
+  title: Пороги требований компании
+  description: Первая граница отделяет критическую долю соответствующих проектов, вторая — успешную.
+  value: '10,50'
+  value_type: percentage_range
+  min_value: 0
+  max_value: 100
+  sort_order: 4

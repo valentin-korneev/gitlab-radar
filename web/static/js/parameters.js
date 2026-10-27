@@ -110,4 +110,5 @@ async function saveParameters() {
   state.loaded.requirements = false;
   state.requirementCatalog = null;
   renderParameters();
+  showSuccess('Параметры сохранены');
 }

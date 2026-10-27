@@ -95,15 +95,19 @@ def _migrate_python_version_operator(node: dict) -> bool:
 
 async def _load_application_parameters() -> None:
     fixture_name = 'application-parameters'
-    if await DataFixture.filter(name=fixture_name).exists():
-        return
     parameters = [
         ApplicationParameterSchema.model_validate(item) for item in _read_fixture('application_parameters.yaml')
     ]
-    await ApplicationParameter.bulk_create(
-        [ApplicationParameter(**parameter.model_dump(mode='json')) for parameter in parameters],
-    )
-    await DataFixture.create(name=fixture_name)
+    created = 0
+    for parameter in parameters:
+        payload = parameter.model_dump(mode='json')
+        key = payload.pop('key')
+        _, was_created = await ApplicationParameter.get_or_create(key=key, defaults=payload)
+        created += was_created
+    if not await DataFixture.filter(name=fixture_name).exists():
+        await DataFixture.create(name=fixture_name)
+    if created:
+        logger.info('Добавлены параметры приложения из fixtures: %d', created)
 
 
 def _read_fixture(filename: str) -> list[dict]:

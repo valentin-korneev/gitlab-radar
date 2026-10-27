@@ -117,6 +117,7 @@ document.querySelector('#scan-button').addEventListener('click', async () => {
   try {
     const scan = await api(API.scan, { method: 'POST' });
     await handleScanStatus(scan);
+    showSuccess('Сканирование запущено');
   } catch (error) { showError(error); }
 });
 document.querySelector('#parameters-form').addEventListener('submit', async (event) => {
@@ -218,6 +219,7 @@ document.querySelector('#requirement-group-form').addEventListener('submit', asy
     });
     await reloadRequirements();
     document.querySelector('#group-dialog').close();
+    showSuccess(groupId ? 'Группа сохранена' : 'Группа создана');
   } catch (error) { showError(error); }
 });
 document.querySelector('#move-requirement-form').addEventListener('submit', async (event) => {
@@ -241,6 +243,7 @@ document.querySelector('#requirement-form').addEventListener('submit', async (ev
     });
     await reloadRequirements();
     document.querySelector('#requirement-dialog').close();
+    showSuccess(requirementId ? 'Требование сохранено' : 'Требование создано');
   } catch (error) { showError(error); }
 });
 async function startApplication() {

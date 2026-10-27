@@ -180,6 +180,7 @@ async function removeRequirement(requirement) {
   if (!confirmed) return;
   await api(`${API.requirements}${requirement.id}`, { method: 'DELETE' });
   await reloadRequirements();
+  showSuccess('Требование удалено');
 }
 function groupPayload() {
   const groupId = Number(document.querySelector('#requirement-group-id').value);
@@ -213,6 +214,7 @@ async function removeRequirementGroup(group) {
   await api(`${API.requirementGroups}${group.id}`, { method: 'DELETE' });
   if (state.selectedRequirementGroupId === group.id) state.selectedRequirementGroupId = null;
   await reloadRequirements();
+  showSuccess('Группа удалена');
 }
 function renderRequirementGroups() {
   const container = document.querySelector('#requirement-groups');
@@ -329,6 +331,7 @@ async function setRequirementEnabled(requirement, enabled) {
   state.loaded.projects = false;
   renderRuleFilters();
   renderRequirementGroups();
+  showSuccess(enabled ? 'Требование включено' : 'Требование выключено');
 }
 function openRequirementMove(requirement) {
   document.querySelector('#move-requirement-id').value = requirement.id;
@@ -358,6 +361,7 @@ async function moveRequirement(requirementId, groupId) {
   state.loaded.projects = false;
   renderRuleFilters();
   renderRequirementGroups();
+  showSuccess('Требование перенесено');
 }
 async function saveRequirementGroupOrder() {
   const groupIds = [...document.querySelectorAll('#requirement-groups [data-group-id]')]
@@ -369,6 +373,7 @@ async function saveRequirementGroupOrder() {
   });
   state.loaded.dashboard = false;
   renderRequirementGroups();
+  showSuccess('Порядок групп сохранён');
 }
 async function saveRequirementOrder(groupNode) {
   const requirementIds = [...groupNode.querySelectorAll('[data-requirement-id]')]
@@ -380,6 +385,7 @@ async function saveRequirementOrder(groupNode) {
   });
   state.loaded.dashboard = false;
   renderRequirementGroups();
+  showSuccess('Порядок требований сохранён');
 }
 async function reloadRequirements() {
   [state.requirements, state.requirementGroups] = await Promise.all([

@@ -300,7 +300,7 @@
           <div class="intro"><p>Персональная настройка</p><h2>Фильтры проектов</h2></div>
           <button id="create-visibility-group" class="primary-button icon-button" type="button" title="Создать группу" aria-label="Создать группу" data-icon="plus"></button>
         </div>
-        <p class="visibility-help">Включения формируют выборку, затем из неё удаляются исключения. Шаблон применяется к полному пути проекта, например <code>*/mlops/*</code>.</p>
+        <p class="visibility-help">Включения формируют выборку, затем из неё удаляются исключения. Шаблон применяется к полному пути проекта, например <code>mlops/*</code>.</p>
         <div id="visibility-group-list" class="visibility-card-list"></div>
       </section>
 
@@ -355,7 +355,7 @@
         </article>
       </dialog>
 
-      <div id="global-error" class="toast" hidden></div>
+      <div id="global-error" class="toast error" role="status" aria-live="polite" hidden></div>
     </main>
   </div>
 </body>

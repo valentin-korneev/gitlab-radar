@@ -6,7 +6,7 @@ function visibilityRuleRow(rule = { action: 'include', pattern: '' }) {
   const pattern = document.createElement('input');
   pattern.required = true;
   pattern.maxLength = 500;
-  pattern.placeholder = '*/mlops/*';
+  pattern.placeholder = 'mlops/*';
   pattern.value = rule.pattern;
   const remove = iconButton('trash', 'danger-button', 'Удалить правило');
   remove.addEventListener('click', () => row.remove());
@@ -61,6 +61,7 @@ function visibilityEditorCard(item, kind) {
       if (kind === 'policy') await reloadVisibilityPolicies();
       else await reloadVisibilityGroups();
       invalidateVisibilityData();
+      showSuccess(kind === 'policy' ? 'Политика сохранена' : 'Группа фильтров сохранена');
     } catch (error) { showError(error); }
   });
   actions.append(add, save);
@@ -82,6 +83,7 @@ function visibilityEditorCard(item, kind) {
         await reloadVisibilityGroups();
         invalidateVisibilityData();
         await showPage();
+        showSuccess(groupId === null ? 'Фильтр по умолчанию снят' : 'Фильтр по умолчанию сохранён');
       } catch (error) { showError(error); }
     });
     actions.append(defaultButton);
@@ -97,6 +99,7 @@ function visibilityEditorCard(item, kind) {
         if (kind === 'policy') await reloadVisibilityPolicies();
         else await reloadVisibilityGroups();
         invalidateVisibilityData();
+        showSuccess(kind === 'policy' ? 'Политика удалена' : 'Группа фильтров удалена');
       } catch (error) { showError(error); }
     });
     actions.append(remove);
@@ -196,14 +199,9 @@ async function renderAdminUserVisibility(preferredUsername) {
   const add = iconButton('plus', 'secondary-button', 'Добавить индивидуальное правило');
   add.addEventListener('click', () => appendVisibilityRule(rules));
   const save = iconButton('check', 'primary-button', 'Сохранить настройки пользователя');
-  const saveStatus = element('span', 'visibility-save-status');
-  saveStatus.setAttribute('role', 'status');
-  saveStatus.setAttribute('aria-live', 'polite');
   save.addEventListener('click', async () => {
     try {
       save.disabled = true;
-      saveStatus.classList.remove('saved', 'failed');
-      saveStatus.textContent = 'Сохранение…';
       await api(`${API.visibilityAdmin}user/${encodeURIComponent(preferredUsername)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -213,18 +211,16 @@ async function renderAdminUserVisibility(preferredUsername) {
         }),
       });
       invalidateVisibilityData();
-      saveStatus.classList.add('saved');
-      saveStatus.textContent = 'Сохранено';
+      document.querySelector('#visibility-user-dialog').close();
+      showSuccess('Настройки пользователя сохранены');
     } catch (error) {
-      saveStatus.classList.add('failed');
-      saveStatus.textContent = 'Не сохранено';
       showError(error);
     } finally {
       save.disabled = false;
     }
   });
   const actions = element('div', 'visibility-editor-actions');
-  actions.append(add, save, saveStatus);
+  actions.append(add, save);
   editor.append(
     policies,
     element('h3', 'visibility-subheading', 'Индивидуальные правила администратора'),

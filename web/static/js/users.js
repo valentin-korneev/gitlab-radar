@@ -58,6 +58,7 @@ async function addAuthorizedUser() {
   state.authorizedUsers.sort((left, right) => left.preferred_username.localeCompare(right.preferred_username));
   input.value = '';
   renderAuthorizedUsers();
+  showSuccess('Пользователь добавлен');
 }
 async function updateAuthorizedUser(user, changes) {
   try {
@@ -74,6 +75,7 @@ async function updateAuthorizedUser(user, changes) {
     state.authorizedUsers = state.authorizedUsers.map((item) => (
       item.preferred_username === updated.preferred_username ? updated : item
     ));
+    showSuccess('Настройки пользователя сохранены');
   } finally {
     renderAuthorizedUsers();
   }
@@ -90,4 +92,5 @@ async function removeAuthorizedUser(user) {
   });
   state.authorizedUsers = state.authorizedUsers.filter((item) => item.preferred_username !== user.preferred_username);
   renderAuthorizedUsers();
+  showSuccess('Пользователь удалён');
 }

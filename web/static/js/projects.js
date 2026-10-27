@@ -294,14 +294,7 @@ function renderProjectDetail(view, subproject) {
   ].filter(Boolean).join(' · ');
   appendDetail(detail, 'Python', pythonDetails);
   const compliance = element('p', 'detail-value compliance-value', `${subproject.compliance}%`);
-  const [dangerThreshold, successThreshold] = parameterRange('project_compliance_thresholds');
-  compliance.classList.add(
-    subproject.compliance < dangerThreshold
-      ? 'compliance-danger'
-      : subproject.compliance < successThreshold
-        ? 'compliance-warning'
-        : 'compliance-success',
-  );
+  compliance.classList.add(`compliance-${complianceTone(subproject.compliance, 'project_compliance_thresholds')}`);
   appendDetail(detail, 'Соответствие правилам компании', compliance);
   appendTechnologyStatuses(detail, project);
   appendRuleViolations(detail, subproject.ruleResults);
