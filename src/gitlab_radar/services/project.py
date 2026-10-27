@@ -5,6 +5,7 @@ from gitlab.const import AccessLevel
 from gitlab_radar.clients.gitlab import gitlab_client
 from gitlab_radar.database.repository import load_projects as load_projects_from_database
 from gitlab_radar.schemas.project import Project
+from gitlab_radar.services.visibility import filter_projects_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +40,12 @@ def fetch_projects() -> tuple[list[Project], int]:
     return projects, skipped_projects
 
 
-async def load_projects() -> list[Project]:
-    return await load_projects_from_database()
+async def load_projects(
+    preferred_username: str | None = None,
+    visibility_group: str | None = None,
+) -> list[Project]:
+    projects = await load_projects_from_database()
+    return await filter_projects_for_user(projects, preferred_username, visibility_group)
 
 
 def _project_access_level(permissions: object) -> int:

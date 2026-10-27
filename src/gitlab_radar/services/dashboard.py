@@ -1,6 +1,5 @@
 import re
 from collections import Counter
-from dataclasses import dataclass
 from urllib.parse import urlsplit
 
 from gitlab_radar.database.repository import latest_published_scan
@@ -33,26 +32,16 @@ PACKAGE_MANAGER_TITLES = {
 }
 
 
-@dataclass(slots=True)
-class _DashboardCache:
-    scan_id: int | None = None
-    value: Dashboard | None = None
-
-
-_DASHBOARD_CACHE = _DashboardCache()
-
-
 def invalidate_dashboard_cache() -> None:
-    _DASHBOARD_CACHE.scan_id = None
-    _DASHBOARD_CACHE.value = None
+    pass
 
 
-async def build_dashboard() -> Dashboard:
+async def build_dashboard(
+    preferred_username: str | None = None,
+    visibility_group: str | None = None,
+) -> Dashboard:
     scan = await latest_published_scan()
-    if scan is not None and _DASHBOARD_CACHE.scan_id == scan.id and _DASHBOARD_CACHE.value is not None:
-        return _DASHBOARD_CACHE.value.model_copy(deep=True)
-
-    projects = await load_projects()
+    projects = await load_projects(preferred_username, visibility_group)
     requirements = await load_company_requirements()
     parameter_values = await application_parameter_values()
     oldest_current_python = tuple(
@@ -145,9 +134,6 @@ async def build_dashboard() -> Dashboard:
             else None
         ),
     )
-    if scan is not None:
-        _DASHBOARD_CACHE.scan_id = scan.id
-        _DASHBOARD_CACHE.value = dashboard
     return dashboard.model_copy(deep=True)
 
 

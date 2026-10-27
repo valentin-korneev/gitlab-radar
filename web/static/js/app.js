@@ -14,9 +14,18 @@ document.querySelectorAll('.nav-item').forEach((item) => {
 });
 document.querySelector('#auth-button').addEventListener('click', async () => {
   try {
+    if (!state.auth.config?.required) {
+      await applyDevelopmentUser(document.querySelector('#development-user').value);
+      return;
+    }
     if (state.auth.user) await logout();
     else await startLogin();
   } catch (error) { showError(error); }
+});
+document.querySelector('#development-user').addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  document.querySelector('#auth-button').click();
 });
 window.addEventListener('hashchange', () => { showPage().catch(showError); });
 document.querySelector('#project-search').addEventListener('input', (event) => {
@@ -32,6 +41,28 @@ document.querySelector('#show-transitive').addEventListener('change', (event) =>
   renderDependencies();
   const selected = state.dependencies.find((dependency) => dependency.name === state.selectedDependency);
   if (selected) renderDependencyDetail(selected);
+});
+document.querySelector('#active-visibility-group').addEventListener('change', async (event) => {
+  try {
+    state.selectedVisibilityGroup = event.target.value;
+    invalidateVisibilityData();
+    await showPage();
+  } catch (error) { showError(error); }
+});
+document.querySelector('#create-visibility-group').addEventListener('click', () => {
+  const list = document.querySelector('#visibility-group-list');
+  if (list.querySelector('.empty-state')) list.replaceChildren();
+  list.prepend(visibilityEditorCard({ name: '', rules: [] }, 'group'));
+  list.querySelector('input')?.focus();
+});
+document.querySelector('#create-visibility-policy').addEventListener('click', () => {
+  const list = document.querySelector('#visibility-policy-list');
+  if (list.querySelector('.empty-state')) list.replaceChildren();
+  list.prepend(visibilityEditorCard({ name: '', rules: [] }, 'policy'));
+  list.querySelector('input')?.focus();
+});
+document.querySelector('#close-visibility-user-dialog').addEventListener('click', () => {
+  document.querySelector('#visibility-user-dialog').close();
 });
 STATE_CHANNEL?.addEventListener('message', (event) => {
   const path = event.data?.path || '';
@@ -56,6 +87,17 @@ STATE_CHANNEL?.addEventListener('message', (event) => {
   if (path.startsWith(API.authorizedUsers)) {
     state.loaded.users = false;
     invalidatedPages.add('users');
+  }
+  if (path.startsWith(API.visibility)) {
+    invalidateVisibilityData();
+    state.loaded.visibility = false;
+    state.loaded['visibility-admin'] = false;
+    invalidatedPages.add('visibility');
+    invalidatedPages.add('visibility-admin');
+    invalidatedPages.add('dashboard');
+    invalidatedPages.add('projects');
+    invalidatedPages.add('dependencies');
+    loadVisibilityGroups().catch(showError);
   }
   const activePage = PAGE_ROUTES[state.currentRoute]?.page;
   if (invalidatedPages.has(activePage)) showPage().catch(showError);
@@ -204,6 +246,7 @@ document.querySelector('#requirement-form').addEventListener('submit', async (ev
 async function startApplication() {
   try {
     await initializeAuth();
+    await loadVisibilityGroups();
     await showPage();
   } catch (error) { showError(error); }
   window.setInterval(updateScanDuration, 1000);

@@ -107,17 +107,28 @@ async function logout() {
 }
 function renderAuth() {
   const panel = document.querySelector('#auth-panel');
+  const developmentInput = document.querySelector('#development-user');
   const authenticated = Boolean(state.auth.user);
-  const administrator = !state.auth.config?.required || Boolean(state.auth.user?.is_admin);
+  const administrator = Boolean(state.auth.user?.is_admin);
   document.querySelectorAll('.authenticated-navigation').forEach((item) => {
-    item.hidden = Boolean(state.auth.config?.required) && !authenticated;
+    item.hidden = !authenticated;
   });
   document.querySelectorAll('.administrator-navigation').forEach((item) => { item.hidden = !administrator; });
+  document.querySelectorAll('.personal-visibility-navigation').forEach((item) => {
+    item.hidden = !authenticated;
+  });
   if (state.scanStatus) renderScanStatus(state.scanStatus);
   if (!state.auth.config?.required) {
-    panel.hidden = true;
+    panel.hidden = false;
+    developmentInput.hidden = false;
+    developmentInput.value = state.auth.developmentUsername || '';
+    document.querySelector('#auth-user').textContent = authenticated
+      ? `Тестовый пользователь: ${state.auth.user.preferred_username}`
+      : 'Локальный режим';
+    document.querySelector('#auth-button').textContent = 'Применить';
     return;
   }
+  developmentInput.hidden = true;
   panel.hidden = false;
   document.querySelector('#auth-user').textContent = authenticated
     ? state.auth.user.preferred_username || state.auth.user.name || 'Пользователь'
@@ -130,8 +141,17 @@ async function initializeAuth() {
   state.auth.config = await response.json();
   if (!state.auth.config.required) {
     state.auth.tokens = null;
-    state.auth.user = null;
     sessionStorage.removeItem('radar-auth-tokens');
+    state.auth.developmentUsername = localStorage.getItem('radar-development-user')
+      || state.auth.config.development_username;
+    try {
+      state.auth.user = await api(API.authSession);
+    } catch (error) {
+      if (state.auth.developmentUsername === state.auth.config.development_username) throw error;
+      state.auth.developmentUsername = state.auth.config.development_username;
+      localStorage.setItem('radar-development-user', state.auth.developmentUsername);
+      state.auth.user = await api(API.authSession);
+    }
     renderAuth();
     return;
   }
@@ -169,6 +189,12 @@ async function api(path, options = {}) {
   const headers = new Headers(options.headers || {});
   const token = await accessToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (!state.auth.config?.required && state.auth.developmentUsername) {
+    headers.set('X-Radar-Development-User', state.auth.developmentUsername);
+  }
+  if (state.selectedVisibilityGroup !== null) {
+    headers.set('X-Radar-Visibility-Group', String(state.selectedVisibilityGroup));
+  }
   const response = await fetch(path, { cache: 'no-store', ...options, headers });
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
@@ -177,4 +203,19 @@ async function api(path, options = {}) {
   const payload = response.status === 204 ? null : await response.json();
   if ((options.method || 'GET').toUpperCase() !== 'GET') STATE_CHANNEL?.postMessage({ path });
   return payload;
+}
+
+async function applyDevelopmentUser(preferredUsername) {
+  const value = preferredUsername.trim() || state.auth.config.development_username;
+  state.auth.developmentUsername = value;
+  localStorage.setItem('radar-development-user', value);
+  state.auth.user = await api(API.authSession);
+  Object.keys(state.loaded).forEach((page) => { state.loaded[page] = false; });
+  state.authorizedUsers = [];
+  state.visibilityGroups = [];
+  state.selectedVisibilityGroup = null;
+  invalidateVisibilityData();
+  renderAuth();
+  await loadVisibilityGroups();
+  await showPage();
 }

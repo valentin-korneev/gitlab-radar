@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 
 import jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 from jwt.exceptions import PyJWTError
@@ -35,9 +35,29 @@ async def verify_access_token(token: str) -> dict[str, Any]:
 
 async def require_authenticated_access(
     credentials: HTTPAuthorizationCredentials | None = None,
+    development_username: str | None = None,
 ) -> dict[str, Any]:
     if not settings.auth.required:
-        return {'is_admin': True}
+        preferred_username = (development_username or settings.auth.development_username).strip()
+        if not preferred_username:
+            preferred_username = settings.auth.development_username
+        if len(preferred_username) > 255:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Слишком длинное имя пользователя')
+        is_development_admin = preferred_username == settings.auth.development_username
+        user, _ = await AuthorizedUser.get_or_create(
+            preferred_username=preferred_username,
+            defaults={'is_admin': is_development_admin},
+        )
+        if is_development_admin and user.is_blocked:
+            user.is_blocked = False
+            await user.save(update_fields=['is_blocked'])
+        if user.is_blocked:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Пользователь заблокирован')
+        return {
+            'preferred_username': preferred_username,
+            'is_admin': is_development_admin or user.is_admin,
+            'development': True,
+        }
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -62,8 +82,9 @@ async def require_authenticated_access(
 
 async def require_management_access(
     credentials: HTTPAuthorizationCredentials | None = None,
+    development_username: str | None = None,
 ) -> dict[str, Any]:
-    payload = await require_authenticated_access(credentials)
+    payload = await require_authenticated_access(credentials, development_username)
     if not payload['is_admin']:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Требуются права администратора')
     return payload
@@ -71,14 +92,19 @@ async def require_management_access(
 
 async def authenticated_access_dependency(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    development_username: Annotated[str | None, Header(alias='X-Radar-Development-User')] = None,
+    visibility_group: Annotated[str | None, Header(alias='X-Radar-Visibility-Group')] = None,
 ) -> dict[str, Any]:
-    return await require_authenticated_access(credentials)
+    claims = await require_authenticated_access(credentials, development_username)
+    claims['visibility_group'] = visibility_group
+    return claims
 
 
 async def management_access_dependency(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
+    development_username: Annotated[str | None, Header(alias='X-Radar-Development-User')] = None,
 ) -> dict[str, Any]:
-    return await require_management_access(credentials)
+    return await require_management_access(credentials, development_username)
 
 
 async def issue_websocket_ticket() -> str:
@@ -94,9 +120,7 @@ async def issue_websocket_ticket() -> str:
 
 async def consume_websocket_ticket(ticket: str) -> bool:
     rows = await connections.get('default').execute_query_dict(
-        'DELETE FROM "websocketticket" '
-        'WHERE "token_hash" = $1 AND "expires_at" > NOW() '
-        'RETURNING "token_hash"',
+        'DELETE FROM "websocketticket" WHERE "token_hash" = $1 AND "expires_at" > NOW() RETURNING "token_hash"',
         [_ticket_hash(ticket)],
     )
     return bool(rows)

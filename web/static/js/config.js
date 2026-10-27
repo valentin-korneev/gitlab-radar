@@ -7,9 +7,13 @@ const API = {
   requirementGroups: '/api/company-requirement-group/',
   parameters: '/api/application-parameter/',
   authorizedUsers: '/api/authorized-user/',
+  visibility: '/api/visibility/',
+  visibilityAdmin: '/api/visibility/admin/',
 };
-const AUTHENTICATED_ROUTES = new Set(['admin']);
-const ADMINISTRATOR_ROUTES = new Set(['requirements', 'parameters', 'users']);
+const AUTHENTICATED_ROUTES = new Set([
+  'dashboard', 'projects', 'dependencies', 'images', 'components', 'webhooks', 'visibility', 'admin',
+]);
+const ADMINISTRATOR_ROUTES = new Set(['requirements', 'parameters', 'users', 'visibility-admin']);
 const PAGE_ROUTES = {
   dashboard: { page: 'dashboard' },
   projects: { page: 'projects' },
@@ -20,6 +24,8 @@ const PAGE_ROUTES = {
   requirements: { page: 'requirements' },
   parameters: { page: 'parameters' },
   users: { page: 'users' },
+  visibility: { page: 'visibility' },
+  'visibility-admin': { page: 'visibility-admin' },
   admin: { page: 'admin' },
 };
 const SOURCE_ROUTES = { python: 'dependencies', docker: 'images', ci: 'components', webhook: 'webhooks' };
@@ -43,10 +49,14 @@ const state = {
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
   requirements: [], requirementGroups: [], requirementCatalog: null,
   parameters: [], authorizedUsers: [],
-  auth: { config: null, tokens: null, user: null },
+  visibilityGroups: [], selectedVisibilityGroup: null, visibilityPolicies: [], visibilityAdminUser: null,
+  auth: { config: null, tokens: null, user: null, developmentUsername: null },
   currentRoute: null,
   selectedRequirementGroupId: null,
-  loaded: { dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false, users: false, admin: false }, loading: {},
+  loaded: {
+    dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false,
+    users: false, visibility: false, 'visibility-admin': false, admin: false,
+  }, loading: {},
 };
 const STATE_CHANNEL = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('gitlab-radar-state');
 

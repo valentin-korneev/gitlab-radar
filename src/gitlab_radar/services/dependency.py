@@ -31,8 +31,10 @@ _DEPENDENCY_CACHE = _DependencyCache()
 async def build_dependency_catalog(
     projects: list[Project] | None = None,
     source: DependencySource = DependencySource.PYTHON,
+    preferred_username: str | None = None,
+    visibility_group: str | None = None,
 ) -> list[DependencyUsage]:
-    cacheable = projects is None
+    cacheable = projects is None and preferred_username is None
     if cacheable:
         scan = await latest_published_scan()
         scan_id = scan.id if scan is not None else None
@@ -42,7 +44,9 @@ async def build_dependency_catalog(
         cached = _DEPENDENCY_CACHE.values.get(source)
         if cached is not None:
             return [item.model_copy(deep=True) for item in cached]
-        projects = await load_projects()
+        projects = await load_projects(preferred_username, visibility_group)
+    elif projects is None:
+        projects = await load_projects(preferred_username, visibility_group)
     entries = {
         DependencySource.PYTHON: _python_entries,
         DependencySource.DOCKER: _docker_entries,

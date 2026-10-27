@@ -9,25 +9,34 @@ from gitlab_radar.schemas.authorized_user import AuthorizedUser, AuthorizedUserC
 router = APIRouter(dependencies=[Depends(management_access_dependency)])
 
 
+def _environment_admins() -> set[str]:
+    admins = set(settings.auth.allowed_preferred_usernames)
+    if not settings.auth.required:
+        admins.add(settings.auth.development_username)
+    return admins
+
+
 @router.get('/')
 async def get_authorized_users() -> list[AuthorizedUser]:
-    environment_users = settings.auth.allowed_preferred_usernames
+    environment_users = _environment_admins()
     database_users = {user.preferred_username: user for user in await AuthorizedUserModel.all()}
     result = []
     for preferred_username in sorted(environment_users | database_users.keys(), key=str.casefold):
         database_user = database_users.get(preferred_username)
-        result.append(AuthorizedUser(
-            preferred_username=preferred_username,
-            source='environment' if preferred_username in environment_users else 'database',
-            is_admin=preferred_username in environment_users or bool(database_user and database_user.is_admin),
-            is_blocked=bool(database_user and database_user.is_blocked),
-        ))
+        result.append(
+            AuthorizedUser(
+                preferred_username=preferred_username,
+                source='environment' if preferred_username in environment_users else 'database',
+                is_admin=preferred_username in environment_users or bool(database_user and database_user.is_admin),
+                is_blocked=bool(database_user and database_user.is_blocked),
+            )
+        )
     return result
 
 
 @router.post('/', status_code=201)
 async def add_authorized_user(payload: AuthorizedUserCreate) -> AuthorizedUser:
-    environment_admin = payload.preferred_username in settings.auth.allowed_preferred_usernames
+    environment_admin = payload.preferred_username in _environment_admins()
     user, _ = await AuthorizedUserModel.get_or_create(
         preferred_username=payload.preferred_username,
         defaults={'is_admin': environment_admin},
@@ -43,9 +52,12 @@ async def add_authorized_user(payload: AuthorizedUserCreate) -> AuthorizedUser:
 @router.put('/')
 async def update_authorized_user(payload: AuthorizedUserUpdate) -> AuthorizedUser:
     preferred_username = payload.preferred_username
-    environment_admin = preferred_username in settings.auth.allowed_preferred_usernames
+    environment_admins = _environment_admins()
+    environment_admin = preferred_username in environment_admins
     if environment_admin and not payload.is_admin:
         raise HTTPException(status_code=409, detail='Роль администратора задана в окружении')
+    if not settings.auth.required and preferred_username == settings.auth.development_username and payload.is_blocked:
+        raise HTTPException(status_code=409, detail='Локальный тестовый администратор не может быть заблокирован')
     async with in_transaction() as connection:
         await connection.execute_query("SELECT pg_advisory_xact_lock(hashtext('gitlab-radar-authorized-users'))")
         user = await AuthorizedUserModel.filter(preferred_username=preferred_username).using_db(connection).first()
@@ -61,11 +73,10 @@ async def update_authorized_user(payload: AuthorizedUserUpdate) -> AuthorizedUse
         active_admins = {
             item.preferred_username
             for item in users
-            if not item.is_blocked
-            and (item.is_admin or item.preferred_username in settings.auth.allowed_preferred_usernames)
+            if not item.is_blocked and (item.is_admin or item.preferred_username in environment_admins)
         }
         blocked_users = {item.preferred_username for item in users if item.is_blocked}
-        active_admins.update(settings.auth.allowed_preferred_usernames - blocked_users)
+        active_admins.update(environment_admins - blocked_users)
         if not active_admins:
             raise HTTPException(status_code=409, detail='Должен остаться хотя бы один активный администратор')
     return AuthorizedUser(
@@ -78,7 +89,8 @@ async def update_authorized_user(payload: AuthorizedUserUpdate) -> AuthorizedUse
 
 @router.delete('/', status_code=204)
 async def delete_authorized_user(preferred_username: str) -> None:
-    if preferred_username in settings.auth.allowed_preferred_usernames:
+    environment_admins = _environment_admins()
+    if preferred_username in environment_admins:
         raise HTTPException(status_code=409, detail='Пользователь задан в окружении и не может быть удалён')
     async with in_transaction() as connection:
         await connection.execute_query("SELECT pg_advisory_xact_lock(hashtext('gitlab-radar-authorized-users'))")
@@ -91,7 +103,7 @@ async def delete_authorized_user(preferred_username: str) -> None:
             active_database_admins = {
                 item.preferred_username for item in users if item.is_admin and not item.is_blocked
             }
-            active_admins = active_database_admins | (settings.auth.allowed_preferred_usernames - blocked_users)
+            active_admins = active_database_admins | (environment_admins - blocked_users)
             if active_admins == {preferred_username}:
                 raise HTTPException(status_code=409, detail='Должен остаться хотя бы один активный администратор')
         await user.delete(using_db=connection)

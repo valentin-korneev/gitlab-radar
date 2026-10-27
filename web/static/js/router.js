@@ -9,7 +9,7 @@ async function showPage() {
     await startLogin(routeName);
     return;
   }
-  if (state.auth.config?.required && ADMINISTRATOR_ROUTES.has(routeName) && !state.auth.user?.is_admin) {
+  if (ADMINISTRATOR_ROUTES.has(routeName) && !state.auth.user?.is_admin) {
     window.location.hash = 'dashboard';
     return;
   }
@@ -24,7 +24,7 @@ async function showPage() {
       if (sourceChanged) state.selectedDependency = null;
       document.querySelector('#catalog-title').textContent = route.title;
       document.querySelector('#dependency-search').placeholder = route.search;
-      document.querySelector('#transitive-filter').classList.toggle('control-placeholder', route.source !== 'python');
+      document.querySelector('.dependency-controls').hidden = route.source !== 'python';
       if (sourceChanged) {
         document.querySelector('#dependency-detail').replaceChildren(
           element('p', 'empty-state', 'Выберите элемент, чтобы посмотреть версии и проекты.'),
@@ -40,6 +40,7 @@ async function ensurePageLoaded(pageName) {
     const loaders = {
       dashboard: loadDashboard, projects: loadProjects, dependencies: loadDependencies,
       requirements: loadRequirementsPage, parameters: loadParametersPage, users: loadAuthorizedUsersPage, admin: loadAdmin,
+      visibility: loadVisibilityPage, 'visibility-admin': loadAdminVisibilityPage,
     };
     state.loading[pageName] = loaders[pageName]().finally(() => { delete state.loading[pageName]; });
   }

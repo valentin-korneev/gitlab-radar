@@ -26,6 +26,7 @@ class ScanRun(RadarModel):
     errors = fields.JSONField(default=list)
     published = fields.BooleanField(default=False, index=True)
 
+
 class ProjectSnapshot(RadarModel):
     id = fields.IntField(primary_key=True)
     scan = fields.ForeignKeyField('models.ScanRun', related_name='projects', on_delete=fields.CASCADE)
@@ -64,11 +65,68 @@ class AuthorizedUser(RadarModel):
     class Meta:
         table = 'authorized_user'
 
+
+class UserVisibilityGroup(RadarModel):
+    id = fields.IntField(primary_key=True)
+    user = fields.ForeignKeyField('models.AuthorizedUser', related_name='visibility_groups', on_delete=fields.CASCADE)
+    name = fields.CharField(max_length=100)
+    is_active = fields.BooleanField(default=False, index=True)
+    sort_order = fields.IntField(default=0)
+
+    class Meta:
+        unique_together = (('user', 'name'),)
+
+
+class UserVisibilityRule(RadarModel):
+    id = fields.IntField(primary_key=True)
+    group = fields.ForeignKeyField('models.UserVisibilityGroup', related_name='rules', on_delete=fields.CASCADE)
+    action = fields.CharField(max_length=10)
+    pattern = fields.CharField(max_length=500)
+    sort_order = fields.IntField(default=0)
+
+
+class AdminVisibilityPolicy(RadarModel):
+    id = fields.IntField(primary_key=True)
+    name = fields.CharField(max_length=100, unique=True)
+
+
+class AdminVisibilityPolicyRule(RadarModel):
+    id = fields.IntField(primary_key=True)
+    policy = fields.ForeignKeyField('models.AdminVisibilityPolicy', related_name='rules', on_delete=fields.CASCADE)
+    action = fields.CharField(max_length=10)
+    pattern = fields.CharField(max_length=500)
+    sort_order = fields.IntField(default=0)
+
+
+class AdminVisibilityPolicyAssignment(RadarModel):
+    id = fields.IntField(primary_key=True)
+    policy = fields.ForeignKeyField(
+        'models.AdminVisibilityPolicy', related_name='assignments', on_delete=fields.CASCADE
+    )
+    user = fields.ForeignKeyField(
+        'models.AuthorizedUser', related_name='visibility_policy_assignments', on_delete=fields.CASCADE
+    )
+
+    class Meta:
+        unique_together = (('policy', 'user'),)
+
+
+class AdminUserVisibilityRule(RadarModel):
+    id = fields.IntField(primary_key=True)
+    user = fields.ForeignKeyField(
+        'models.AuthorizedUser', related_name='admin_visibility_rules', on_delete=fields.CASCADE
+    )
+    action = fields.CharField(max_length=10)
+    pattern = fields.CharField(max_length=500)
+    sort_order = fields.IntField(default=0)
+
+
 class CompanyRequirementGroup(RadarModel):
     id = fields.IntField(primary_key=True)
     name = fields.CharField(max_length=100, unique=True)
     description = fields.TextField(default='')
     sort_order = fields.IntField(default=0)
+
 
 class CompanyRequirement(RadarModel):
     id = fields.IntField(primary_key=True)
@@ -84,6 +142,7 @@ class CompanyRequirement(RadarModel):
     enabled = fields.BooleanField(default=True, index=True)
     sort_order = fields.IntField(default=0)
 
+
 class ApplicationParameter(RadarModel):
     key = fields.CharField(max_length=100, primary_key=True)
     title = fields.CharField(max_length=200)
@@ -93,6 +152,7 @@ class ApplicationParameter(RadarModel):
     min_value = fields.IntField(null=True)
     max_value = fields.IntField(null=True)
     sort_order = fields.IntField(default=0)
+
 
 class DataFixture(RadarModel):
     name = fields.CharField(max_length=100, primary_key=True)

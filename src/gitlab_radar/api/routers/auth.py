@@ -11,7 +11,10 @@ router = APIRouter()
 @router.get('/config')
 async def auth_config() -> dict[str, str | bool]:
     if not settings.auth.required:
-        return {'required': False}
+        return {
+            'required': False,
+            'development_username': settings.auth.development_username,
+        }
     return {
         'required': True,
         'issuer': settings.auth.issuer,

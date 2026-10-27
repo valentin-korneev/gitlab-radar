@@ -28,6 +28,9 @@ function renderAuthorizedUsers() {
     blockedInput.addEventListener('change', () => updateAuthorizedUser(user, { is_blocked: blockedInput.checked }).catch(showError));
     blockedLabel.append(blockedInput, element('span'), document.createTextNode('Заблокирован'));
     actions.append(adminLabel, blockedLabel);
+    const visibility = iconButton('filter', 'secondary-button', 'Настроить фильтры пользователя');
+    visibility.addEventListener('click', () => openAdminUserVisibility(user.preferred_username).catch(showError));
+    actions.append(visibility);
     if (user.source === 'database') {
       const remove = iconButton('trash', 'danger-button', 'Удалить пользователя');
       remove.addEventListener('click', () => removeAuthorizedUser(user).catch(showError));

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="GitLab Radar">
+  <rect width="48" height="48" rx="13" fill="#ef3124"/>
+  <path d="M24 9a15 15 0 1 0 15 15" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".42"/>
+  <path d="M24 16a8 8 0 1 0 8 8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity=".72"/>
+  <path d="M24 24 37 12" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M24 24 39 19a16 16 0 0 0-7-9Z" fill="#fff" opacity=".16"/>
+  <circle cx="24" cy="24" r="3" fill="#fff"/>
+  <circle cx="34" cy="28" r="2.5" fill="#fff"/>
+  <circle cx="17" cy="34" r="2" fill="#fff" opacity=".85"/>
+</svg>

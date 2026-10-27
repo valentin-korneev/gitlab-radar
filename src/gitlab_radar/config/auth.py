@@ -15,6 +15,7 @@ class AuthSettings(BaseSettings):
     realm: str | None = None
     client_id: str | None = None
     preferred_usernames: str = ''
+    development_username: str = 'local-admin'
 
     @model_validator(mode='after')
     def validate_keycloak_settings(self) -> AuthSettings:
@@ -24,6 +25,13 @@ class AuthSettings(BaseSettings):
         if self.required and not self.allowed_preferred_usernames:
             msg = 'Для обязательной авторизации нужен хотя бы один администратор'
             raise ValueError(msg)
+        if not self.development_username.strip():
+            msg = 'Имя локального тестового пользователя не может быть пустым'
+            raise ValueError(msg)
+        if len(self.development_username.strip()) > 255:
+            msg = 'Имя локального тестового пользователя не может быть длиннее 255 символов'
+            raise ValueError(msg)
+        self.development_username = self.development_username.strip()
         return self
 
     @property

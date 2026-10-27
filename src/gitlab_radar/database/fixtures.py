@@ -60,9 +60,7 @@ async def _load_python_version_requirement() -> None:
         item for item in _read_fixture('company_requirements.yaml') if item['code'] == 'python-version-current'
     )
     group_name = str(requirement_item['group'])
-    group_item = next(
-        item for item in _read_fixture('company_requirement_groups.yaml') if item['name'] == group_name
-    )
+    group_item = next(item for item in _read_fixture('company_requirement_groups.yaml') if item['name'] == group_name)
     group, _ = await CompanyRequirementGroup.get_or_create(
         name=group_name,
         defaults={

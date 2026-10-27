@@ -13,6 +13,7 @@
       document.documentElement.dataset.theme = 'dark';
     }
   </script>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
   <script src="/static/js/config.js" defer></script>
   <script src="/static/js/auth.js" defer></script>
@@ -23,6 +24,7 @@
   <script src="/static/js/requirements.js" defer></script>
   <script src="/static/js/parameters.js" defer></script>
   <script src="/static/js/users.js" defer></script>
+  <script src="/static/js/visibility.js" defer></script>
   <script src="/static/js/admin.js" defer></script>
   <script src="/static/js/dependencies.js" defer></script>
   <script src="/static/js/scan.js" defer></script>
@@ -31,7 +33,12 @@
 <body>
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">R</span><span>GitLab Radar</span></div>
+      <div class="brand">
+        <a class="brand-link" href="#dashboard" aria-label="Перейти на обзор">
+          <img class="brand-mark" src="/static/logo.svg" alt="">
+        </a>
+        <a class="brand-name" href="#dashboard">GitLab Radar</a>
+      </div>
       <nav class="nav" aria-label="Основная навигация">
         <button class="nav-item active" data-route="dashboard">Обзор</button>
         <hr class="nav-divider">
@@ -41,15 +48,21 @@
         <button class="nav-item" data-route="components">CI-компоненты</button>
         <button class="nav-item" data-route="webhooks">Webhooks</button>
         <hr class="nav-divider authenticated-navigation" hidden>
+        <button class="nav-item authenticated-navigation personal-visibility-navigation" data-route="visibility" hidden>Фильтры проектов</button>
         <button class="nav-item administrator-navigation" data-route="requirements" hidden>Требования</button>
         <button class="nav-item administrator-navigation" data-route="parameters" hidden>Параметры</button>
         <button class="nav-item administrator-navigation" data-route="users" hidden>Пользователи</button>
+        <button class="nav-item administrator-navigation" data-route="visibility-admin" hidden>Политики видимости</button>
         <button class="nav-item authenticated-navigation" data-route="admin" hidden>Управление</button>
       </nav>
       <div class="sidebar-footer">
         <div id="auth-panel" class="auth-panel" hidden>
           <span id="auth-user">Не авторизован</span>
+          <input id="development-user" class="development-user" maxlength="255" autocomplete="off" hidden>
           <button id="auth-button" class="auth-button" type="button">Войти</button>
+        </div>
+        <div id="visibility-switcher" class="visibility-switcher" hidden>
+          <label>Область проектов<select id="active-visibility-group"></select></label>
         </div>
         <p class="sidebar-note">Технологический обзор<br>проектов GitLab</p>
         <label class="switch theme-switch">Светлая<input id="theme-toggle" type="checkbox"><span></span>Темная</label>
@@ -267,9 +280,35 @@
               <span>Имя пользователя</span>
               <input id="authorized-user-name" required maxlength="255" autocomplete="off" placeholder="user.name">
             </label>
-            <button class="primary-button" type="submit">Добавить</button>
+            <button class="primary-button icon-button" type="submit" title="Добавить пользователя" aria-label="Добавить пользователя" data-icon="plus"></button>
           </form>
           <div id="authorized-user-list" class="authorized-user-list"></div>
+        </article>
+        <dialog id="visibility-user-dialog" class="editor-dialog visibility-user-dialog">
+          <article class="dashboard-card">
+            <div class="card-heading">
+              <div><p>Настройки пользователя</p><span id="visibility-user-dialog-name"></span></div>
+              <button id="close-visibility-user-dialog" class="secondary-button icon-button" type="button" title="Закрыть" aria-label="Закрыть" data-icon="close"></button>
+            </div>
+            <div id="visibility-admin-user-editor"></div>
+          </article>
+        </dialog>
+      </section>
+
+      <section id="visibility" class="page">
+        <div class="section-head visibility-page-head">
+          <div class="intro"><p>Персональная настройка</p><h2>Фильтры проектов</h2></div>
+          <button id="create-visibility-group" class="primary-button icon-button" type="button" title="Создать группу" aria-label="Создать группу" data-icon="plus"></button>
+        </div>
+        <p class="visibility-help">Включения формируют выборку, затем из неё удаляются исключения. Шаблон применяется к полному пути проекта, например <code>*/mlops/*</code>.</p>
+        <div id="visibility-group-list" class="visibility-card-list"></div>
+      </section>
+
+      <section id="visibility-admin" class="page">
+        <div class="intro"><p>Управление доступом</p><h2>Политики видимости</h2></div>
+        <article class="dashboard-card">
+          <div class="card-heading"><p>Ролевые политики</p><button id="create-visibility-policy" class="primary-button icon-button" type="button" title="Добавить политику" aria-label="Добавить политику" data-icon="plus"></button></div>
+          <div id="visibility-policy-list" class="visibility-card-list"></div>
         </article>
       </section>
 
