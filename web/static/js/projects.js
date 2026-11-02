@@ -62,6 +62,65 @@ function resetProjectFilters() {
   syncProjectFilterControls();
   if (state.loaded.projects) renderProjects();
 }
+function projectRegistries(project) {
+  const registries = new Set(project.package_registries || []);
+  (project.container_images || []).forEach((image) => registries.add(image.registry));
+  (project.gitlab_ci_components || []).forEach((component) => registries.add(registryName(component.name)));
+  return [...registries].filter(Boolean).sort((left, right) => left.localeCompare(right));
+}
+function projectViolationTitles(results, requirements) {
+  return Object.entries(results || {})
+    .filter(([code, passed]) => passed === false && requirements.has(code))
+    .map(([code]) => requirements.get(code));
+}
+function exportFilteredProjects() {
+  const requirements = new Map(activeRequirements().map((requirement) => [requirement.code, requirement.title]));
+  const projects = state.projects.filter(projectMatchesFilters);
+  const rows = projects.map((project) => {
+    const root = project.subprojects.find((subproject) => subproject.path === '.');
+    const pythonVersion = normalizedPythonVersion(root?.python_version, root?.python_constraint);
+    const python = [pythonVersion ? `Python ${pythonVersion}` : null, root?.python_constraint]
+      .filter(Boolean)
+      .join(' · ');
+    return [
+      project.id,
+      project.name,
+      project.path_with_namespace,
+      project.default_branch || '',
+      python,
+      root?.package_manager || project.package_manager || '',
+      root?.company_compliance_percentage ?? project.company_compliance_percentage ?? 0,
+      project.has_docker ? 'Да' : 'Нет',
+      project.has_gitlab_ci ? 'Да' : 'Нет',
+      projectRegistries(project).join('\n'),
+      projectViolationTitles(project.company_rule_results, requirements).join('\n'),
+      project.scan_error || '',
+      formatDate(project.last_activity_at),
+      project.web_url,
+    ];
+  });
+  const date = new Date().toISOString().slice(0, 10);
+  downloadXlsx(
+    `projects-with-violations-${date}.xlsx`,
+    [
+      { title: 'ID', width: 12 },
+      { title: 'Проект', width: 28 },
+      { title: 'Полный путь', width: 42 },
+      { title: 'Основная ветка', width: 20 },
+      { title: 'Версия Python', width: 30 },
+      { title: 'Пакетный менеджер', width: 25 },
+      { title: 'Соответствие правилам, %', width: 24 },
+      { title: 'Docker', width: 12 },
+      { title: 'GitLab CI', width: 12 },
+      { title: 'Registry', width: 42 },
+      { title: 'Типы нарушений', width: 55 },
+      { title: 'Ошибка анализа', width: 45 },
+      { title: 'Последняя активность', width: 22 },
+      { title: 'GitLab URL', width: 48 },
+    ],
+    rows,
+  );
+}
 function clearProjectSelection() {
   state.selectedId = null;
   state.selectedSubprojectPath = null;
@@ -71,6 +130,7 @@ function clearProjectSelection() {
 }
 function renderProjects() {
   const projects = state.projects.filter(projectMatchesFilters);
+  document.querySelector('#export-projects').disabled = projects.length === 0;
   if (state.selectedId !== null && !projects.some((project) => project.id === state.selectedId)) {
     clearProjectSelection();
   }

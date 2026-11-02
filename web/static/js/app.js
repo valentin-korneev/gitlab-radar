@@ -32,6 +32,7 @@ document.querySelector('#project-search').addEventListener('input', (event) => {
   state.projectFilters.query = event.target.value;
   renderProjects();
 });
+document.querySelector('#export-projects').addEventListener('click', exportFilteredProjects);
 document.querySelector('#dependency-search').addEventListener('input', (event) => {
   state.dependencyQuery = event.target.value;
   renderDependencies();

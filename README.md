@@ -31,7 +31,7 @@ GITLAB_PRIVATE_TOKEN=<token>
 Запустите сервисы:
 
 ```shell
-docker compose up --build
+docker compose up -d --build
 ```
 
 Приложение будет доступно по адресу `http://127.0.0.1:8000`.

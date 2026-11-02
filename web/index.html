@@ -19,6 +19,7 @@
   <script src="/static/js/auth.js" defer></script>
   <script src="/static/js/shared.js" defer></script>
   <script src="/static/js/router.js" defer></script>
+  <script src="/static/js/xlsx.js" defer></script>
   <script src="/static/js/projects.js" defer></script>
   <script src="/static/js/dashboard.js" defer></script>
   <script src="/static/js/requirements.js" defer></script>
@@ -151,7 +152,10 @@
       <section id="projects" class="page">
         <div class="section-head">
           <div class="intro"><p>Каталог</p><h2>Проекты</h2></div>
-          <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
+          <div class="project-heading-actions">
+            <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
+            <button id="export-projects" class="secondary-button icon-button" type="button" title="Выгрузить Excel" aria-label="Выгрузить Excel" data-icon="download" disabled></button>
+          </div>
         </div>
         <div class="project-controls">
           <div class="rule-switches" aria-label="Нарушенные правила">
