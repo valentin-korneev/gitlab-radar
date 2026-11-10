@@ -41,7 +41,7 @@ router = APIRouter()
 def _username(claims: dict[str, Any]) -> str:
     preferred_username = claims.get('preferred_username')
     if not isinstance(preferred_username, str) or not preferred_username:
-        raise HTTPException(status_code=409, detail='Фильтры доступны только пользователям Keycloak')
+        raise HTTPException(status_code=409, detail='Фильтры доступны только пользователям OIDC')
     return preferred_username
 
 

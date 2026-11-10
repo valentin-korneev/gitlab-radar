@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from pydantic import AnyHttpUrl, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -5,9 +7,10 @@ from gitlab_radar.config.core import BASE_DIR
 
 
 class AuthSettings(BaseSettings):
-    public_url: AnyHttpUrl
+    issuer: AnyHttpUrl | None = None
+    public_url: AnyHttpUrl | None = None
     internal_url: AnyHttpUrl
-    realm: str
+    realm: str | None = None
     client_id: str
     client_secret: SecretStr
     session_secret: SecretStr
@@ -15,10 +18,10 @@ class AuthSettings(BaseSettings):
 
     @model_validator(mode='after')
     def validate_auth_settings(self) -> AuthSettings:
-        self.realm = self.realm.strip()
+        self.realm = self.realm.strip() if self.realm else None
         self.client_id = self.client_id.strip()
-        if not self.realm:
-            msg = 'Для авторизации необходимо настроить realm'
+        if self.issuer is None and (self.public_url is None or self.realm is None):
+            msg = 'Для авторизации необходимо настроить issuer или public_url вместе с realm'
             raise ValueError(msg)
         if not self.client_id:
             msg = 'Для авторизации необходимо настроить client_id'
@@ -36,10 +39,23 @@ class AuthSettings(BaseSettings):
 
     @property
     def normalized_issuer(self) -> str:
+        if self.issuer is not None:
+            return str(self.issuer).rstrip('/')
+        if self.public_url is None or self.realm is None:
+            raise RuntimeError
         return f'{str(self.public_url).rstrip("/")}/realms/{self.realm}'
 
     @property
     def internal_issuer(self) -> str:
+        if self.issuer is not None:
+            issuer_path = urlsplit(self.normalized_issuer).path.rstrip('/')
+            internal_url = str(self.internal_url).rstrip('/')
+            internal_path = urlsplit(internal_url).path.rstrip('/')
+            if issuer_path and internal_path.endswith(issuer_path):
+                return internal_url
+            return f'{internal_url}{issuer_path}'
+        if self.realm is None:
+            raise RuntimeError
         return f'{str(self.internal_url).rstrip("/")}/realms/{self.realm}'
 
     @property

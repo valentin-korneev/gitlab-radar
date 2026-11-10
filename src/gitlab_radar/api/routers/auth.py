@@ -9,6 +9,7 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, s
 from fastapi.responses import RedirectResponse
 
 from gitlab_radar.auth import (
+    OAUTH_NONCE_COOKIE,
     OAUTH_RETURN_COOKIE,
     OAUTH_STATE_COOKIE,
     OAUTH_VERIFIER_COOKIE,
@@ -19,6 +20,7 @@ from gitlab_radar.auth import (
     issue_websocket_ticket,
     oidc_metadata,
     public_oidc_endpoint,
+    verify_identity_token,
 )
 from gitlab_radar.config import settings
 
@@ -32,10 +34,11 @@ async def auth_config() -> dict[str, str]:
 
 
 @router.get('/login')
-async def login(return_to: str = Query(default='dashboard')) -> RedirectResponse:
+async def login(return_to: Annotated[str, Query()] = 'dashboard') -> RedirectResponse:
     metadata = await oidc_metadata()
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(64)
+    nonce = secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
     parameters = urlencode(
         {
@@ -44,6 +47,7 @@ async def login(return_to: str = Query(default='dashboard')) -> RedirectResponse
             'response_type': 'code',
             'scope': 'openid profile email',
             'state': state,
+            'nonce': nonce,
             'code_challenge': challenge,
             'code_challenge_method': 'S256',
         },
@@ -53,6 +57,7 @@ async def login(return_to: str = Query(default='dashboard')) -> RedirectResponse
     secure = settings.application.public_url.scheme == 'https'
     response.set_cookie(OAUTH_STATE_COOKIE, state, max_age=600, httponly=True, secure=secure, samesite='lax')
     response.set_cookie(OAUTH_VERIFIER_COOKIE, verifier, max_age=600, httponly=True, secure=secure, samesite='lax')
+    response.set_cookie(OAUTH_NONCE_COOKIE, nonce, max_age=600, httponly=True, secure=secure, samesite='lax')
     response.set_cookie(
         OAUTH_RETURN_COOKIE,
         return_to if _ROUTE_PATTERN.fullmatch(return_to) else 'dashboard',
@@ -70,15 +75,20 @@ async def callback(
     state: str,
     expected_state: Annotated[str | None, Cookie(alias=OAUTH_STATE_COOKIE)] = None,
     verifier: Annotated[str | None, Cookie(alias=OAUTH_VERIFIER_COOKIE)] = None,
+    nonce: Annotated[str | None, Cookie(alias=OAUTH_NONCE_COOKIE)] = None,
     return_to: Annotated[str | None, Cookie(alias=OAUTH_RETURN_COOKIE)] = None,
 ) -> RedirectResponse:
-    if not expected_state or not secrets.compare_digest(state, expected_state) or not verifier:
+    if not expected_state or not secrets.compare_digest(state, expected_state) or not verifier or not nonce:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Не удалось проверить ответ авторизации')
     tokens = await exchange_authorization_code(code, _callback_url(), verifier)
+    id_token = tokens.get('id_token')
+    if not isinstance(id_token, str):
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail='OIDC-провайдер не вернул id_token')
+    tokens['_identity'] = await verify_identity_token(id_token, nonce)
     route = return_to if return_to and _ROUTE_PATTERN.fullmatch(return_to) else 'dashboard'
     response = RedirectResponse(f'{str(settings.application.public_url).rstrip("/")}/#{route}')
     await create_web_session(response, tokens)
-    for name in (OAUTH_STATE_COOKIE, OAUTH_VERIFIER_COOKIE, OAUTH_RETURN_COOKIE):
+    for name in (OAUTH_STATE_COOKIE, OAUTH_VERIFIER_COOKIE, OAUTH_NONCE_COOKIE, OAUTH_RETURN_COOKIE):
         response.delete_cookie(name, path='/', httponly=True, samesite='lax')
     return response
 

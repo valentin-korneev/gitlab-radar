@@ -5,10 +5,8 @@ import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlencode
-from urllib.request import Request as UrlRequest
-from urllib.request import urlopen
 
+import httpx
 import jwt
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import HTTPException, Request, Response, status
@@ -23,6 +21,7 @@ SESSION_COOKIE = 'radar_session'
 CSRF_COOKIE = 'radar_csrf'
 OAUTH_STATE_COOKIE = 'radar_oauth_state'
 OAUTH_VERIFIER_COOKIE = 'radar_oauth_verifier'
+OAUTH_NONCE_COOKIE = 'radar_oauth_nonce'
 OAUTH_RETURN_COOKIE = 'radar_oauth_return'
 WEBSOCKET_TICKET_TTL = timedelta(seconds=30)
 
@@ -32,19 +31,19 @@ _JWK_CLIENTS: dict[str, PyJWKClient] = {}
 
 
 async def oidc_metadata() -> dict[str, Any]:
-    global _OIDC_METADATA  # noqa: PLW0603
+    global _OIDC_METADATA
     if _OIDC_METADATA is not None:
         return _OIDC_METADATA
     async with _OIDC_METADATA_LOCK:
         if _OIDC_METADATA is None:
             url = f'{settings.auth.internal_issuer}/.well-known/openid-configuration'
-            _OIDC_METADATA = await asyncio.to_thread(_request_json, url)
+            _OIDC_METADATA = await _request_json(url)
     return _OIDC_METADATA
 
 
 async def exchange_authorization_code(code: str, redirect_uri: str, verifier: str) -> dict[str, Any]:
     metadata = await oidc_metadata()
-    return await _post_token_request(
+    tokens = await _post_token_request(
         _internal_endpoint(metadata['token_endpoint']),
         {
             'grant_type': 'authorization_code',
@@ -55,6 +54,8 @@ async def exchange_authorization_code(code: str, redirect_uri: str, verifier: st
             'code_verifier': verifier,
         },
     )
+    _set_access_expiration(tokens)
+    return tokens
 
 
 async def create_web_session(response: Response, tokens: dict[str, Any]) -> None:
@@ -104,7 +105,7 @@ async def clear_web_session(request: Request, response: Response) -> dict[str, A
     return tokens
 
 
-async def verify_access_token(token: str) -> dict[str, Any]:
+async def verify_identity_token(token: str, nonce: str | None = None) -> dict[str, Any]:
     try:
         metadata = await oidc_metadata()
         jwks_url = _internal_endpoint(metadata['jwks_uri'])
@@ -115,21 +116,27 @@ async def verify_access_token(token: str) -> dict[str, Any]:
             signing_key.key,
             algorithms=['RS256'],
             issuer=settings.auth.normalized_issuer,
-            options={'require': ['exp', 'iat', 'iss'], 'verify_aud': False},
+            audience=settings.auth.client_id,
+            options={'require': ['exp', 'iat', 'iss', 'aud', 'sub']},
         )
-        _validate_authorized_party(payload)
+        _verify_nonce(payload, nonce)
     except (KeyError, PyJWTError) as error:
         raise _unauthorized() from error
     return payload
 
 
-async def require_authenticated_access(request: Request, response: Response) -> dict[str, Any]:
+async def require_authenticated_access(request: Request) -> dict[str, Any]:
     session, tokens = await _web_session(request)
     if session is None:
         raise _unauthorized()
     _verify_csrf(request, session)
-    access_token = await _access_token(session, tokens)
-    payload = await verify_access_token(access_token)
+    await _refresh_tokens_if_needed(session, tokens)
+    payload = tokens.get('_identity')
+    if not isinstance(payload, dict):
+        id_token = tokens.get('id_token')
+        if not isinstance(id_token, str):
+            raise _unauthorized()
+        payload = await verify_identity_token(id_token)
     preferred_username = payload.get('preferred_username')
     if not isinstance(preferred_username, str) or not preferred_username:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='В токене отсутствует preferred_username')
@@ -142,30 +149,30 @@ async def require_authenticated_access(request: Request, response: Response) -> 
     return {**payload, 'is_admin': user.is_admin or preferred_username in settings.auth.allowed_preferred_usernames}
 
 
-async def require_management_access(request: Request, response: Response) -> dict[str, Any]:
-    payload = await require_authenticated_access(request, response)
+async def require_management_access(request: Request) -> dict[str, Any]:
+    payload = await require_authenticated_access(request)
     if not payload['is_admin']:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Требуются права администратора')
     return payload
 
 
-async def authenticated_access_dependency(request: Request, response: Response) -> dict[str, Any]:
-    claims = await require_authenticated_access(request, response)
+async def authenticated_access_dependency(request: Request) -> dict[str, Any]:
+    claims = await require_authenticated_access(request)
     claims['visibility_group'] = request.headers.get('X-Radar-Visibility-Group')
     return claims
 
 
-async def optional_authenticated_access_dependency(request: Request, response: Response) -> dict[str, Any]:
+async def optional_authenticated_access_dependency(request: Request) -> dict[str, Any]:
     if not request.cookies.get(SESSION_COOKIE):
         return {}
     try:
-        return await authenticated_access_dependency(request, response)
+        return await authenticated_access_dependency(request)
     except HTTPException:
         return {}
 
 
-async def management_access_dependency(request: Request, response: Response) -> dict[str, Any]:
-    return await require_management_access(request, response)
+async def management_access_dependency(request: Request) -> dict[str, Any]:
+    return await require_management_access(request)
 
 
 async def issue_websocket_ticket() -> str:
@@ -201,10 +208,10 @@ async def _web_session(request: Request) -> tuple[WebSession | None, dict[str, A
         return None, {}
 
 
-async def _access_token(session: WebSession, tokens: dict[str, Any]) -> str:
+async def _refresh_tokens_if_needed(session: WebSession, tokens: dict[str, Any]) -> None:
     access_token = tokens.get('access_token')
-    if isinstance(access_token, str) and not _token_expires_soon(access_token):
-        return access_token
+    if isinstance(access_token, str) and not _tokens_expire_soon(tokens):
+        return
     refresh_token = tokens.get('refresh_token')
     if not isinstance(refresh_token, str):
         raise _unauthorized()
@@ -218,26 +225,41 @@ async def _access_token(session: WebSession, tokens: dict[str, Any]) -> str:
             'refresh_token': refresh_token,
         },
     )
+    _set_access_expiration(refreshed)
+    if isinstance(refreshed.get('id_token'), str):
+        refreshed['_identity'] = await verify_identity_token(refreshed['id_token'])
     tokens.update(refreshed)
     session.encrypted_tokens = _encrypt_tokens(tokens)
     await session.save(update_fields=['encrypted_tokens'])
-    return tokens['access_token']
 
 
 async def _post_token_request(url: str, values: dict[str, str]) -> dict[str, Any]:
     try:
-        return await asyncio.to_thread(_request_json, url, values)
-    except (OSError, ValueError, json.JSONDecodeError) as error:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail='Keycloak отклонил авторизацию') from error
+        return await _request_json(url, values)
+    except (httpx.HTTPError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail='OIDC-провайдер отклонил авторизацию',
+        ) from error
 
 
-def _request_json(url: str, values: dict[str, str] | None = None) -> dict[str, Any]:
-    data = urlencode(values).encode() if values is not None else None
-    request = UrlRequest(url, data=data, headers={'Accept': 'application/json'})
-    if data is not None:
-        request.add_header('Content-Type', 'application/x-www-form-urlencoded')
-    with urlopen(request, timeout=10) as response:  # noqa: S310
-        return json.load(response)
+async def _request_json(url: str, values: dict[str, str] | None = None) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=10) as client:
+        if values is None:
+            response = await client.get(url, headers={'Accept': 'application/json'})
+        else:
+            response = await client.post(url, data=values, headers={'Accept': 'application/json'})
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        msg = 'OIDC endpoint вернул некорректный JSON'
+        raise TypeError(msg)
+    return payload
+
+
+def _verify_nonce(payload: dict[str, Any], nonce: str | None) -> None:
+    if nonce is not None and not secrets.compare_digest(str(payload.get('nonce', '')), nonce):
+        raise PyJWTError
 
 
 def _verify_csrf(request: Request, session: WebSession) -> None:
@@ -278,7 +300,13 @@ def _internal_endpoint(value: str) -> str:
     return value
 
 
-def _token_expires_soon(token: str) -> bool:
+def _tokens_expire_soon(tokens: dict[str, Any]) -> bool:
+    expires_at = tokens.get('_access_expires_at')
+    if isinstance(expires_at, (int, float)):
+        return expires_at <= datetime.now(UTC).timestamp() + 30
+    token = tokens.get('access_token')
+    if not isinstance(token, str):
+        return True
     try:
         payload = jwt.decode(token, options={'verify_signature': False})
         return int(payload['exp']) <= int(datetime.now(UTC).timestamp()) + 30
@@ -286,13 +314,14 @@ def _token_expires_soon(token: str) -> bool:
         return True
 
 
+def _set_access_expiration(tokens: dict[str, Any]) -> None:
+    expires_in = tokens.get('expires_in')
+    if isinstance(expires_in, (int, float)):
+        tokens['_access_expires_at'] = datetime.now(UTC).timestamp() + expires_in
+
+
 def _hash(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
-
-
-def _validate_authorized_party(payload: dict[str, Any]) -> None:
-    if payload.get('azp') != settings.auth.client_id:
-        raise PyJWTError
 
 
 def _unauthorized() -> HTTPException:

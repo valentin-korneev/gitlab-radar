@@ -123,16 +123,15 @@ def _matches_condition(condition: RequirementCondition, context: RuleContext) ->
         return False
     if condition.operator in {RequirementOperator.GREATER_THAN, RequirementOperator.GREATER_THAN_OR_EQUAL}:
         return _has_version_at_least(candidates, values)
-    if condition.operator is RequirementOperator.EQUALS:
-        return bool(candidates & values)
-    if condition.operator is RequirementOperator.NOT_EQUALS:
-        return not bool(candidates & values)
-    if condition.operator is RequirementOperator.CONTAINS:
-        return any(value in candidate for candidate in candidates for value in values)
+    simple_results = {
+        RequirementOperator.EQUALS: bool(candidates & values),
+        RequirementOperator.NOT_EQUALS: not bool(candidates & values),
+        RequirementOperator.CONTAINS: any(value in candidate for candidate in candidates for value in values),
+    }
+    if condition.operator in simple_results:
+        return simple_results[condition.operator]
     contains = [any(value in candidate for value in values) for candidate in candidates]
-    if condition.operator is RequirementOperator.NOT_CONTAINS:
-        return not any(contains)
-    return all(contains)
+    return not any(contains) if condition.operator is RequirementOperator.NOT_CONTAINS else all(contains)
 
 
 def _source_values(source: RequirementSource, context: RuleContext) -> set[str]:

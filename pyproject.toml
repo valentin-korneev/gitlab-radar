@@ -4,6 +4,7 @@ version = "0.0.1"
 requires-python = ">=3.15"
 dependencies = [
     "fastapi>=0.162.0",
+    "httpx>=0.28.1",
     "packaging>=26.3",
     "pydantic-settings>=2.16.1",
     "pyjwt[crypto]>=2.15.1",

@@ -14,18 +14,23 @@ GitLab Radar собирает сведения о Python-проектах в Git
 - статистика версий Python, registry и технологий;
 - конструктор требований компании;
 - повторное использование результатов для неизменившихся ревизий;
-- опциональная авторизация управляющих разделов через Keycloak.
+- OIDC-авторизация управляющих разделов с публичным доступом к каталогам.
 
 ## Запуск через Compose
 
-Скопируйте [`.env.example`](.env.example) в `.env` и укажите:
+Скопируйте [`.env.example`](.env.example) в `.env` и укажите параметры GitLab, PostgreSQL и OIDC:
 
 ```dotenv
 GITLAB_URL=https://gitlab.example.com
 GITLAB_PRIVATE_TOKEN=<token>
+RADAR_AUTH_CLIENT_ID=<client-id>
+RADAR_AUTH_CLIENT_SECRET=<client-secret>
+RADAR_AUTH_SESSION_SECRET=<random-secret>
+RADAR_AUTH_PREFERRED_USERNAMES=<oidc-username>
 ```
 
-Остальные значения в шаблоне поднимают готовое локальное окружение PostgreSQL без авторизации.
+Compose поднимает приложение и PostgreSQL; OIDC-провайдер должен быть доступен отдельно. Redirect URI
+`http://127.0.0.1:8000/api/auth/callback` необходимо зарегистрировать у провайдера.
 `GITLAB_PRIVATE_TOKEN` должен принадлежать пользователю с доступом к анализируемым проектам.
 
 Запустите сервисы:
@@ -56,20 +61,41 @@ psql --host=<postgres-host> --dbname=<database> --username=<admin-user> \
 Пользователь, пароль и схема должны совпадать с переменными контейнера `RADAR_DB_USER`,
 `RADAR_DB_PASSWORD` и `RADAR_DB_SCHEMA`.
 
-### Keycloak
+### OIDC
 
-Авторизация обязательна для управляющих функций. В Keycloak требуется confidential OIDC-клиент:
+Авторизация обязательна для управляющих функций. Публичные страницы доступны без входа и без ограничений
+видимости. У OIDC-провайдера требуется confidential client:
 
-- Standard flow — включен;
-- PKCE method — `S256`;
-- Client authentication — включена;
-- Valid redirect URI — `https://<application-host>/api/auth/callback`;
-- Valid post logout redirect URI — `https://<application-host>/`.
+- Authorization Code flow — включен;
+- PKCE с методом `S256` — включен;
+- аутентификация клиента через `client_secret` — включена;
+- redirect URI — `https://<application-host>/api/auth/callback`;
+- post logout redirect URI, если провайдер поддерживает RP-initiated logout, — `https://<application-host>/`.
 
-Backend получает OIDC metadata через внутренний адрес Keycloak, обменивает authorization code с
+Backend получает OIDC metadata через внутренний адрес провайдера, обменивает authorization code с
 `client_secret` и хранит зашифрованные токены в серверной сессии. В браузер передаются только идентификатор
-сессии в `HttpOnly` cookie и отдельный CSRF-токен. Публичные страницы доступны без входа и показывают данные
-без фильтров.
+сессии в `HttpOnly` cookie и отдельный CSRF-токен. Провайдер должен возвращать подписанный `id_token` с
+claim `preferred_username`.
+
+Issuer задаётся одним из двух способов:
+
+```dotenv
+# Приоритетный вариант для любого OIDC-провайдера
+RADAR_AUTH_ISSUER=https://gitlab.com
+RADAR_AUTH_INTERNAL_URL=https://gitlab.com
+```
+
+или через совместимые с прежней конфигурацией параметры Keycloak:
+
+```dotenv
+RADAR_AUTH_PUBLIC_URL=https://keycloak.example.com
+RADAR_AUTH_INTERNAL_URL=http://keycloak:8080
+RADAR_AUTH_REALM=example
+```
+
+Если задан `RADAR_AUTH_ISSUER`, значения `RADAR_AUTH_PUBLIC_URL` и `RADAR_AUTH_REALM` игнорируются.
+`RADAR_AUTH_INTERNAL_URL` задаёт адрес того же провайдера, доступный backend. Для прямого issuer его путь
+сохраняется, меняется только origin; если отдельного внутреннего адреса нет, укажите тот же адрес провайдера.
 
 Первоначальный список администраторов задаётся через запятую по claim `preferred_username`:
 
@@ -79,13 +105,13 @@ RADAR_AUTH_PREFERRED_USERNAMES=user.one,user.two
 
 Список должен содержать хотя бы одного пользователя.
 
-Любой пользователь Keycloak может войти в приложение и автоматически добавляется в список пользователей
-без административных прав. Администраторы назначают роли и блокируют пользователей в разделе
+Любой пользователь OIDC-провайдера может войти в приложение и автоматически добавляется в список
+пользователей без административных прав. Администраторы назначают роли и блокируют пользователей в разделе
 «Пользователи»; там же можно заранее добавить или удалить локальную запись. Удалённый пользователь снова
 появится после следующего входа, поэтому для запрета доступа используется блокировка. Роль пользователей из
 `RADAR_AUTH_PREFERRED_USERNAMES` управляется через окружение.
 
-Отключённого пользователя не авторизует Keycloak. Для немедленного запрета доступа пользователю с уже
+Отключённого пользователя не авторизует OIDC-провайдер. Для немедленного запрета доступа пользователю с уже
 выданной сессией используется блокировка в приложении. Локального тестового пользователя нет.
 
 ### Контейнер приложения
@@ -113,14 +139,15 @@ RADAR_PORT=8000
 RADAR_RELOAD=false
 APP_PUBLIC_URL=https://<application-host>
 RADAR_AUTH_PREFERRED_USERNAMES=user.one,user.two
-RADAR_AUTH_PUBLIC_URL=https://<keycloak-public-host>
-RADAR_AUTH_INTERNAL_URL=http://<keycloak-service>:8080
-RADAR_AUTH_REALM=<realm>
+RADAR_AUTH_ISSUER=https://<oidc-provider>/<optional-path>
+RADAR_AUTH_INTERNAL_URL=https://<oidc-provider-internal-address>
 RADAR_AUTH_CLIENT_ID=<client-id>
 ```
 
-Issuer формируется как `RADAR_AUTH_PUBLIC_URL/realms/RADAR_AUTH_REALM` и должен точно совпадать с claim
-`iss` токена. `RADAR_AUTH_INTERNAL_URL` используется backend для discovery, token endpoint и JWKS.
+`RADAR_AUTH_ISSUER` должен точно совпадать с claim `iss` токена. Вместо него для Keycloak можно передать
+`RADAR_AUTH_PUBLIC_URL` и `RADAR_AUTH_REALM`; тогда issuer формируется как
+`RADAR_AUTH_PUBLIC_URL/realms/RADAR_AUTH_REALM`. `RADAR_AUTH_INTERNAL_URL` используется backend для
+discovery, token endpoint и JWKS.
 `RADAR_AUTH_SESSION_SECRET` используется только для шифрования токенов в серверных сессиях и должен быть
 стабильным между перезапусками и одинаковым на всех репликах. `POSTGRES_USER` и `POSTGRES_PASSWORD`
 контейнеру приложения не нужны.
