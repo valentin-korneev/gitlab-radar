@@ -80,14 +80,14 @@ async def callback(request: Request) -> RedirectResponse:
 
 
 @router.post('/logout')
-async def logout(request: Request) -> RedirectResponse:
+async def logout(request: Request) -> Response:
     session_id = request.cookies.get(SESSION_COOKIE)
     csrf_cookie = request.cookies.get(CSRF_COOKIE, '')
     csrf_header = request.headers.get('X-CSRF-Token', '')
     if not csrf_cookie or not secrets.compare_digest(csrf_cookie, csrf_header):
         raise HTTPException(status_code=403, detail='Не пройдена CSRF-проверка')
     await revoke_web_session(session_id)
-    response = RedirectResponse(settings.auth.logout_url if settings.auth.required else '/', status_code=303)
+    response = Response(status_code=204)
     response.delete_cookie(SESSION_COOKIE, path='/')
     response.delete_cookie(CSRF_COOKIE, path='/')
     return response
