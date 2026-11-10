@@ -85,6 +85,7 @@ async def refresh_session_tokens(tokens: dict[str, Any]) -> dict[str, Any]:
 
 
 async def create_web_session(tokens: dict[str, Any]) -> tuple[str, str]:
+    await WebSession.filter(expires_at__lte=datetime.now(UTC)).delete()
     claims = await verify_access_token(tokens['access_token'])
     username = claims.get('preferred_username')
     if not isinstance(username, str) or not username:
