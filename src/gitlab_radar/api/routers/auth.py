@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import secrets
 from typing import Annotated, Any
 from urllib.parse import urlencode
@@ -6,9 +8,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 
 from gitlab_radar.auth import (
-    CSRF_COOKIE, OAUTH_STATE_COOKIE, OAUTH_VERIFIER_COOKIE, SESSION_COOKIE,
-    authenticated_access_dependency, create_web_session, exchange_authorization_code,
-    issue_websocket_ticket, revoke_web_session,
+    CSRF_COOKIE,
+    OAUTH_STATE_COOKIE,
+    OAUTH_VERIFIER_COOKIE,
+    SESSION_COOKIE,
+    authenticated_access_dependency,
+    create_web_session,
+    exchange_authorization_code,
+    issue_websocket_ticket,
+    revoke_web_session,
 )
 from gitlab_radar.config import settings
 
@@ -37,8 +45,6 @@ async def login() -> RedirectResponse:
         return RedirectResponse('/')
     state = secrets.token_urlsafe(32)
     verifier = secrets.token_urlsafe(48)
-    import hashlib
-    import base64
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip('=')
     callback = f'{str(settings.application.public_url).rstrip("/")}/api/auth/callback'
     query = urlencode({
