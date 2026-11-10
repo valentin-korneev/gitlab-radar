@@ -106,8 +106,6 @@ async def auth_session(
     return claims
 
 
-@router.post('/websocket-ticket')
-async def websocket_ticket(
-    claims: Annotated[dict[str, Any], Depends(authenticated_access_dependency)],
-) -> dict[str, str]:
+@router.post('/websocket-ticket', dependencies=[Depends(authenticated_access_dependency)])
+async def websocket_ticket() -> dict[str, str]:
     return {'ticket': await issue_websocket_ticket()}
