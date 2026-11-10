@@ -5,7 +5,7 @@ async function showPage() {
   if (state.currentRoute === 'projects' && routeName !== 'projects') resetProjectFilters();
   if (PAGE_ROUTES[state.currentRoute]?.source && routeName !== state.currentRoute) resetDependencyPage();
   const protectedRoute = AUTHENTICATED_ROUTES.has(routeName) || ADMINISTRATOR_ROUTES.has(routeName);
-  if (state.auth.config?.required && protectedRoute && !await accessToken()) {
+  if (protectedRoute && !state.auth.user) {
     await startLogin(routeName);
     return;
   }

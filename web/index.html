@@ -59,7 +59,6 @@
       <div class="sidebar-footer">
         <div id="auth-panel" class="auth-panel" hidden>
           <span id="auth-user">Не авторизован</span>
-          <input id="development-user" class="development-user" maxlength="255" autocomplete="off" hidden>
           <button id="auth-button" class="auth-button" type="button">Войти</button>
         </div>
         <div id="visibility-switcher" class="visibility-switcher" hidden>
@@ -154,7 +153,7 @@
           <div class="intro"><p>Каталог</p><h2>Проекты</h2></div>
           <div class="project-heading-actions">
             <label class="search"><span>⌕</span><input id="project-search" type="search" placeholder="Найти проект"></label>
-            <button id="export-projects" class="secondary-button icon-button" type="button" title="Выгрузить Excel" aria-label="Выгрузить Excel" data-icon="download" disabled></button>
+            <button id="export-projects" class="secondary-button icon-button authenticated-action" type="button" title="Выгрузить Excel" aria-label="Выгрузить Excel" data-icon="download" disabled hidden></button>
           </div>
         </div>
         <div class="project-controls">

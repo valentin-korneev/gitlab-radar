@@ -85,8 +85,6 @@ button { color: inherit; }
 .sidebar-footer { display: grid; flex: 0 0 auto; gap: 18px; margin-top: 18px; padding: 0 10px; }
 .auth-panel { display: grid; gap: 7px; border-top: 1px solid var(--line); padding-top: 16px; }
 .auth-panel span { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
-.development-user { width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 7px; padding: 7px 8px; outline: 0; background: var(--surface-low); color: var(--text); font-size: .72rem; }
-.development-user:focus { border-color: var(--accent); }
 .auth-button { width: max-content; border: 0; padding: 0; background: transparent; color: var(--accent); font-size: .74rem; font-weight: 750; cursor: pointer; }
 .sidebar-note { margin: 0; color: var(--muted); font-size: .72rem; line-height: 1.6; text-transform: uppercase; letter-spacing: .08em; }
 .theme-switch { width: max-content; }

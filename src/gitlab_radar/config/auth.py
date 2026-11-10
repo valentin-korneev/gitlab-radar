@@ -1,54 +1,50 @@
-from pydantic import AnyHttpUrl, model_validator
+from pydantic import AnyHttpUrl, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from gitlab_radar.config.core import BASE_DIR
 
 
-class KeycloakNotConfiguredError(RuntimeError):
-    pass
-
-
 class AuthSettings(BaseSettings):
-    required: bool = False
-    public_url: AnyHttpUrl | None = None
-    internal_url: AnyHttpUrl | None = None
-    realm: str | None = None
-    client_id: str | None = None
+    public_url: AnyHttpUrl
+    internal_url: AnyHttpUrl
+    realm: str
+    client_id: str
+    client_secret: SecretStr
+    session_secret: SecretStr
     preferred_usernames: str = ''
-    development_username: str = 'local-admin'
 
     @model_validator(mode='after')
-    def validate_keycloak_settings(self) -> AuthSettings:
-        if self.required and not all((self.public_url, self.internal_url, self.realm, self.client_id)):
-            msg = 'Для обязательной авторизации необходимо настроить Keycloak'
+    def validate_auth_settings(self) -> AuthSettings:
+        self.realm = self.realm.strip()
+        self.client_id = self.client_id.strip()
+        if not self.realm:
+            msg = 'Для авторизации необходимо настроить realm'
             raise ValueError(msg)
-        if self.required and not self.allowed_preferred_usernames:
-            msg = 'Для обязательной авторизации нужен хотя бы один администратор'
+        if not self.client_id:
+            msg = 'Для авторизации необходимо настроить client_id'
             raise ValueError(msg)
-        if not self.development_username.strip():
-            msg = 'Имя локального тестового пользователя не может быть пустым'
+        if not self.client_secret.get_secret_value().strip():
+            msg = 'Для авторизации необходимо настроить client_secret'
             raise ValueError(msg)
-        if len(self.development_username.strip()) > 255:
-            msg = 'Имя локального тестового пользователя не может быть длиннее 255 символов'
+        if not self.session_secret.get_secret_value().strip():
+            msg = 'Для авторизации необходимо настроить session_secret'
             raise ValueError(msg)
-        self.development_username = self.development_username.strip()
+        if not self.allowed_preferred_usernames:
+            msg = 'Для авторизации нужен хотя бы один администратор'
+            raise ValueError(msg)
         return self
+
+    @property
+    def normalized_issuer(self) -> str:
+        return f'{str(self.public_url).rstrip("/")}/realms/{self.realm}'
+
+    @property
+    def internal_issuer(self) -> str:
+        return f'{str(self.internal_url).rstrip("/")}/realms/{self.realm}'
 
     @property
     def allowed_preferred_usernames(self) -> set[str]:
         return {value.strip() for value in self.preferred_usernames.split(',') if value.strip()}
-
-    @property
-    def issuer(self) -> str:
-        if self.public_url is None or self.realm is None:
-            raise KeycloakNotConfiguredError
-        return f'{str(self.public_url).rstrip("/")}/realms/{self.realm}'
-
-    @property
-    def jwks_url(self) -> str:
-        if self.internal_url is None or self.realm is None:
-            raise KeycloakNotConfiguredError
-        return f'{str(self.internal_url).rstrip("/")}/realms/{self.realm}/protocol/openid-connect/certs'
 
     model_config = SettingsConfigDict(
         env_prefix='RADAR_AUTH_',

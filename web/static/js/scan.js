@@ -1,6 +1,6 @@
 function renderScanStatus(scan) {
   document.querySelector('#scan-state').textContent = scan.state_title;
-  const administrator = !state.auth.config?.required || Boolean(state.auth.user?.is_admin);
+  const administrator = Boolean(state.auth.user?.is_admin);
   document.querySelector('#scan-button').disabled = scan.state === 'running' || !administrator;
   document.querySelector('#scan-dot').className = scan.state;
   let description = 'Сканирование еще не запускалось.';
@@ -22,15 +22,12 @@ function renderScanStatus(scan) {
   errorList.replaceChildren(...allErrors.map((error) => element('p', '', error)));
 }
 async function connectScanStatusSocket() {
-  const token = await accessToken();
-  if (state.auth.config?.required && !token) return;
+  if (!state.auth.user) return;
   const socketProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   window.clearTimeout(state.scanReconnectTimer);
   if (state.scanSocket?.readyState === WebSocket.OPEN || state.scanSocket?.readyState === WebSocket.CONNECTING) return;
-  const ticket = state.auth.config?.required
-    ? (await api(API.websocketTicket, { method: 'POST' })).ticket
-    : null;
-  const query = ticket ? `?ticket=${encodeURIComponent(ticket)}` : '';
+  const ticket = (await api(API.websocketTicket, { method: 'POST' })).ticket;
+  const query = `?ticket=${encodeURIComponent(ticket)}`;
   const socket = new WebSocket(`${socketProtocol}//${window.location.host}/api/scan/ws${query}`);
   state.scanSocket = socket;
   socket.addEventListener('message', (event) => {

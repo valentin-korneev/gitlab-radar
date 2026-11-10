@@ -14,18 +14,9 @@ document.querySelectorAll('.nav-item').forEach((item) => {
 });
 document.querySelector('#auth-button').addEventListener('click', async () => {
   try {
-    if (!state.auth.config?.required) {
-      await applyDevelopmentUser(document.querySelector('#development-user').value);
-      return;
-    }
     if (state.auth.user) await logout();
     else await startLogin();
   } catch (error) { showError(error); }
-});
-document.querySelector('#development-user').addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter') return;
-  event.preventDefault();
-  document.querySelector('#auth-button').click();
 });
 window.addEventListener('hashchange', () => { showPage().catch(showError); });
 document.querySelector('#project-search').addEventListener('input', (event) => {

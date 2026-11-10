@@ -11,7 +11,7 @@ const API = {
   visibilityAdmin: '/api/visibility/admin/',
 };
 const AUTHENTICATED_ROUTES = new Set([
-  'dashboard', 'projects', 'dependencies', 'images', 'components', 'webhooks', 'visibility', 'admin',
+  'visibility', 'admin',
 ]);
 const ADMINISTRATOR_ROUTES = new Set(['requirements', 'parameters', 'users', 'visibility-admin']);
 const PAGE_ROUTES = {
@@ -50,7 +50,7 @@ const state = {
   requirements: [], requirementGroups: [], requirementCatalog: null,
   parameters: [], authorizedUsers: [],
   visibilityGroups: [], selectedVisibilityGroup: null, visibilityPolicies: [], visibilityAdminUser: null,
-  auth: { config: null, tokens: null, user: null, developmentUsername: null },
+  auth: { config: null, user: null },
   currentRoute: null,
   selectedRequirementGroupId: null,
   loaded: {

@@ -10,10 +10,7 @@ router = APIRouter(dependencies=[Depends(management_access_dependency)])
 
 
 def _environment_admins() -> set[str]:
-    admins = set(settings.auth.allowed_preferred_usernames)
-    if not settings.auth.required:
-        admins.add(settings.auth.development_username)
-    return admins
+    return set(settings.auth.allowed_preferred_usernames)
 
 
 @router.get('/')
@@ -56,8 +53,6 @@ async def update_authorized_user(payload: AuthorizedUserUpdate) -> AuthorizedUse
     environment_admin = preferred_username in environment_admins
     if environment_admin and not payload.is_admin:
         raise HTTPException(status_code=409, detail='Роль администратора задана в окружении')
-    if not settings.auth.required and preferred_username == settings.auth.development_username and payload.is_blocked:
-        raise HTTPException(status_code=409, detail='Локальный тестовый администратор не может быть заблокирован')
     async with in_transaction() as connection:
         await connection.execute_query("SELECT pg_advisory_xact_lock(hashtext('gitlab-radar-authorized-users'))")
         user = await AuthorizedUserModel.filter(preferred_username=preferred_username).using_db(connection).first()

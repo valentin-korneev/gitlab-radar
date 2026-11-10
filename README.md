@@ -58,14 +58,18 @@ psql --host=<postgres-host> --dbname=<database> --username=<admin-user> \
 
 ### Keycloak
 
-Для включения авторизации установите `RADAR_AUTH_REQUIRED=true`. В Keycloak требуется публичный
-OIDC-клиент:
+Авторизация обязательна для управляющих функций. В Keycloak требуется confidential OIDC-клиент:
 
 - Standard flow — включен;
 - PKCE method — `S256`;
-- Valid redirect URI — `https://<application-host>/*`;
-- Web origin — `https://<application-host>`;
-- Valid post logout redirect URI — `https://<application-host>/*`.
+- Client authentication — включена;
+- Valid redirect URI — `https://<application-host>/api/auth/callback`;
+- Valid post logout redirect URI — `https://<application-host>/`.
+
+Backend получает OIDC metadata через внутренний адрес Keycloak, обменивает authorization code с
+`client_secret` и хранит зашифрованные токены в серверной сессии. В браузер передаются только идентификатор
+сессии в `HttpOnly` cookie и отдельный CSRF-токен. Публичные страницы доступны без входа и показывают данные
+без фильтров.
 
 Первоначальный список администраторов задаётся через запятую по claim `preferred_username`:
 
@@ -73,7 +77,7 @@ OIDC-клиент:
 RADAR_AUTH_PREFERRED_USERNAMES=user.one,user.two
 ```
 
-При включённой авторизации список должен содержать хотя бы одного пользователя.
+Список должен содержать хотя бы одного пользователя.
 
 Любой пользователь Keycloak может войти в приложение и автоматически добавляется в список пользователей
 без административных прав. Администраторы назначают роли и блокируют пользователей в разделе
@@ -82,13 +86,7 @@ RADAR_AUTH_PREFERRED_USERNAMES=user.one,user.two
 `RADAR_AUTH_PREFERRED_USERNAMES` управляется через окружение.
 
 Отключённого пользователя не авторизует Keycloak. Для немедленного запрета доступа пользователю с уже
-выданным токеном используется блокировка в приложении.
-
-При `RADAR_AUTH_REQUIRED=false` Keycloak не используется. Приложение создаёт локальную тестовую
-идентичность `local-admin`, имя которой можно изменить через `RADAR_AUTH_DEVELOPMENT_USERNAME`. В интерфейсе
-можно переключиться на любое имя пользователя и проверить его персональные группы и назначенные
-администратором ограничения. Выбранное имя передаётся в `X-Radar-Development-User`; этот заголовок
-учитывается только при отключённой авторизации.
+выданной сессией используется блокировка в приложении. Локального тестового пользователя нет.
 
 ### Контейнер приложения
 
@@ -97,6 +95,8 @@ Secret:
 ```dotenv
 GITLAB_PRIVATE_TOKEN=<token>
 RADAR_DB_PASSWORD=<password>
+RADAR_AUTH_CLIENT_SECRET=<client-secret>
+RADAR_AUTH_SESSION_SECRET=<session-secret>
 ```
 
 ConfigMap:
@@ -112,7 +112,6 @@ RADAR_HOST=0.0.0.0
 RADAR_PORT=8000
 RADAR_RELOAD=false
 APP_PUBLIC_URL=https://<application-host>
-RADAR_AUTH_REQUIRED=true
 RADAR_AUTH_PREFERRED_USERNAMES=user.one,user.two
 RADAR_AUTH_PUBLIC_URL=https://<keycloak-public-host>
 RADAR_AUTH_INTERNAL_URL=http://<keycloak-service>:8080
@@ -120,10 +119,11 @@ RADAR_AUTH_REALM=<realm>
 RADAR_AUTH_CLIENT_ID=<client-id>
 ```
 
-При обязательной авторизации `RADAR_AUTH_PUBLIC_URL` должен совпадать с issuer токена и быть доступен
-браузеру, а `RADAR_AUTH_INTERNAL_URL` должен вести к тому же Keycloak из pod приложения. При отключённой
-авторизации параметры Keycloak не передаются. `POSTGRES_USER` и `POSTGRES_PASSWORD` контейнеру приложения
-не нужны.
+Issuer формируется как `RADAR_AUTH_PUBLIC_URL/realms/RADAR_AUTH_REALM` и должен точно совпадать с claim
+`iss` токена. `RADAR_AUTH_INTERNAL_URL` используется backend для discovery, token endpoint и JWKS.
+`RADAR_AUTH_SESSION_SECRET` используется только для шифрования токенов в серверных сессиях и должен быть
+стабильным между перезапусками и одинаковым на всех репликах. `POSTGRES_USER` и `POSTGRES_PASSWORD`
+контейнеру приложения не нужны.
 
 Перед запуском приложения нужно применить миграции:
 
