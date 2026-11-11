@@ -332,19 +332,45 @@ function appendProjectFrameworks(container, project) {
   if (!project.frameworks?.length) return;
   const badges = element('div', 'dependency-badges');
   project.frameworks.forEach((framework) => {
-    const badge = element('span', 'dependency-badge project-framework-badge');
+    const badge = element('span', 'dependency-badge project-technology-badge');
     badge.append(element('strong', '', framework.name), element('span', '', framework.language));
     badges.append(badge);
   });
   appendDetail(container, 'Фреймворки', badges);
 }
 function appendProjectVersions(container, project) {
-  const summary = projectVersionSummary(project);
-  if (summary) appendDetail(container, 'Версии языков', summary);
+  appendProjectTechnologyBadges(
+    container,
+    'Версии языков',
+    projectTechnologyGroups(
+      project,
+      (subproject) => normalizedRuntimeVersion(
+        subproject.runtime_version || subproject.python_version || subproject.python_constraint,
+      ),
+    ),
+  );
 }
 function appendProjectPackageManagers(container, project) {
-  const summary = projectPackageManagerSummary(project);
-  if (summary) appendDetail(container, 'Пакетные менеджеры', summary);
+  appendProjectTechnologyBadges(
+    container,
+    'Пакетные менеджеры',
+    projectTechnologyGroups(
+      project,
+      (subproject) => (subproject.package_manager === 'unknown' ? null : subproject.package_manager),
+    ),
+  );
+}
+function appendProjectTechnologyBadges(container, label, groups) {
+  if (!groups.length) return;
+  const badges = element('div', 'dependency-badges');
+  groups.forEach((group) => {
+    group.values.forEach((value) => {
+      const badge = element('span', 'dependency-badge project-technology-badge');
+      badge.append(element('strong', '', value), element('span', '', group.name));
+      badges.append(badge);
+    });
+  });
+  appendDetail(container, label, badges);
 }
 function appendEmptyProjectStatus(container, project) {
   if (!project.is_empty) return;
