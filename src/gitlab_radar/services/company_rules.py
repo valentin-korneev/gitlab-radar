@@ -26,6 +26,7 @@ PYTHON_LOWER_BOUND_OPERATORS = {None, '===', '==', '~=', '>=', '>', '^', '~'}
 class RuleContext:
     application_parameters: dict[str, str]
     python_versions: set[str]
+    runtime_versions: set[str]
     package_manager: set[str]
     dependencies: set[str]
     tools: set[str]
@@ -93,6 +94,7 @@ def subproject_rule_results(
     context = RuleContext(
         application_parameters=context_parameters,
         python_versions={str(python_version)} if python_version else set(),
+        runtime_versions={subproject.runtime_version} if subproject.runtime_version else set(),
         package_manager={subproject.package_manager.value.lower()},
         dependencies=dependencies,
         tools={tool.lower() for tool in subproject.configured_tools},
@@ -169,6 +171,7 @@ def _matches_condition(condition: RequirementCondition, context: RuleContext) ->
 def _source_values(source: RequirementSource, context: RuleContext) -> set[str]:
     values = {
         RequirementSource.PYTHON_VERSION: context.python_versions,
+        RequirementSource.RUNTIME_VERSION: context.runtime_versions,
         RequirementSource.PACKAGE_MANAGER: context.package_manager,
         RequirementSource.DEPENDENCY: context.dependencies,
         RequirementSource.TOOL: context.tools,

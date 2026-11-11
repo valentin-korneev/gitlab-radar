@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class RequirementSource(StrEnum):
     PYTHON_VERSION = 'python_version'
+    RUNTIME_VERSION = 'runtime_version'
     PACKAGE_MANAGER = 'package_manager'
     DEPENDENCY = 'dependency'
     TOOL = 'tool'

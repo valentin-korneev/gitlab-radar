@@ -31,6 +31,7 @@ MAX_REQUIREMENTS_PER_GROUP = 4
 SOURCE_TITLES = {
     'package_manager': 'Пакетный менеджер',
     'python_version': 'Версия Python',
+    'runtime_version': 'Версия среды выполнения',
     'dependency': 'Зависимость',
     'tool': 'Настроенный инструмент',
     'dependency_and_tool': 'Зависимость и настроенный инструмент',
@@ -68,7 +69,9 @@ async def get_requirement_catalog() -> RequirementCatalog:
             RequirementOption(
                 value=value,
                 title=title,
-                default_operator='greater_than_or_equal' if value == 'python_version' else None,
+                default_operator=(
+                    'greater_than_or_equal' if value in {'python_version', 'runtime_version'} else None
+                ),
                 default_values=[python_version] if value == 'python_version' and python_version else [],
             )
             for value, title in SOURCE_TITLES.items()

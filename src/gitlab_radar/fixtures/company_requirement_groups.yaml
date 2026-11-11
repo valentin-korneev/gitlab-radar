@@ -10,6 +10,6 @@
 - name: Registry
   description: Политики использования registry пакетов и контейнеров.
   sort_order: 4
-- name: Python
-  description: Требования к используемой версии Python.
+- name: Версии языков
+  description: Требования к используемым версиям языков программирования.
   sort_order: 5

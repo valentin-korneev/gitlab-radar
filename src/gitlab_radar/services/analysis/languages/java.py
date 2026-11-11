@@ -25,6 +25,8 @@ MAVEN_DEPENDENCY_MANAGEMENT_PATTERN = re.compile(
     re.DOTALL,
 )
 MAVEN_BUILD_PATTERN = re.compile(r'<build\b[^>]*>.*?</build>', re.DOTALL)
+MAVEN_PARENT_PATTERN = re.compile(r'<parent\b[^>]*>(.*?)</parent>', re.DOTALL)
+MAVEN_PLUGIN_PATTERN = re.compile(r'<plugin\b[^>]*>(.*?)</plugin>', re.DOTALL)
 MAVEN_DEPENDENCY_PATTERN = re.compile(r'<dependency\b[^>]*>(.*?)</dependency>', re.DOTALL)
 MAVEN_PROPERTIES_PATTERN = re.compile(r'<properties\b[^>]*>(.*?)</properties>', re.DOTALL)
 MAVEN_PROPERTY_PATTERN = re.compile(r'<([A-Za-z0-9_.-]+)\b[^>]*>\s*([^<]+?)\s*</\1>')
@@ -61,6 +63,7 @@ GRADLE_ALIAS_PATTERN = re.compile(
     r'(?:\(\s*)?libs\.(?P<alias>[A-Za-z0-9_.-]+)',
     re.MULTILINE,
 )
+GRADLE_PLUGIN_PATTERN = re.compile(r'\bid\s*(?:\(\s*)?["\'](?P<id>[^"\']+)["\']')
 GRADLE_LOCK_PATTERN = re.compile(
     r'^(?P<group>[^:#=\s]+):(?P<name>[^:#=\s]+):(?P<version>[^=\s]+)(?:=.*)?$',
     re.MULTILINE,
@@ -79,7 +82,7 @@ GRADLE_VERSION_PATTERNS = (
 class JavaAnalyzer:
     key = 'java'
     language_code = 'java'
-    version = '1'
+    version = '2'
     package_manager_codes = ('maven', 'gradle')
 
     def select_files(self, repository_paths: list[str]) -> list[FileSelection]:
@@ -166,6 +169,7 @@ def _build_maven_subproject(
         language='java',
         package_manager=PackageManager.MAVEN,
         runtime_version=runtime_version,
+        configured_tools=_maven_build_tools(text, properties),
         dependencies=_unique_dependencies(dependencies),
         optional_dependencies=[
             DependencyGroup(name=name, dependencies=_unique_dependencies(items))
@@ -212,6 +216,17 @@ def _maven_repositories(text: str, properties: dict[str, str]) -> list[str]:
     })
 
 
+def _maven_build_tools(text: str, properties: dict[str, str]) -> list[str]:
+    nodes = [*MAVEN_PARENT_PATTERN.findall(text), *MAVEN_PLUGIN_PATTERN.findall(text)]
+    tools = {
+        f'{group}:{artifact}'
+        for node in nodes
+        if (group := _resolved_maven_tag(node, 'groupId', properties))
+        and (artifact := _resolved_maven_tag(node, 'artifactId', properties))
+    }
+    return sorted(tools)
+
+
 def _build_gradle_subproject(
     path: str,
     manifest: bytes,
@@ -249,6 +264,7 @@ def _build_gradle_subproject(
         language='java',
         package_manager=PackageManager.GRADLE,
         runtime_version=runtime_version,
+        configured_tools=sorted(set(GRADLE_PLUGIN_PATTERN.findall(text))),
         dependencies=_unique_dependencies(dependencies),
         optional_dependencies=(
             [DependencyGroup(name='test', dependencies=_unique_dependencies(optional))]

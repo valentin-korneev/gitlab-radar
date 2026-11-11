@@ -99,7 +99,7 @@
 - code: python-version-current
   language: python
   title: Версия Python выше заданной
-  group: Python
+  group: Версии языков
   description: Проект использует версию Python выше установленной минимальной актуальной версии.
   condition:
     logic: and
@@ -107,3 +107,15 @@
       - source: python_version
         operator: greater_than_or_equal
         values: ['$python_oldest_current_version']
+
+- code: java-version-current
+  language: java
+  title: Версия Java выше заданной
+  group: Версии языков
+  description: Проект использует версию Java выше установленной минимальной актуальной версии.
+  condition:
+    logic: and
+    items:
+      - source: runtime_version
+        operator: greater_than_or_equal
+        values: ['$java_oldest_current_version']

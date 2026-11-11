@@ -1,3 +1,4 @@
+from fnmatch import fnmatchcase
 from typing import Protocol
 lazy from collections.abc import Iterable
 
@@ -22,14 +23,15 @@ def detected_framework_codes(
     framework_list = list(frameworks)
     project_codes: set[str] = set()
     for subproject in project.subprojects:
-        dependency_names = _subproject_dependency_names(subproject)
+        signals = _subproject_framework_signals(subproject)
         detected = {
             framework.code
             for framework in framework_list
             if subproject.language == framework.language.code
-            and bool(
-                {str(name).casefold() for name in framework.dependency_names}
-                & dependency_names
+            and any(
+                fnmatchcase(signal, str(pattern).casefold())
+                for pattern in framework.dependency_names
+                for signal in signals
             )
         }
         for framework_code, superseded_codes in FRAMEWORK_SUPERSEDES.items():
@@ -39,10 +41,13 @@ def detected_framework_codes(
     return project_codes
 
 
-def _subproject_dependency_names(subproject: ProjectSubproject) -> set[str]:
+def _subproject_framework_signals(subproject: ProjectSubproject) -> set[str]:
     dependencies = [
         *subproject.dependencies,
         *subproject.transitive_dependencies,
         *(dependency for group in subproject.optional_dependencies for dependency in group.dependencies),
     ]
-    return {dependency.name.casefold() for dependency in dependencies}
+    return {
+        *(dependency.name.casefold() for dependency in dependencies),
+        *(tool.casefold() for tool in subproject.configured_tools),
+    }
