@@ -3,19 +3,23 @@ function compactStatRow(label, value) {
   row.append(element('span', '', label), element('b', '', String(value)));
   return row;
 }
-function pythonVersionLink(item) {
-  const row = element('button', 'compact-stat-link');
-  row.type = 'button';
-  const oldestCurrent = parameterValue('python_oldest_current_version');
-  const comparison = compareVersions(item.version, oldestCurrent);
-  if (comparison < 0) row.classList.add('python-version-danger');
-  else if (comparison === 0) row.classList.add('python-version-warning');
-  row.append(element('span', '', `Python ${item.version}`), element('b', '', String(item.projects_count)));
-  row.addEventListener('click', () => openPythonVersion(item.version));
+function languageVersionLink(language, item) {
+  const row = element(language.code === 'python' ? 'button' : 'div', 'compact-stat-link');
+  if (language.code === 'python') row.type = 'button';
+  const oldestCurrent = state.languageOldestCurrentVersions[language.code];
+  if (oldestCurrent) {
+    const comparison = compareVersions(item.name, oldestCurrent);
+    if (comparison < 0) row.classList.add('python-version-danger');
+    else if (comparison === 0) row.classList.add('python-version-warning');
+  }
+  row.append(element('span', '', item.name), element('b', '', String(item.projects_count)));
+  if (language.code === 'python') {
+    row.addEventListener('click', () => openPythonVersion(item.name));
+  }
   return row;
 }
 function parameterValue(key) {
-  return state.parameters.find((parameter) => parameter.key === key).value;
+  return state.parameters.find((parameter) => parameter.key === key)?.value || '';
 }
 function parameterRange(key) {
   return parameterValue(key).split(',').map(Number);
@@ -39,15 +43,21 @@ function stableFraction(value) {
   }
   return (hash >>> 0) / 4294967295;
 }
+function technologyVisibleForLanguages(item) {
+  if (!(item.languages || []).length) return true;
+  return item.languages.some((language) => state.technologyTargetLanguages.has(language));
+}
 function renderTechnologyTarget(target, projectsCount) {
   const definitions = [
-    ['Python', target.python_versions], ['Зависимости', target.dependencies],
+    ['Языки', target.languages], ['Зависимости', target.dependencies],
     ['Образы', target.images], ['Registry', target.registries],
   ];
   const markers = document.querySelector('#target-markers');
   const scaleMaximum = Math.max(Math.ceil(projectsCount * 1.1), 1);
   const markerNodes = definitions.flatMap(([category, sourceItems], categoryIndex) => {
-    const items = sourceItems.filter((item) => state.showSingleTechnologies || item.projects_count > 1);
+    const items = sourceItems
+      .filter((item) => categoryIndex >= 2 || technologyVisibleForLanguages(item))
+      .filter((item) => state.showSingleTechnologies || item.projects_count > 1);
     const topItems = new Set(
       [...items]
         .sort((left, right) => right.projects_count - left.projects_count || left.name.localeCompare(right.name))
@@ -60,7 +70,7 @@ function renderTechnologyTarget(target, projectsCount) {
       const radius = 4 + (1 - Math.min(item.projects_count / scaleMaximum, 1)) * 42;
       marker.style.left = `${50 + Math.cos(angle) * radius}%`;
       marker.style.top = `${50 + Math.sin(angle) * radius}%`;
-      const tooltip = `${category} · ${item.name} · ${item.projects_count} проектов`;
+      const tooltip = `${category} · ${item.name} · Проектов: ${item.projects_count}`;
       marker.dataset.tooltip = tooltip;
       marker.setAttribute('aria-label', tooltip);
       marker.tabIndex = 0;
@@ -74,63 +84,173 @@ function renderTechnologyTarget(target, projectsCount) {
   });
   markers.replaceChildren(...markerNodes);
 }
+function renderTargetLanguageFilter(languages) {
+  state.technologyTargetLanguageOptions = languages;
+  const available = new Set(languages.map((language) => language.code));
+  state.technologyTargetLanguages = new Set(
+    [...state.technologyTargetLanguages].filter((language) => available.has(language)),
+  );
+  if (!state.technologyTargetLanguagesInitialized) {
+    state.technologyTargetLanguages = new Set(available);
+    state.technologyTargetLanguagesInitialized = true;
+  }
+  const container = document.querySelector('#target-language-filter');
+  const definitions = [{ code: 'all', name: 'Все' }, ...languages];
+  container.replaceChildren(...definitions.map((language) => {
+    const label = element('label', 'requirement-language-option');
+    const input = element('input');
+    input.type = 'checkbox';
+    input.checked = language.code === 'all'
+      ? state.technologyTargetLanguages.size === available.size
+      : state.technologyTargetLanguages.has(language.code);
+    input.addEventListener('change', () => {
+      if (language.code === 'all') {
+        state.technologyTargetLanguages = input.checked ? new Set(available) : new Set();
+      } else if (input.checked) state.technologyTargetLanguages.add(language.code);
+      else state.technologyTargetLanguages.delete(language.code);
+      renderTargetLanguageFilter(languages);
+      renderTechnologyTarget(state.technologyTarget, state.projectsCount);
+    });
+    label.append(input, element('span', '', language.name));
+    return label;
+  }));
+}
+function renderDependencyCountMatrix(statistics) {
+  const container = document.querySelector('#dependency-count-matrix');
+  if (!statistics.languages.length) {
+    container.replaceChildren(element('p', 'empty-state', 'Нет включённых языков со статистикой.'));
+    return;
+  }
+  const table = element('table', 'dependency-matrix-table');
+  const head = element('thead');
+  const headRow = element('tr');
+  headRow.append(element('th', '', 'Тип'));
+  statistics.languages.forEach((language) => headRow.append(element('th', '', language.name)));
+  headRow.append(element('th', 'dependency-matrix-total', 'Итого'));
+  head.append(headRow);
+  const body = element('tbody');
+  statistics.levels.forEach((level) => {
+    const row = element('tr');
+    row.append(element('th', '', level.title));
+    statistics.languages.forEach((language) => {
+      row.append(element('td', '', String(level.by_language[language.code] || 0)));
+    });
+    row.append(element('td', 'dependency-matrix-total', String(level.total)));
+    body.append(row);
+  });
+  table.append(head, body);
+  container.replaceChildren(table);
+}
+function renderLanguageStatistics(languages) {
+  const container = document.querySelector('#language-stats');
+  container.replaceChildren();
+  languages.forEach((item) => {
+    const row = element('div', `language-statistics-row${item.enabled ? '' : ' disabled'}`);
+    const heading = element('div', 'language-statistics-heading');
+    heading.append(element('strong', '', item.name), element('span', '', `${item.percentage}%`));
+    const track = element('div', 'language-statistics-track');
+    const value = element('span');
+    value.style.width = `${item.percentage}%`;
+    track.append(value);
+    row.append(heading, track, element('b', '', String(item.projects_count)));
+    container.append(row);
+  });
+  if (!languages.length) container.append(element('p', 'empty-state', 'Языки ещё не определены.'));
+}
+function renderLanguageTechnologyCards(statistics) {
+  const container = document.querySelector('#language-technology-cards');
+  const groups = [];
+  statistics.forEach((language) => {
+    const group = element('div', 'language-technology-group');
+    const managersCard = element('article', 'dashboard-card');
+    const managersHeading = element('div', 'card-heading');
+    managersHeading.append(element('p', '', `${language.name} · пакетные менеджеры`));
+    const managers = element('div', 'compact-list');
+    managers.append(...language.package_managers.map(
+      (item) => compactStatRow(item.name === 'unknown' ? 'Не определён' : item.name, item.projects_count),
+    ));
+    const versionsCard = element('article', 'dashboard-card');
+    const versionsHeading = element('div', 'card-heading');
+    versionsHeading.append(element('p', '', `${language.name} · версии`));
+    const versions = element('div', 'compact-list');
+    if (language.versions.length) {
+      versions.append(...language.versions.map((item) => languageVersionLink(language, item)));
+    } else {
+      versions.append(compactStatRow('Не определено', language.projects_count));
+    }
+    managersCard.append(managersHeading, managers);
+    versionsCard.append(versionsHeading, versions);
+    group.append(managersCard, versionsCard);
+    groups.push(group);
+  });
+  container.replaceChildren(...groups);
+}
+function renderFrameworks(frameworks) {
+  const container = document.querySelector('#framework-bubbles');
+  if (!frameworks.length) {
+    container.replaceChildren(element('p', 'empty-state', 'Фреймворки не обнаружены.'));
+    return;
+  }
+  const maximum = Math.max(...frameworks.map((item) => item.projects_count), 1);
+  container.replaceChildren(...frameworks.map((item) => {
+    const bubble = element('div', 'framework-bubble');
+    const size = 74 + Math.sqrt(item.projects_count / maximum) * 82;
+    bubble.style.setProperty('--bubble-size', `${size}px`);
+    bubble.style.setProperty('--bubble-hue', String(Math.floor(stableFraction(item.code) * 360)));
+    const tooltip = `${item.name} · ${item.language} · Проектов: ${item.projects_count}`;
+    bubble.dataset.tooltip = tooltip;
+    bubble.setAttribute('aria-label', tooltip);
+    bubble.tabIndex = 0;
+    bubble.append(element('b', '', String(item.projects_count)));
+    return bubble;
+  }));
+}
+function renderRegistryStatistics(items) {
+  const container = document.querySelector('#registry-stats');
+  container.replaceChildren(...items.slice(0, 15).map((item) => compactStatRow(item.name, item.projects_count)));
+  if (!items.length) {
+    container.append(element('p', 'empty-state', 'Registry не обнаружены.'));
+  }
+}
 function renderDashboard(dashboard) {
   document.querySelector('#project-count').textContent = dashboard.projects_count;
+  document.querySelector('#empty-project-count').textContent = dashboard.empty_projects_count;
   document.querySelector('#subproject-count').textContent = dashboard.subprojects_count;
-  document.querySelector('#dependency-count').textContent = dashboard.dependency_counts.total;
-  document.querySelector('#direct-dependency-count').textContent = dashboard.dependency_counts.direct;
-  document.querySelector('#optional-dependency-count').textContent = dashboard.dependency_counts.optional;
-  document.querySelector('#transitive-dependency-count').textContent = dashboard.dependency_counts.transitive;
   document.querySelector('#docker-project-count').textContent = dashboard.docker_projects_count;
   document.querySelector('#gitlab-ci-project-count').textContent = dashboard.gitlab_ci_projects_count;
-  document.querySelector('#fastapi-project-count').textContent = dashboard.fastapi_projects_count;
-  document.querySelector('#django-project-count').textContent = dashboard.django_projects_count;
-  const total = dashboard.projects_count || 1;
+  const total = dashboard.projects_count + dashboard.empty_projects_count || 1;
   document.querySelector('#docker-project-percentage').textContent = `${Math.round(dashboard.docker_projects_count / total * 100)}% проектов`;
   document.querySelector('#gitlab-ci-project-percentage').textContent = `${Math.round(dashboard.gitlab_ci_projects_count / total * 100)}% проектов`;
-  document.querySelector('#fastapi-project-percentage').textContent = `${Math.round(dashboard.fastapi_projects_count / total * 100)}% проектов`;
-  document.querySelector('#django-project-percentage').textContent = `${Math.round(dashboard.django_projects_count / total * 100)}% проектов`;
+  state.languageOldestCurrentVersions = Object.fromEntries(
+    dashboard.enabled_languages
+      .filter((language) => language.oldest_current_version)
+      .map((language) => [language.code, language.oldest_current_version]),
+  );
   state.technologyTarget = dashboard.technology_target;
   state.projectsCount = dashboard.projects_count;
+  renderTargetLanguageFilter(dashboard.enabled_languages);
   renderTechnologyTarget(dashboard.technology_target, dashboard.projects_count);
-  const registries = document.querySelector('#registry-stats');
-  registries.replaceChildren(...dashboard.registries.slice(0, 8).map((item) => compactStatRow(item.name, item.projects_count)));
-  if (!dashboard.registries.length) registries.append(element('p', 'empty-state', 'Registry не обнаружены.'));
-
-  const pythonVersions = document.querySelector('#python-version-stats');
-  pythonVersions.replaceChildren(...dashboard.python_versions.map(pythonVersionLink));
-  if (!dashboard.python_versions.length) pythonVersions.append(element('p', 'empty-state', 'Версии не определены.'));
-
-  const statistics = document.querySelector('#package-manager-stats');
-  statistics.replaceChildren();
-  dashboard.package_managers.filter((item) => item.projects_count > 0).forEach((item) => {
-    const row = element('div', 'statistics-row');
-    const label = element('div', 'statistics-label');
-    label.append(element('strong', '', item.title), element('span', '', `${item.percentage}%`));
-    const track = element('div', 'statistics-track');
-    const trackValue = element('span');
-    trackValue.style.width = `${item.percentage}%`;
-    track.append(trackValue);
-    row.append(label, track, element('b', '', String(item.projects_count)));
-    row.title = `${item.projects_count} репозиториев, ${item.subprojects_count} подпроектов`;
-    statistics.append(row);
-  });
-
+  renderDependencyCountMatrix(dashboard.dependency_counts);
+  renderLanguageStatistics(dashboard.languages);
+  renderLanguageTechnologyCards(dashboard.language_technologies);
+  renderFrameworks(dashboard.frameworks);
+  renderRegistryStatistics(dashboard.registries);
   const topDependencies = document.querySelector('#top-dependencies');
   topDependencies.replaceChildren();
   dashboard.top_dependencies.forEach((item, index) => {
     const row = element('button', 'dependency-top-row');
     row.type = 'button';
-    row.append(element('span', 'dependency-rank', String(index + 1).padStart(2, '0')), element('strong', '', item.name), element('b', '', item.projects_count));
+    const identity = element('span', 'dependency-top-identity');
+    identity.append(element('strong', '', item.name), element('small', '', item.language));
+    row.append(element('span', 'dependency-rank', String(index + 1).padStart(2, '0')), identity, element('b', '', item.projects_count));
     row.addEventListener('click', () => openDependency(item.name));
     topDependencies.append(row);
   });
-  if (!dashboard.top_dependencies.length) topDependencies.append(element('p', 'empty-state', 'Зависимости еще не найдены.'));
-
+  if (!dashboard.top_dependencies.length) {
+    topDependencies.append(element('p', 'empty-state', 'Зависимости еще не найдены.'));
+  }
   renderCompanyRequirements(dashboard.company_requirements);
-
-  const quality = dashboard.data_quality;
-  renderDataQuality(quality);
+  renderDataQuality(dashboard.data_quality);
   renderLastScan(dashboard.last_scan);
 }
 function renderCompanyRequirements(dashboardRequirements) {
@@ -143,9 +263,7 @@ function renderCompanyRequirements(dashboardRequirements) {
   if (
     !['all', 'global'].includes(state.dashboardRequirementLanguage)
     && !languages.includes(state.dashboardRequirementLanguage)
-  ) {
-    state.dashboardRequirementLanguage = 'all';
-  }
+  ) state.dashboardRequirementLanguage = 'all';
   const languageFilter = document.querySelector('#company-requirement-language-filter');
   languageFilter.replaceChildren(...[
     { value: 'all', title: 'Все' },
@@ -173,7 +291,7 @@ function renderCompanyRequirements(dashboardRequirements) {
     if (state.dashboardRequirementLanguage === 'global' && configured.language !== null) return;
     if (!['all', 'global'].includes(state.dashboardRequirementLanguage)
       && configured.language !== state.dashboardRequirementLanguage) return;
-    const groupName = state.requirementGroups.find((group) => group.id === configured?.group_id)?.name || 'Без группы';
+    const groupName = state.requirementGroups.find((group) => group.id === configured.group_id)?.name || 'Без группы';
     if (!groups.has(groupName)) groups.set(groupName, []);
     groups.get(groupName).push(item);
   });
@@ -225,7 +343,6 @@ function renderLastScan(scan) {
     );
   } else lastScan.append(element('p', 'empty-state', 'Сканирование еще не запускалось.'));
 }
-
 async function loadDashboard() {
   const [dashboard] = await Promise.all([api(API.dashboard), ensureRequirements(), ensureParameters()]);
   renderDashboard(dashboard);

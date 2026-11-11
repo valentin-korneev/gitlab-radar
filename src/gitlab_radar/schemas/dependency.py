@@ -33,6 +33,7 @@ class DependencyProject(BaseModel):
     subproject_path: str
     web_url: str
     level: DependencyLevel
+    language: str | None = None
 
 
 class DependencyVersionUsage(BaseModel):
@@ -45,4 +46,5 @@ class DependencyUsage(BaseModel):
     level: DependencyLevel
     levels: list[DependencyLevel] = Field(default_factory=list)
     projects_count: int
+    languages: list[str] = Field(default_factory=list)
     versions: list[DependencyVersionUsage] = Field(default_factory=list)

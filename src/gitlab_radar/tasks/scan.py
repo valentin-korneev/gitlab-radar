@@ -20,16 +20,18 @@ from gitlab_radar.database.repository import (
     restore_previous_analysis,
     save_analysis,
     save_collected_project,
+    sync_programming_languages,
     trim_old_scans,
 )
 from gitlab_radar.database.scan_lock import acquire_scan_lock, release_scan_lock
-from gitlab_radar.schemas.project import Project
+from gitlab_radar.schemas.project import Project, ProjectLanguage
 from gitlab_radar.schemas.scan import ScanPhase, ScanState, ScanStatus
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.application_parameters import application_parameter_values
+from gitlab_radar.services.analysis import analysis_fingerprint, language_code, select_project_files
 from gitlab_radar.services.project import fetch_projects
 from gitlab_radar.services.project_analysis import analyze_project
-from gitlab_radar.services.project_collection import ProjectCollector
+from gitlab_radar.services.project_collection import ProjectCollector, ProjectNotScannableError
 
 logger = logging.getLogger(__name__)
 LOCAL_ANALYSIS_CONCURRENCY = max(1, min(8, os.cpu_count() or 1))
@@ -37,7 +39,7 @@ LOCAL_ANALYSIS_CONCURRENCY = max(1, min(8, os.cpu_count() or 1))
 
 @dataclass(frozen=True, slots=True)
 class CollectedSnapshot:
-    snapshot_id: int
+    snapshot_id: int | None
     project: Project
     reused: bool
     collection_succeeded: bool
@@ -200,27 +202,72 @@ class ScanTask:
         project: Project,
         errors: list[str],
     ) -> CollectedSnapshot:
+        fingerprint = analysis_fingerprint()
         try:
             revision = await asyncio.to_thread(collector.revision, project)
             project.revision = revision
+            language_statistics = await asyncio.to_thread(collector.languages, project)
+            project.languages = [
+                ProjectLanguage(
+                    code=language_code(name),
+                    name=name,
+                    percentage=percentage,
+                )
+                for name, percentage in sorted(language_statistics.items())
+            ]
+            project.is_empty = not project.languages
+            language_rows = await sync_programming_languages(project.languages)
+            for language in project.languages:
+                if not language_rows[language.code].enabled:
+                    language.analysis_status = 'disabled'
             try:
                 await asyncio.to_thread(collector.collect_hooks, project)
             except Exception as error:  # pylint: disable=broad-exception-caught
                 errors.append(f'{project.path_with_namespace}: не удалось получить webhooks: {error}')
                 logger.exception('Не удалось получить webhooks проекта %s', project.path_with_namespace)
-            reusable = await find_reusable_project(project.id, revision)
+            enabled_language_codes = [
+                language.code for language in project.languages if language.analysis_status != 'disabled'
+            ]
+            fingerprint = analysis_fingerprint(enabled_language_codes)
+            reusable = await find_reusable_project(project.id, revision, fingerprint)
             if reusable is not None:
-                snapshot = await clone_project(reusable, scan, project)
+                snapshot = await clone_project(reusable, scan, project, fingerprint)
                 logger.info('Проект %s не изменился; используется прежний анализ', project.path_with_namespace)
                 return CollectedSnapshot(snapshot.id, project, True, True)
-            files = await asyncio.to_thread(collector.collect, project, revision)
-            snapshot = await save_collected_project(scan, project, revision, files)
+            repository_paths = await asyncio.to_thread(collector.repository_files, project, revision)
+            selections = select_project_files(repository_paths, enabled_language_codes)
+            selected_paths = sorted({selection.path for selection in selections})
+            logger.info(
+                'Для проекта %s выбрано файлов для скачивания: %d',
+                project.path_with_namespace,
+                len(selected_paths),
+            )
+            files = await asyncio.to_thread(collector.collect, project, revision, selected_paths)
+            snapshot = await save_collected_project(
+                scan,
+                project,
+                revision,
+                files,
+                selections,
+                fingerprint,
+            )
             return CollectedSnapshot(snapshot.id, project, False, True)
+        except ProjectNotScannableError as error:
+            logger.info('Проект %s пропущен: %s', project.path_with_namespace, error)
+            return CollectedSnapshot(None, project, False, False)
         except Exception as error:  # pylint: disable=broad-exception-caught
             errors.append(f'{project.path_with_namespace}: {error}')
             project.scan_error = str(error)
             project.package_manager = PackageManager.UNKNOWN
-            snapshot = await save_collected_project(scan, project, project.revision, {}, str(error))
+            snapshot = await save_collected_project(
+                scan,
+                project,
+                project.revision,
+                {},
+                [],
+                fingerprint,
+                str(error),
+            )
             await restore_previous_analysis(snapshot.id, project, str(error))
             logger.exception('Не удалось собрать файлы проекта %s', project.path_with_namespace)
             return CollectedSnapshot(snapshot.id, project, False, False)
@@ -279,6 +326,8 @@ class ScanTask:
     @staticmethod
     async def _analyze_snapshot(item: CollectedSnapshot) -> str | None:
         project = item.project
+        if item.snapshot_id is None:
+            return None
         try:
             files = await project_files(item.snapshot_id)
             project = await asyncio.to_thread(analyze_project, project, files, project.revision)

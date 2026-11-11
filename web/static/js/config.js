@@ -9,11 +9,12 @@ const API = {
   authorizedUsers: '/api/authorized-user/',
   visibility: '/api/visibility/',
   visibilityAdmin: '/api/visibility/admin/',
+  programmingLanguages: '/api/programming-language/',
 };
 const AUTHENTICATED_ROUTES = new Set([
   'visibility', 'admin',
 ]);
-const ADMINISTRATOR_ROUTES = new Set(['requirements', 'parameters', 'users', 'visibility-admin']);
+const ADMINISTRATOR_ROUTES = new Set(['requirements', 'parameters', 'languages', 'users', 'visibility-admin']);
 const PAGE_ROUTES = {
   dashboard: { page: 'dashboard' },
   projects: { page: 'projects' },
@@ -23,6 +24,7 @@ const PAGE_ROUTES = {
   webhooks: { page: 'dependencies', source: 'webhook', title: 'Webhooks', search: 'Найти webhook' },
   requirements: { page: 'requirements' },
   parameters: { page: 'parameters' },
+  languages: { page: 'languages' },
   users: { page: 'users' },
   visibility: { page: 'visibility' },
   'visibility-admin': { page: 'visibility-admin' },
@@ -44,18 +46,20 @@ const PHASE_TITLES = {
 const state = {
   projects: [], dependencies: [], dependencyCache: {}, dependencySource: 'python', selectedId: null, selectedSubprojectPath: null,
   projectFilters: { query: '', rules: new Set() },
-  selectedDependency: null, dependencyQuery: '', showTransitive: false, scanState: null, scanStatus: null,
+  selectedDependency: null, dependencyQuery: '', dependencyLanguages: new Set(), dependencyLanguagesInitialized: false, showTransitive: false, scanState: null, scanStatus: null,
   scanSocket: null, scanReconnectTimer: null,
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
+  technologyTargetLanguages: new Set(), technologyTargetLanguageOptions: [], technologyTargetLanguagesInitialized: false,
+  languageOldestCurrentVersions: {},
   dashboardRequirementLanguage: 'all',
   requirements: [], requirementGroups: [], requirementCatalog: null,
-  parameters: [], authorizedUsers: [],
+  parameters: [], programmingLanguages: [], programmingFrameworks: [], selectedProgrammingLanguageCode: null, authorizedUsers: [],
   visibilityGroups: [], selectedVisibilityGroup: null, visibilityPolicies: [], visibilityAdminUser: null,
   auth: { config: null, user: null },
   currentRoute: null,
   selectedRequirementGroupId: null,
   loaded: {
-    dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false,
+    dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false, languages: false,
     users: false, visibility: false, 'visibility-admin': false, admin: false,
   }, loading: {},
 };

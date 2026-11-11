@@ -1,14 +1,41 @@
-from pydantic import BaseModel
-
-from gitlab_radar.schemas.technology import PackageManager
+from pydantic import BaseModel, Field
 
 
-class PackageManagerStatistics(BaseModel):
-    package_manager: PackageManager
-    title: str
+class LanguageOption(BaseModel):
+    code: str
+    name: str
+    oldest_current_version: str | None = None
+
+
+class TechnologyUsage(BaseModel):
+    name: str
     projects_count: int
-    subprojects_count: int
+    languages: list[str] = Field(default_factory=list)
+
+
+class LanguageStatistics(LanguageOption):
+    projects_count: int
     percentage: float
+    enabled: bool
+    oldest_current_version: str | None = None
+
+
+class LanguageTechnologyStatistics(LanguageOption):
+    projects_count: int
+    package_managers: list[TechnologyUsage] = Field(default_factory=list)
+    versions: list[TechnologyUsage] = Field(default_factory=list)
+
+
+class DependencyLevelStatistics(BaseModel):
+    level: str
+    title: str
+    by_language: dict[str, int] = Field(default_factory=dict)
+    total: int
+
+
+class DependencyCountStatistics(BaseModel):
+    languages: list[LanguageOption] = Field(default_factory=list)
+    levels: list[DependencyLevelStatistics] = Field(default_factory=list)
 
 
 class CompanyRequirement(BaseModel):
@@ -22,18 +49,14 @@ class CompanyRequirement(BaseModel):
 
 class DependencyStatistics(BaseModel):
     name: str
+    language: str
     projects_count: int
 
 
-class DependencyCountStatistics(BaseModel):
-    total: int
-    direct: int
-    optional: int
-    transitive: int
-
-
-class PythonVersionStatistics(BaseModel):
-    version: str
+class FrameworkStatistics(BaseModel):
+    code: str
+    name: str
+    language: str
     projects_count: int
 
 
@@ -53,13 +76,8 @@ class LastScanStatistics(BaseModel):
     gitlab_requests: int
 
 
-class TechnologyUsage(BaseModel):
-    name: str
-    projects_count: int
-
-
 class TechnologyTarget(BaseModel):
-    python_versions: list[TechnologyUsage]
+    languages: list[TechnologyUsage]
     dependencies: list[TechnologyUsage]
     images: list[TechnologyUsage]
     registries: list[TechnologyUsage]
@@ -67,15 +85,16 @@ class TechnologyTarget(BaseModel):
 
 class Dashboard(BaseModel):
     projects_count: int
+    empty_projects_count: int
     subprojects_count: int
     docker_projects_count: int
     gitlab_ci_projects_count: int
-    fastapi_projects_count: int
-    django_projects_count: int
-    package_managers: list[PackageManagerStatistics]
+    languages: list[LanguageStatistics]
+    enabled_languages: list[LanguageOption]
+    language_technologies: list[LanguageTechnologyStatistics]
     dependency_counts: DependencyCountStatistics
-    python_versions: list[PythonVersionStatistics]
     top_dependencies: list[DependencyStatistics]
+    frameworks: list[FrameworkStatistics]
     company_requirements: list[CompanyRequirement]
     technology_target: TechnologyTarget
     registries: list[TechnologyUsage]

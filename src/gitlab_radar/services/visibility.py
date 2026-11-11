@@ -39,7 +39,7 @@ def _matches_rule(
     rule: VisibilityRulePayload | UserVisibilityRule | AdminVisibilityPolicyRule | AdminUserVisibilityRule,
 ) -> bool:
     if rule.target == 'language':
-        return any(_matches(subproject.language, rule.pattern) for subproject in project.subprojects)
+        return any(_matches(language.code, rule.pattern) for language in project.languages)
     return _matches(project.path_with_namespace, rule.pattern)
 
 

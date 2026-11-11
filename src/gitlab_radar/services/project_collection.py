@@ -5,20 +5,13 @@ from pathlib import PurePosixPath
 from urllib.parse import urlsplit, urlunsplit
 
 from gitlab.const import AccessLevel
-from gitlab.exceptions import GitlabError
+from gitlab.exceptions import GitlabError, GitlabGetError
 lazy from gitlab.v4.objects import Project as GitLabProject
 
 from gitlab_radar.clients.gitlab import gitlab_client
 from gitlab_radar.schemas.project import Project, ProjectHook
-from gitlab_radar.services.package_manager import SUBPROJECT_FILES, is_subproject_filename
 
 logger = logging.getLogger(__name__)
-
-GITLAB_CI_FILENAMES = ('.gitlab-ci.yml', '.gitlab-ci.yaml')
-TARGET_FILENAMES = frozenset((*SUBPROJECT_FILES, *GITLAB_CI_FILENAMES))
-TARGET_SEARCH_QUERY = ' or '.join(
-    [*(f'file:{filename}' for filename in sorted(TARGET_FILENAMES)), 'file:requirements'],
-)
 BATCH_SIZE = 20
 UNSUPPORTED_STATUSES = {
     HTTPStatus.BAD_REQUEST,
@@ -47,19 +40,27 @@ HOOK_EVENT_FIELDS = (
 )
 
 
-def _is_target_filename(filename: str) -> bool:
-    return filename in GITLAB_CI_FILENAMES or is_subproject_filename(filename)
+class ProjectNotScannableError(Exception):
+    pass
 
 
 class ProjectCollector:
     def __init__(self) -> None:
-        self._exact_search_supported: bool | None = None
         self._batch_supported: bool | None = None
 
     def revision(self, project: Project) -> str:
         gitlab_project = self._gitlab_project(project)
         default_branch = self._default_branch(project)
-        branch = gitlab_project.branches.get(default_branch)
+        try:
+            branch = gitlab_project.branches.get(default_branch)
+        except GitlabGetError as error:
+            if error.response_code != HTTPStatus.NOT_FOUND:
+                raise
+            msg = (
+                f'Основная ветка {default_branch} проекта '
+                f'{project.path_with_namespace} была удалена до начала сканирования'
+            )
+            raise ProjectNotScannableError(msg) from error
         commit = branch.attributes.get('commit', {})
         revision = commit.get('id') if isinstance(commit, dict) else None
         if not isinstance(revision, str) or not revision:
@@ -68,9 +69,45 @@ class ProjectCollector:
         logger.info('Определена ревизия проекта %s: %s', project.path_with_namespace, revision[:12])
         return revision
 
-    def collect(self, project: Project, revision: str) -> dict[str, str]:
+    def languages(self, project: Project) -> dict[str, float]:
+        values = self._gitlab_project(project).languages()
+        if not isinstance(values, dict):
+            msg = f'GitLab вернул неожиданный список языков: {type(values).__name__}'
+            raise TypeError(msg)
+        languages = {
+            name: float(percentage)
+            for name, percentage in values.items()
+            if isinstance(name, str) and isinstance(percentage, int | float)
+        }
+        logger.info(
+            'Языки проекта %s получены: %d',
+            project.path_with_namespace,
+            len(languages),
+        )
+        return languages
+
+    def repository_files(self, project: Project, revision: str) -> list[str]:
+        entries = self._gitlab_project(project).repository_tree(
+            ref=revision,
+            recursive=True,
+            iterator=True,
+            per_page=100,
+        )
+        paths = {
+            path
+            for entry in entries
+            if entry.get('type') == 'blob' and isinstance((path := entry.get('path')), str)
+        }
+        result = sorted(paths, key=lambda value: (value.count('/'), value))
+        logger.info(
+            'Структура проекта %s получена: файлов %d',
+            project.path_with_namespace,
+            len(result),
+        )
+        return result
+
+    def collect(self, project: Project, revision: str, paths: list[str]) -> dict[str, str]:
         gitlab_project = self._gitlab_project(project)
-        paths = self._find_target_paths(gitlab_project, revision)
         contents = self._read_files(gitlab_project, paths, revision)
         files = self._text_files(contents)
         logger.info(
@@ -116,55 +153,6 @@ class ProjectCollector:
             return project.default_branch
         msg = f'Проект {project.path_with_namespace} не имеет основной ветки'
         raise ValueError(msg)
-
-    def _find_target_paths(self, project: GitLabProject, default_branch: str) -> list[str]:
-        if self._exact_search_supported is not False:
-            try:
-                paths = self._find_with_exact_search(project, default_branch)
-            except GitlabError as error:
-                if error.response_code not in UNSUPPORTED_STATUSES:
-                    raise
-                self._exact_search_supported = False
-                logger.warning('Точный поиск GitLab недоступен; используется дерево репозитория')
-            else:
-                self._exact_search_supported = True
-                logger.info('Точный поиск GitLab нашел целевых файлов: %d', len(paths))
-                return paths
-        paths = self._find_in_repository_tree(project, default_branch)
-        logger.info('В дереве репозитория найдено целевых файлов: %d', len(paths))
-        return paths
-
-    @staticmethod
-    def _find_with_exact_search(project: GitLabProject, default_branch: str) -> list[str]:
-        results = project.search(
-            scope='blobs',
-            search=TARGET_SEARCH_QUERY,
-            search_type='zoekt',
-            ref=default_branch,
-            iterator=True,
-            per_page=100,
-        )
-        paths: set[str] = set()
-        for result in results:
-            path = result.get('path')
-            if isinstance(path, str) and _is_target_filename(PurePosixPath(path).name):
-                paths.add(path)
-        return sorted(paths, key=lambda value: (value.count('/'), value))
-
-    @staticmethod
-    def _find_in_repository_tree(project: GitLabProject, default_branch: str) -> list[str]:
-        entries = project.repository_tree(
-            ref=default_branch,
-            recursive=True,
-            iterator=True,
-            per_page=100,
-        )
-        paths: set[str] = set()
-        for entry in entries:
-            path = entry.get('path')
-            if entry.get('type') == 'blob' and isinstance(path, str) and _is_target_filename(PurePosixPath(path).name):
-                paths.add(path)
-        return sorted(paths, key=lambda value: (value.count('/'), value))
 
     def _read_files(
         self,

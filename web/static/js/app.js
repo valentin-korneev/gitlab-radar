@@ -76,6 +76,18 @@ STATE_CHANNEL?.addEventListener('message', (event) => {
       invalidatedPages.add(page);
     });
   }
+  if (path.startsWith(API.programmingLanguages)) {
+    state.programmingLanguages = [];
+    state.programmingFrameworks = [];
+    state.requirementCatalog = null;
+    state.dependencyCache = {};
+    state.technologyTargetLanguages = new Set();
+    state.technologyTargetLanguagesInitialized = false;
+    ['dashboard', 'projects', 'dependencies', 'requirements', 'languages'].forEach((page) => {
+      state.loaded[page] = false;
+      invalidatedPages.add(page);
+    });
+  }
   if (path.startsWith(API.authorizedUsers)) {
     state.loaded.users = false;
     invalidatedPages.add('users');

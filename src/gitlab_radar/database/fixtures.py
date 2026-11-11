@@ -7,7 +7,9 @@ from gitlab_radar.database.models import (
     ApplicationParameter,
     CompanyRequirement,
     CompanyRequirementGroup,
+    CompanyRequirementLanguage,
     DataFixture,
+    ProgrammingLanguage,
 )
 from gitlab_radar.schemas.application_parameter import ApplicationParameter as ApplicationParameterSchema
 from gitlab_radar.schemas.company_requirement import CompanyRequirementCreate, CompanyRequirementGroupCreate
@@ -17,6 +19,7 @@ FIXTURES_DIR = Path(__file__).parent.parent / 'fixtures'
 
 
 async def load_database_fixtures() -> None:
+    await ProgrammingLanguage.get_or_create(code='python', defaults={'name': 'Python', 'enabled': True})
     await _load_application_parameters()
     fixture_name = 'company-requirements'
     if await DataFixture.filter(name=fixture_name).exists():
@@ -37,15 +40,13 @@ async def load_database_fixtures() -> None:
 
     requirement_payloads = _read_fixture('company_requirements.yaml')
     requirements = [_requirement_from_fixture(item, groups_by_name) for item in requirement_payloads]
-    await CompanyRequirement.bulk_create(
-        [
-            CompanyRequirement(
-                **requirement.model_dump(mode='json', exclude={'sort_order'}),
-                sort_order=requirement.sort_order or index,
-            )
-            for index, requirement in enumerate(requirements, start=1)
-        ],
-    )
+    for index, requirement in enumerate(requirements, start=1):
+        values = requirement.model_dump(mode='json', exclude={'language', 'sort_order'})
+        row = await CompanyRequirement.create(
+            **values,
+            sort_order=requirement.sort_order or index,
+        )
+        await _set_requirement_language(row, requirement.language)
     logger.info('Загружены fixtures требований компании: %d', len(requirements))
     await DataFixture.create(name=fixture_name)
     await _load_python_version_requirement()
@@ -74,11 +75,14 @@ async def _load_python_version_requirement() -> None:
     )
     row = await CompanyRequirement.get_or_none(code=requirement.code)
     if row is None:
-        await CompanyRequirement.create(**requirement.model_dump(mode='json'))
+        values = requirement.model_dump(mode='json', exclude={'language'})
+        row = await CompanyRequirement.create(**values)
+        await _set_requirement_language(row, requirement.language)
         logger.info('Загружен fixture требования компании: %s', requirement.code)
     elif _migrate_python_version_operator(row.condition):
         await row.save(update_fields=['condition'])
         logger.info('Обновлен оператор fixture требования компании: %s', requirement.code)
+    await _set_requirement_language(row, requirement.language)
     await DataFixture.create(name=fixture_name)
 
 
@@ -122,3 +126,13 @@ def _requirement_from_fixture(
     group_name = str(payload.pop('group'))
     payload['group_id'] = groups_by_name[group_name].id
     return CompanyRequirementCreate.model_validate(payload)
+
+
+async def _set_requirement_language(requirement: CompanyRequirement, code: str | None) -> None:
+    if code is None:
+        return
+    language = await ProgrammingLanguage.get(code=code)
+    await CompanyRequirementLanguage.get_or_create(
+        requirement=requirement,
+        language=language,
+    )

@@ -24,6 +24,7 @@
   <script src="/static/js/dashboard.js" defer></script>
   <script src="/static/js/requirements.js" defer></script>
   <script src="/static/js/parameters.js" defer></script>
+  <script src="/static/js/languages.js" defer></script>
   <script src="/static/js/users.js" defer></script>
   <script src="/static/js/visibility.js" defer></script>
   <script src="/static/js/admin.js" defer></script>
@@ -52,6 +53,7 @@
         <button class="nav-item authenticated-navigation personal-visibility-navigation" data-route="visibility" hidden>Фильтры проектов</button>
         <button class="nav-item administrator-navigation" data-route="requirements" hidden>Требования</button>
         <button class="nav-item administrator-navigation" data-route="parameters" hidden>Параметры</button>
+        <button class="nav-item administrator-navigation" data-route="languages" hidden>Языки программирования</button>
         <button class="nav-item administrator-navigation" data-route="users" hidden>Пользователи</button>
         <button class="nav-item administrator-navigation" data-route="visibility-admin" hidden>Политики видимости</button>
         <button class="nav-item authenticated-navigation" data-route="admin" hidden>Управление</button>
@@ -77,25 +79,17 @@
             <div class="metric-icon">↗</div>
             <p>Всего проектов</p>
             <strong id="project-count">—</strong>
-            <span><b id="subproject-count">—</b> подпроектов</span>
+            <span><b id="subproject-count">—</b> подпроектов · <b id="empty-project-count">—</b> пустых</span>
           </article>
           <article class="dashboard-card dependency-count-card">
-            <div class="card-heading"><p>Уникальные зависимости</p><span>Без версий</span></div>
-            <strong id="dependency-count">—</strong>
-            <div class="compact-statistics">
-              <span>Прямые <b id="direct-dependency-count">—</b></span>
-              <span>Опциональные <b id="optional-dependency-count">—</b></span>
-              <span>Транзитивные <b id="transitive-dependency-count">—</b></span>
-            </div>
+            <div class="card-heading"><p>Уникальные зависимости</p><span>По включённым языкам</span></div>
+            <div id="dependency-count-matrix" class="dependency-count-matrix"></div>
           </article>
-          <article class="dashboard-card">
-            <div class="card-heading"><p>Пакетные менеджеры</p></div>
-            <div id="package-manager-stats" class="statistics-list"></div>
+          <article class="dashboard-card language-statistics-card">
+            <div class="card-heading"><p>Языки программирования</p><span>Количество проектов</span></div>
+            <div id="language-stats" class="language-statistics"></div>
           </article>
-          <article class="dashboard-card">
-            <div class="card-heading"><p>Версии Python</p></div>
-            <div id="python-version-stats" class="compact-list"></div>
-          </article>
+          <div id="language-technology-cards" class="dashboard-dynamic-cards"></div>
           <div class="infrastructure-stack">
             <article class="dashboard-card infrastructure-card">
               <div><p>Docker</p></div>
@@ -107,18 +101,12 @@
               <strong id="gitlab-ci-project-count">—</strong>
               <small id="gitlab-ci-project-percentage">—</small>
             </article>
-            <article class="dashboard-card infrastructure-card">
-              <div><p>FastAPI</p></div>
-              <strong id="fastapi-project-count">—</strong>
-              <small id="fastapi-project-percentage">—</small>
-            </article>
-            <article class="dashboard-card infrastructure-card">
-              <div><p>Django</p></div>
-              <strong id="django-project-count">—</strong>
-              <small id="django-project-percentage">—</small>
+            <article class="dashboard-card framework-card">
+              <div class="card-heading"><p>Фреймворки</p><span>Проекты</span></div>
+              <div id="framework-bubbles" class="framework-bubbles"></div>
             </article>
           </div>
-          <article class="dashboard-card">
+          <article id="registry-card" class="dashboard-card registry-card">
             <div class="card-heading"><p>Registry</p></div>
             <div id="registry-stats" class="compact-list"></div>
           </article>
@@ -136,13 +124,16 @@
           <article class="dashboard-card requirements-card technology-target-card">
             <div class="card-heading target-heading">
               <div><p>Технологический радар</p><span>Покрытие портфеля</span></div>
-              <label class="switch"><input id="target-show-single" type="checkbox"><span></span>Показывать единичные</label>
+              <div class="target-controls">
+                <div id="target-language-filter" class="requirement-language-filter"></div>
+                <label class="switch"><input id="target-show-single" type="checkbox"><span></span>Показывать единичные</label>
+              </div>
             </div>
             <div class="technology-target">
               <div class="target-rings">
                 <span></span><span></span><span></span>
                 <div class="target-sector-labels" aria-hidden="true">
-                  <b>Python</b><b>Зависимости</b><b>Образы</b><b>Registry</b>
+                  <b>Языки</b><b>Зависимости</b><b>Образы</b><b>Registry</b>
                 </div>
                 <div id="target-markers" class="target-markers"></div>
               </div>
@@ -179,6 +170,7 @@
         </div>
         <div class="dependency-controls">
           <div class="dependency-filters">
+            <div class="dependency-language-filter"><span>Языки</span><div id="dependency-language-options" class="requirement-language-filter"></div></div>
             <label id="transitive-filter" class="switch"><input id="show-transitive" type="checkbox"><span></span>Показывать транзитивные</label>
           </div>
         </div>
@@ -278,6 +270,22 @@
         </article>
       </section>
 
+      <section id="languages" class="page">
+        <div class="intro"><p>Настройка</p><h2>Языки программирования</h2></div>
+        <div class="programming-language-settings-grid">
+          <article class="dashboard-card programming-languages-card">
+            <div class="card-heading"><p>Обнаруженные языки</p><span>Анализаторы</span></div>
+            <p class="programming-languages-help">Включённый язык при следующем сканировании участвует в выборе файлов и запуске подключённого анализатора. Выключенный язык продолжает определяться, отображаться в статистике и учитываться при применении языковых требований.</p>
+            <div id="programming-language-list" class="programming-language-list"></div>
+          </article>
+          <article class="dashboard-card programming-frameworks-card">
+            <div class="card-heading"><p>Фреймворки</p><span id="programming-framework-language">Выберите язык</span></div>
+            <p class="programming-languages-help">Фреймворк определяется только тогда, когда включены и он сам, и связанный с ним язык.</p>
+            <div id="programming-framework-list" class="programming-framework-list"></div>
+          </article>
+        </div>
+      </section>
+
       <section id="users" class="page">
         <div class="intro"><p>Управление доступом</p><h2>Пользователи</h2></div>
         <article class="dashboard-card authorized-users-card">
@@ -334,7 +342,7 @@
           </article>
           <article class="scan-actions">
             <button id="scan-button" class="primary-button" disabled>Запустить сканирование <span>→</span></button>
-            <p>Получит актуальный список Python-проектов из GitLab и обновит локальный snapshot.</p>
+            <p>Получит актуальный список проектов из GitLab и обновит локальный snapshot.</p>
           </article>
           <article class="dashboard-card admin-last-scan">
             <div class="card-heading"><p>Последнее сканирование</p><span>Состояние данных</span></div>

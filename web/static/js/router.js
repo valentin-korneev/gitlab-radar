@@ -40,6 +40,7 @@ async function ensurePageLoaded(pageName) {
     const loaders = {
       dashboard: loadDashboard, projects: loadProjects, dependencies: loadDependencies,
       requirements: loadRequirementsPage, parameters: loadParametersPage, users: loadAuthorizedUsersPage, admin: loadAdmin,
+      languages: loadProgrammingLanguages,
       visibility: loadVisibilityPage, 'visibility-admin': loadAdminVisibilityPage,
     };
     state.loading[pageName] = loaders[pageName]().finally(() => { delete state.loading[pageName]; });

@@ -27,11 +27,37 @@ class ScanRun(RadarModel):
     published = fields.BooleanField(default=False, index=True)
 
 
+class ProgrammingLanguage(RadarModel):
+    id = fields.IntField(primary_key=True)
+    code = fields.CharField(max_length=100, unique=True)
+    name = fields.CharField(max_length=100, unique=True)
+    enabled = fields.BooleanField(default=False, index=True)
+    oldest_current_version = fields.CharField(max_length=50, null=True)
+
+    class Meta:
+        table = 'programming_language'
+
+
+class ProgrammingFramework(RadarModel):
+    id = fields.IntField(primary_key=True)
+    code = fields.CharField(max_length=100, unique=True)
+    name = fields.CharField(max_length=100)
+    language = fields.ForeignKeyField(
+        'models.ProgrammingLanguage', related_name='frameworks', on_delete=fields.CASCADE
+    )
+    dependency_names = fields.JSONField(default=list)
+    enabled = fields.BooleanField(default=True, index=True)
+
+    class Meta:
+        table = 'programming_framework'
+
+
 class ProjectSnapshot(RadarModel):
     id = fields.IntField(primary_key=True)
     scan = fields.ForeignKeyField('models.ScanRun', related_name='projects', on_delete=fields.CASCADE)
     gitlab_id = fields.BigIntField(index=True)
     revision = fields.CharField(max_length=128, null=True, index=True)
+    analysis_fingerprint = fields.CharField(max_length=64, default='', db_default='', index=True)
     payload = fields.JSONField()
     collected = fields.BooleanField(default=False)
     analyzed = fields.BooleanField(default=False)
@@ -42,6 +68,24 @@ class ProjectSnapshot(RadarModel):
         unique_together = (('scan', 'gitlab_id'),)
 
 
+class ProjectSnapshotLanguage(RadarModel):
+    id = fields.IntField(primary_key=True)
+    project = fields.ForeignKeyField(
+        'models.ProjectSnapshot', related_name='languages', on_delete=fields.CASCADE
+    )
+    language = fields.ForeignKeyField(
+        'models.ProgrammingLanguage', related_name='project_snapshots', on_delete=fields.RESTRICT
+    )
+    percentage = fields.DecimalField(max_digits=7, decimal_places=4)
+    analysis_status = fields.CharField(max_length=20, default='pending', index=True)
+    analyzer_version = fields.CharField(max_length=50, null=True)
+    error = fields.TextField(null=True)
+
+    class Meta:
+        table = 'project_snapshot_language'
+        unique_together = (('project', 'language'),)
+
+
 class ProjectFile(RadarModel):
     id = fields.IntField(primary_key=True)
     project = fields.ForeignKeyField('models.ProjectSnapshot', related_name='files', on_delete=fields.CASCADE)
@@ -50,6 +94,33 @@ class ProjectFile(RadarModel):
 
     class Meta:
         unique_together = (('project', 'path'),)
+
+
+class ProjectFileUsage(RadarModel):
+    id = fields.IntField(primary_key=True)
+    file = fields.ForeignKeyField('models.ProjectFile', related_name='usages', on_delete=fields.CASCADE)
+    project_language = fields.ForeignKeyField(
+        'models.ProjectSnapshotLanguage', related_name='file_usages', null=True, on_delete=fields.CASCADE
+    )
+    analyzer_key = fields.CharField(max_length=100)
+    role = fields.CharField(max_length=30)
+
+    class Meta:
+        table = 'project_file_usage'
+        unique_together = (('file', 'analyzer_key', 'role', 'project_language'),)
+
+
+class ProjectModule(RadarModel):
+    id = fields.IntField(primary_key=True)
+    project_language = fields.ForeignKeyField(
+        'models.ProjectSnapshotLanguage', related_name='modules', on_delete=fields.CASCADE
+    )
+    path = fields.CharField(max_length=1000)
+    payload = fields.JSONField()
+
+    class Meta:
+        table = 'project_module'
+        unique_together = (('project_language', 'path'),)
 
 
 class WebSocketTicket(RadarModel):
@@ -148,10 +219,23 @@ class CompanyRequirement(RadarModel):
         on_delete=fields.RESTRICT,
     )
     description = fields.TextField(default='')
-    language = fields.CharField(max_length=50, null=True, index=True)
     condition = fields.JSONField()
     enabled = fields.BooleanField(default=True, index=True)
     sort_order = fields.IntField(default=0)
+
+
+class CompanyRequirementLanguage(RadarModel):
+    id = fields.IntField(primary_key=True)
+    requirement = fields.ForeignKeyField(
+        'models.CompanyRequirement', related_name='language_links', on_delete=fields.CASCADE
+    )
+    language = fields.ForeignKeyField(
+        'models.ProgrammingLanguage', related_name='requirement_links', on_delete=fields.RESTRICT
+    )
+
+    class Meta:
+        table = 'company_requirement_language'
+        unique_together = (('requirement', 'language'),)
 
 
 class ApplicationParameter(RadarModel):
@@ -163,6 +247,46 @@ class ApplicationParameter(RadarModel):
     min_value = fields.IntField(null=True)
     max_value = fields.IntField(null=True)
     sort_order = fields.IntField(default=0)
+    language = fields.ForeignKeyField(
+        'models.ProgrammingLanguage', related_name='application_parameters', null=True, on_delete=fields.RESTRICT
+    )
+
+
+class PackageManagerCatalog(RadarModel):
+    id = fields.IntField(primary_key=True)
+    code = fields.CharField(max_length=100, unique=True)
+    name = fields.CharField(max_length=100)
+
+    class Meta:
+        table = 'package_manager'
+
+
+class LanguagePackageManager(RadarModel):
+    id = fields.IntField(primary_key=True)
+    language = fields.ForeignKeyField(
+        'models.ProgrammingLanguage', related_name='package_manager_links', on_delete=fields.CASCADE
+    )
+    package_manager = fields.ForeignKeyField(
+        'models.PackageManagerCatalog', related_name='language_links', on_delete=fields.CASCADE
+    )
+
+    class Meta:
+        table = 'language_package_manager'
+        unique_together = (('language', 'package_manager'),)
+
+
+class ModulePackageManager(RadarModel):
+    id = fields.IntField(primary_key=True)
+    module = fields.ForeignKeyField(
+        'models.ProjectModule', related_name='package_manager_links', on_delete=fields.CASCADE
+    )
+    package_manager = fields.ForeignKeyField(
+        'models.PackageManagerCatalog', related_name='module_links', on_delete=fields.RESTRICT
+    )
+
+    class Meta:
+        table = 'module_package_manager'
+        unique_together = (('module', 'package_manager'),)
 
 
 class DataFixture(RadarModel):

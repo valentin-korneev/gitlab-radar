@@ -3,7 +3,11 @@ from tortoise.exceptions import IntegrityError
 
 from gitlab_radar.auth import management_access_dependency
 from gitlab_radar.database.models import CompanyRequirement as CompanyRequirementModel
-from gitlab_radar.database.models import CompanyRequirementGroup
+from gitlab_radar.database.models import (
+    CompanyRequirementGroup,
+    CompanyRequirementLanguage,
+    ProgrammingLanguage,
+)
 from gitlab_radar.database.repository import invalidate_project_cache
 from gitlab_radar.schemas.company_requirement import (
     CompanyRequirement,
@@ -15,7 +19,6 @@ from gitlab_radar.schemas.company_requirement import (
     RequirementCatalog,
     RequirementOption,
 )
-from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.company_rules import (
     load_company_requirements,
     serialize_company_requirement,
@@ -53,12 +56,13 @@ async def get_requirements() -> list[CompanyRequirement]:
 
 @router.get('/catalog', dependencies=[Depends(management_access_dependency)])
 async def get_requirement_catalog() -> RequirementCatalog:
-    parameters = await application_parameter_values()
-    python_version = parameters.get('python_oldest_current_version')
+    python_language = await ProgrammingLanguage.get_or_none(code='python')
+    python_version = python_language.oldest_current_version if python_language is not None else None
+    languages = await ProgrammingLanguage.all().order_by('name')
     return RequirementCatalog(
         languages=[
             RequirementOption(value='', title='Без привязки к языку'),
-            RequirementOption(value='python', title='Python'),
+            *(RequirementOption(value=item.code, title=item.name) for item in languages),
         ],
         sources=[
             RequirementOption(
@@ -77,12 +81,15 @@ async def get_requirement_catalog() -> RequirementCatalog:
 async def create_requirement(payload: CompanyRequirementCreate) -> CompanyRequirement:
     await _ensure_group_exists(payload.group_id)
     await _ensure_group_has_space(payload.group_id)
+    await _ensure_language_exists(payload.language)
     try:
-        row = await CompanyRequirementModel.create(**payload.model_dump(mode='json'))
+        values = payload.model_dump(mode='json', exclude={'language'})
+        row = await CompanyRequirementModel.create(**values)
+        await _set_requirement_language(row.id, payload.language)
     except IntegrityError as error:
         raise HTTPException(status_code=409, detail='Требование с таким кодом уже существует') from error
     _invalidate_requirement_caches()
-    return _serialize(row)
+    return serialize_company_requirement(row, payload.language)
 
 
 @router.put('/order', dependencies=[Depends(management_access_dependency)])
@@ -104,16 +111,18 @@ async def update_requirement(requirement_id: int, payload: CompanyRequirementUpd
     if row is None:
         raise HTTPException(status_code=404, detail='Требование не найдено')
     await _ensure_group_exists(payload.group_id)
+    await _ensure_language_exists(payload.language)
     if row.group_id != payload.group_id:
         await _ensure_group_has_space(payload.group_id)
-    for field, value in payload.model_dump(mode='json').items():
+    for field, value in payload.model_dump(mode='json', exclude={'language'}).items():
         setattr(row, field, value)
     try:
         await row.save()
+        await _set_requirement_language(row.id, payload.language)
     except IntegrityError as error:
         raise HTTPException(status_code=409, detail='Требование с таким кодом уже существует') from error
     _invalidate_requirement_caches()
-    return _serialize(row)
+    return serialize_company_requirement(row, payload.language)
 
 
 @router.patch('/{requirement_id}/enabled', dependencies=[Depends(management_access_dependency)])
@@ -127,7 +136,7 @@ async def set_requirement_enabled(
     row.enabled = payload.enabled
     await row.save(update_fields=['enabled'])
     _invalidate_requirement_caches()
-    return _serialize(row)
+    return await _serialize(row)
 
 
 @router.patch('/{requirement_id}/group', dependencies=[Depends(management_access_dependency)])
@@ -142,7 +151,7 @@ async def move_requirement(requirement_id: int, payload: CompanyRequirementMove)
         row.sort_order = await CompanyRequirementModel.filter(group_id=payload.group_id).count() * 10 + 10
         await row.save(update_fields=['group_id', 'sort_order'])
         _invalidate_requirement_caches()
-    return _serialize(row)
+    return await _serialize(row)
 
 
 @router.delete(
@@ -158,8 +167,24 @@ async def delete_requirement(requirement_id: int) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-def _serialize(row: CompanyRequirementModel) -> CompanyRequirement:
-    return serialize_company_requirement(row)
+async def _serialize(row: CompanyRequirementModel) -> CompanyRequirement:
+    link = await CompanyRequirementLanguage.filter(requirement_id=row.id).prefetch_related('language').first()
+    return serialize_company_requirement(row, link.language.code if link is not None else None)
+
+
+async def _set_requirement_language(requirement_id: int, code: str | None) -> None:
+    await CompanyRequirementLanguage.filter(requirement_id=requirement_id).delete()
+    if code is None:
+        return
+    language = await ProgrammingLanguage.get_or_none(code=code)
+    if language is None:
+        raise HTTPException(status_code=422, detail='Выбранный язык программирования не существует')
+    await CompanyRequirementLanguage.create(requirement_id=requirement_id, language=language)
+
+
+async def _ensure_language_exists(code: str | None) -> None:
+    if code is not None and not await ProgrammingLanguage.filter(code=code).exists():
+        raise HTTPException(status_code=422, detail='Выбранный язык программирования не существует')
 
 
 def _invalidate_requirement_caches() -> None:

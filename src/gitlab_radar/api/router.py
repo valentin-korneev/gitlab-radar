@@ -8,6 +8,7 @@ from gitlab_radar.api.routers.company_requirement_group import router as company
 from gitlab_radar.api.routers.dashboard import router as dashboard_router
 from gitlab_radar.api.routers.dependency import router as dependency_router
 from gitlab_radar.api.routers.project import router as project_router
+from gitlab_radar.api.routers.programming_language import router as programming_language_router
 from gitlab_radar.api.routers.scan import router as scan_router
 from gitlab_radar.api.routers.visibility import admin_router as admin_visibility_router
 from gitlab_radar.api.routers.visibility import router as visibility_router
@@ -22,5 +23,6 @@ router.include_router(dashboard_router, prefix='/dashboard')
 router.include_router(dependency_router, prefix='/dependency')
 router.include_router(scan_router, prefix='/scan')
 router.include_router(project_router, prefix='/project')
+router.include_router(programming_language_router, prefix='/programming-language')
 router.include_router(visibility_router, prefix='/visibility')
 router.include_router(admin_visibility_router, prefix='/visibility/admin')

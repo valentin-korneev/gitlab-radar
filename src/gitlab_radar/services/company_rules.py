@@ -5,6 +5,7 @@ from urllib.parse import urlsplit
 from packaging.version import InvalidVersion, Version
 
 from gitlab_radar.database.models import CompanyRequirement as CompanyRequirementModel
+from gitlab_radar.database.models import CompanyRequirementLanguage
 from gitlab_radar.schemas.company_requirement import (
     CompanyRequirement,
     RequirementCondition,
@@ -39,10 +40,19 @@ async def load_company_requirements(*, enabled: bool | None = True) -> list[Comp
     if enabled is not None:
         query = query.filter(enabled=enabled)
     rows = await query.order_by('sort_order', 'id')
-    return [serialize_company_requirement(row) for row in rows]
+    language_rows = await CompanyRequirementLanguage.filter(
+        requirement_id__in=[row.id for row in rows],
+    ).values('requirement_id', 'language__code')
+    language_by_requirement = {
+        int(item['requirement_id']): str(item['language__code']) for item in language_rows
+    }
+    return [serialize_company_requirement(row, language_by_requirement.get(row.id)) for row in rows]
 
 
-def serialize_company_requirement(row: CompanyRequirementModel) -> CompanyRequirement:
+def serialize_company_requirement(
+    row: CompanyRequirementModel,
+    language: str | None = None,
+) -> CompanyRequirement:
     return CompanyRequirement.model_validate(
         {
             'id': row.id,
@@ -50,7 +60,7 @@ def serialize_company_requirement(row: CompanyRequirementModel) -> CompanyRequir
             'title': row.title,
             'group_id': row.group_id,
             'description': row.description,
-            'language': row.language,
+            'language': language,
             'condition': row.condition,
             'enabled': row.enabled,
             'sort_order': row.sort_order,
@@ -63,6 +73,9 @@ def subproject_rule_results(
     requirements: list[CompanyRequirement],
     project: Project | None = None,
     application_parameters: dict[str, str] | None = None,
+    language_versions: dict[str, str] | None = None,
+    *,
+    include_global: bool = True,
 ) -> dict[str, bool]:
     dependencies = {
         dependency.name.lower()
@@ -72,8 +85,13 @@ def subproject_rule_results(
         )
     }
     python_version = _subproject_python_version(subproject)
+    context_parameters = dict(application_parameters or {})
+    oldest_current_version = (language_versions or {}).get(subproject.language)
+    if oldest_current_version:
+        context_parameters['oldest_current_version'] = oldest_current_version
+        context_parameters[f'{subproject.language}_oldest_current_version'] = oldest_current_version
     context = RuleContext(
-        application_parameters=application_parameters or {},
+        application_parameters=context_parameters,
         python_versions={str(python_version)} if python_version else set(),
         package_manager={subproject.package_manager.value.lower()},
         dependencies=dependencies,
@@ -92,7 +110,9 @@ def subproject_rule_results(
         },
     )
     applicable_requirements = [
-        requirement for requirement in requirements if requirement.language in {None, subproject.language}
+        requirement
+        for requirement in requirements
+        if requirement.language == subproject.language or (include_global and requirement.language is None)
     ]
     return {
         requirement.code: _matches_requirement(requirement, context) for requirement in applicable_requirements
@@ -116,6 +136,12 @@ def _matches_group(group: RequirementConditionGroup, context: RuleContext) -> bo
 
 
 def _matches_condition(condition: RequirementCondition, context: RuleContext) -> bool:
+    missing_parameter = any(
+        value.startswith('$') and value.removeprefix('$') not in context.application_parameters
+        for value in condition.values
+    )
+    if missing_parameter and all(value.startswith('$') for value in condition.values):
+        return True
     candidates = _source_values(condition.source, context)
     if not candidates:
         return condition.empty_result
@@ -126,7 +152,7 @@ def _matches_condition(condition: RequirementCondition, context: RuleContext) ->
         if (resolved := _resolve_condition_value(value, context.application_parameters)).strip()
     }
     if not values:
-        return False
+        return missing_parameter
     if condition.operator in {RequirementOperator.GREATER_THAN, RequirementOperator.GREATER_THAN_OR_EQUAL}:
         return _has_version_at_least(candidates, values)
     simple_results = {
@@ -243,20 +269,50 @@ def apply_company_compliance(
     project: Project,
     requirements: list[CompanyRequirement],
     application_parameters: dict[str, str] | None = None,
+    language_versions: dict[str, str] | None = None,
 ) -> None:
     subproject_results: list[dict[str, bool]] = []
+    analyzed_languages: set[str] = set()
     for subproject in project.subprojects:
-        results = subproject_rule_results(subproject, requirements, project, application_parameters)
+        results = subproject_rule_results(
+            subproject,
+            requirements,
+            project,
+            application_parameters,
+            language_versions,
+        )
         subproject.company_rule_results = results
         subproject.company_compliance_percentage = _compliance_percentage(results)
         subproject_results.append(results)
-    project.company_rule_results = _project_rule_results(subproject_results, requirements)
-    project.company_compliance_percentage = (
-        round(
-            sum(subproject.company_compliance_percentage for subproject in project.subprojects)
-            / len(project.subprojects),
-            1,
+        analyzed_languages.add(subproject.language)
+    for language in project.languages:
+        if language.code in analyzed_languages:
+            continue
+        context = ProjectSubproject(
+            path='.',
+            language=language.code,
+            package_manager='unknown',
         )
-        if project.subprojects
-        else 0.0
-    )
+        subproject_results.append(
+            subproject_rule_results(
+                context,
+                requirements,
+                project,
+                application_parameters,
+                language_versions,
+                include_global=False,
+            ),
+        )
+    if not project.subprojects:
+        global_context = ProjectSubproject(path='.', language='', package_manager='unknown')
+        subproject_results.append(
+            subproject_rule_results(
+                global_context,
+                requirements,
+                project,
+                application_parameters,
+                language_versions,
+            ),
+        )
+    project.company_rule_results = _project_rule_results(subproject_results, requirements)
+    project.company_compliance_percentage = _compliance_percentage(project.company_rule_results)

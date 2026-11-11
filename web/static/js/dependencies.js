@@ -19,7 +19,7 @@ function renderDependencies() {
     const identity = element('span');
     const levels = visible.levels.map((level) => LEVEL_TITLES[level]).join(', ');
     const metadata = state.dependencySource === 'python'
-      ? `${levels} · вариантов версий: ${visible.versions.length}`
+      ? `${visible.languages.join(', ') || 'язык не указан'} · ${levels} · вариантов версий: ${visible.versions.length}`
       : `вариантов версий: ${visible.versions.length}`;
     identity.append(element('strong', '', dependency.name), element('small', '', metadata));
     row.append(identity, element('b', '', visible.projectsCount));
@@ -36,6 +36,8 @@ function clearDependencySelection() {
 function resetDependencyPage() {
   state.dependencyQuery = '';
   state.showTransitive = false;
+  state.dependencyLanguages.clear();
+  state.dependencyLanguagesInitialized = false;
   document.querySelector('#dependency-search').value = '';
   document.querySelector('#show-transitive').checked = false;
   clearDependencySelection();
@@ -45,7 +47,8 @@ function visibleDependencyData(dependency) {
     .map((version) => ({
       ...version,
       projects: version.projects.filter((project) => (
-        state.dependencySource !== 'python' || state.showTransitive || project.level !== 'transitive'
+        (state.dependencySource !== 'python' || state.showTransitive || project.level !== 'transitive')
+        && (state.dependencySource !== 'python' || state.dependencyLanguages.has(project.language))
       )),
     }))
     .filter((version) => version.projects.length);
@@ -54,6 +57,7 @@ function visibleDependencyData(dependency) {
   return {
     versions,
     levels: dependency.levels.filter((level) => levels.includes(level)),
+    languages: [...new Set(projects.map((project) => project.language).filter(Boolean))].sort(),
     projectsCount: new Set(projects.map((project) => project.id)).size,
   };
 }
@@ -63,6 +67,7 @@ function renderDependencyDetail(dependency) {
   const visible = visibleDependencyData(dependency);
   detail.append(element('h3', '', dependency.name));
   if (state.dependencySource === 'python') appendDetail(detail, 'Типы использования', visible.levels.map((level) => LEVEL_TITLES[level]).join(', '));
+  if (state.dependencySource === 'python') appendDetail(detail, 'Языки', visible.languages.join(', '));
   appendDetail(detail, 'Используется в проектах', String(visible.projectsCount));
   const versions = element('div', 'dependency-versions');
   visible.versions.forEach((version) => {
@@ -76,7 +81,7 @@ function renderDependencyDetail(dependency) {
       link.rel = 'noreferrer';
       link.append(
         element('strong', '', project.path_with_namespace),
-        element('small', '', `${project.subproject_path === '.' ? 'Корень репозитория' : project.subproject_path}${state.dependencySource === 'python' ? ` · ${LEVEL_TITLES[project.level]}` : ''}`),
+        element('small', '', `${project.subproject_path === '.' ? 'Корень репозитория' : project.subproject_path}${state.dependencySource === 'python' ? ` · ${project.language || 'язык не указан'} · ${LEVEL_TITLES[project.level]}` : ''}`),
       );
       projects.append(link);
     });
@@ -96,10 +101,39 @@ async function loadDependencies() {
     state.dependencyCache[state.dependencySource] = await api(`${API.dependencies}?source=${state.dependencySource}`);
   }
   state.dependencies = state.dependencyCache[state.dependencySource];
+  const languages = [...new Set(state.dependencies.flatMap((dependency) => dependency.languages || []))].sort();
+  if (!state.dependencyLanguagesInitialized) {
+    state.dependencyLanguages = new Set(languages);
+    state.dependencyLanguagesInitialized = true;
+  } else {
+    state.dependencyLanguages = new Set(
+      [...state.dependencyLanguages].filter((language) => languages.includes(language)),
+    );
+  }
+  renderDependencyLanguageOptions(languages);
   state.loaded.dependencies = true;
   renderDependencies();
   const selected = state.dependencies.find((dependency) => dependency.name === state.selectedDependency);
   if (selected) renderDependencyDetail(selected);
+}
+function renderDependencyLanguageOptions(languages) {
+  const options = document.querySelector('#dependency-language-options');
+  options.replaceChildren(...languages.map((language) => {
+    const label = element('label', 'requirement-language-option');
+    const input = element('input');
+    input.type = 'checkbox';
+    input.checked = state.dependencyLanguages.has(language);
+    input.addEventListener('change', () => {
+      if (input.checked) state.dependencyLanguages.add(language);
+      else state.dependencyLanguages.delete(language);
+      renderDependencies();
+      const selected = state.dependencies.find((dependency) => dependency.name === state.selectedDependency);
+      if (selected) renderDependencyDetail(selected);
+    });
+    label.append(input, element('span', '', language));
+    return label;
+  }));
+  if (!languages.length) options.append(element('small', 'muted', 'Нет языков'));
 }
 async function openDependency(name, source = 'python') {
   state.dependencySource = source;

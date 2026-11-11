@@ -9,6 +9,21 @@ from gitlab_radar.schemas.dependency import Dependency, DependencyGroup
 from gitlab_radar.schemas.technology import PackageManager
 
 
+class ProjectLanguage(BaseModel):
+    code: str
+    name: str
+    percentage: float
+    analysis_status: str = 'pending'
+    analyzer_version: str | None = None
+    error: str | None = None
+
+
+class ProjectFramework(BaseModel):
+    code: str
+    name: str
+    language: str
+
+
 class ProjectSubproject(BaseModel):
     path: str
     language: str = 'python'
@@ -65,6 +80,9 @@ class Project(BaseModel):
     web_url: str
     last_activity_at: datetime | None
     package_manager: PackageManager | None = None
+    languages: list[ProjectLanguage] = Field(default_factory=list)
+    frameworks: list[ProjectFramework] = Field(default_factory=list)
+    is_empty: bool = False
     subprojects: list[ProjectSubproject] = Field(default_factory=list)
     has_docker: bool = False
     has_gitlab_ci: bool = False

@@ -16,7 +16,7 @@ from gitlab_radar.schemas.dependency import (
 from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.services.project import load_projects
 
-UsageEntry = tuple[Project, str, Dependency, DependencyLevel]
+UsageEntry = tuple[Project, str, Dependency, DependencyLevel, str | None]
 
 
 @dataclass(slots=True)
@@ -63,7 +63,7 @@ def _python_entries(projects: list[Project]) -> Iterable[UsageEntry]:
     for project in projects:
         for subproject in project.subprojects:
             for dependency, level in subproject_dependency_entries(subproject):
-                yield project, subproject.path, dependency, level
+                yield project, subproject.path, dependency, level, subproject.language
 
 
 def _docker_entries(projects: list[Project]) -> Iterable[UsageEntry]:
@@ -71,32 +71,32 @@ def _docker_entries(projects: list[Project]) -> Iterable[UsageEntry]:
         for image in project.container_images:
             name = f'{image.registry}/{image.image}'
             path = image.file_path.rpartition('/')[0] or '.'
-            yield project, path, Dependency(name=name, version=image.version), DependencyLevel.DIRECT
+            yield project, path, Dependency(name=name, version=image.version), DependencyLevel.DIRECT, None
 
 
 def _ci_entries(projects: list[Project]) -> Iterable[UsageEntry]:
     for project in projects:
         for component in project.gitlab_ci_components:
-            yield project, '.', Dependency(name=component.name, version=component.version), DependencyLevel.DIRECT
+            yield project, '.', Dependency(name=component.name, version=component.version), DependencyLevel.DIRECT, None
 
 
 def _webhook_entries(projects: list[Project]) -> Iterable[UsageEntry]:
     for project in projects:
         for hook in project.webhooks:
-            yield project, '.', Dependency(name=hook.url), DependencyLevel.DIRECT
+            yield project, '.', Dependency(name=hook.url), DependencyLevel.DIRECT, None
 
 
 def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
     usage: dict[
         str,
-        dict[str | None, dict[int, DependencyProject]],
+        dict[str | None, dict[tuple[int, str, str | None], DependencyProject]],
     ] = defaultdict(lambda: defaultdict(dict))
     priorities = {
         DependencyLevel.DIRECT: 0,
         DependencyLevel.OPTIONAL: 1,
         DependencyLevel.TRANSITIVE: 2,
     }
-    for project, path, dependency, level in entries:
+    for project, path, dependency, level, language in entries:
         reference = DependencyProject(
             id=project.id,
             name=project.name,
@@ -104,11 +104,13 @@ def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
             subproject_path=path,
             web_url=project.web_url,
             level=level,
+            language=language,
         )
         projects_by_version = usage[dependency.name][dependency.version]
-        existing = projects_by_version.get(project.id)
+        reference_key = (project.id, path, language)
+        existing = projects_by_version.get(reference_key)
         if existing is None or priorities[level] < priorities[existing.level]:
-            projects_by_version[project.id] = reference
+            projects_by_version[reference_key] = reference
 
     catalog: list[DependencyUsage] = []
     for name, versions in usage.items():
@@ -120,6 +122,7 @@ def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
                 level=levels[0],
                 levels=levels,
                 projects_count=len({reference.id for reference in references}),
+                languages=sorted({reference.language for reference in references if reference.language}),
                 versions=[
                     DependencyVersionUsage(
                         version=version,
@@ -140,7 +143,7 @@ def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
 
 
 def _version_sort_key(
-    item: tuple[str | None, dict[int, DependencyProject]],
+    item: tuple[str | None, dict[tuple[int, str, str | None], DependencyProject]],
 ) -> tuple[bool, Version, str]:
     value = item[0]
     if value is None:

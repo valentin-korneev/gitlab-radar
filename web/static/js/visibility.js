@@ -8,16 +8,35 @@ function visibilityRuleRow(rule = { action: 'include', target: 'path', pattern: 
   target.className = 'visibility-rule-target';
   target.innerHTML = '<option value="path">Путь проекта</option><option value="language">Язык</option>';
   target.value = rule.target || 'path';
-  const pattern = document.createElement('input');
-  pattern.className = 'visibility-rule-pattern';
-  pattern.required = true;
-  pattern.maxLength = 500;
-  pattern.value = rule.pattern;
-  const updatePlaceholder = () => {
-    pattern.placeholder = target.value === 'language' ? 'python' : 'mlops/*';
+  const createPatternControl = (value = '') => {
+    if (target.value === 'language') {
+      const select = document.createElement('select');
+      select.className = 'visibility-rule-pattern';
+      select.required = true;
+      select.append(new Option('Выберите язык', ''));
+      state.programmingLanguages.forEach((language) => {
+        select.add(new Option(language.name, language.code));
+      });
+      if (value && !state.programmingLanguages.some((language) => language.code === value)) {
+        select.add(new Option(value, value));
+      }
+      select.value = value;
+      return select;
+    }
+    const input = document.createElement('input');
+    input.className = 'visibility-rule-pattern';
+    input.required = true;
+    input.maxLength = 500;
+    input.placeholder = 'mlops/*';
+    input.value = value;
+    return input;
   };
-  target.addEventListener('change', updatePlaceholder);
-  updatePlaceholder();
+  let pattern = createPatternControl(rule.pattern);
+  target.addEventListener('change', () => {
+    const replacement = createPatternControl();
+    pattern.replaceWith(replacement);
+    pattern = replacement;
+  });
   const remove = iconButton('trash', 'danger-button', 'Удалить правило');
   remove.addEventListener('click', () => row.remove());
   row.append(action, target, pattern, remove);
@@ -163,6 +182,7 @@ async function reloadVisibilityGroups() {
 }
 
 async function loadVisibilityPage() {
+  await ensureVisibilityProgrammingLanguages();
   await reloadVisibilityGroups();
 }
 
@@ -180,6 +200,7 @@ async function reloadVisibilityPolicies() {
 
 async function openAdminUserVisibility(preferredUsername) {
   state.visibilityAdminUser = preferredUsername;
+  await ensureVisibilityProgrammingLanguages();
   state.visibilityPolicies = await api(`${API.visibilityAdmin}policy`);
   document.querySelector('#visibility-user-dialog-name').textContent = preferredUsername;
   await renderAdminUserVisibility(preferredUsername);
@@ -241,9 +262,16 @@ async function renderAdminUserVisibility(preferredUsername) {
 }
 
 async function loadAdminVisibilityPage() {
+  await ensureVisibilityProgrammingLanguages();
   state.visibilityPolicies = await api(`${API.visibilityAdmin}policy`);
   renderVisibilityPolicies();
   state.loaded['visibility-admin'] = true;
+}
+
+async function ensureVisibilityProgrammingLanguages() {
+  if (!state.programmingLanguages.length) {
+    state.programmingLanguages = await api(API.programmingLanguages);
+  }
 }
 
 function invalidateVisibilityData() {

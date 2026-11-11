@@ -2,30 +2,26 @@ import logging
 from pathlib import PurePosixPath
 
 from gitlab_radar.config import settings
-from gitlab_radar.schemas.project import Project, ProjectSubproject
+from gitlab_radar.schemas.project import Project, ProjectLanguage, ProjectSubproject
 from gitlab_radar.schemas.technology import PackageManager
+from gitlab_radar.services.analysis import analyzer_for
+from gitlab_radar.services.analysis.registry import GITLAB_CI_FILENAMES
 from gitlab_radar.services.container_parser import parse_container_images
-from gitlab_radar.services.dependency_parser import parse_pyproject_document
 from gitlab_radar.services.gitlab_ci import parse_gitlab_components
-from gitlab_radar.services.package_manager import (
-    PYPROJECT_FILENAME,
-    detect_package_manager,
-    is_container_filename,
-    is_package_discovery_filename,
-    is_subproject_filename,
-)
-from gitlab_radar.services.project_collection import GITLAB_CI_FILENAMES
-from gitlab_radar.services.project_metadata import parse_project_metadata
+from gitlab_radar.services.package_manager import is_container_filename
 
 logger = logging.getLogger(__name__)
 
 
 def analyze_project(project: Project, files: dict[str, str], revision: str | None) -> Project:
     contents = {path: content.encode() for path, content in files.items()}
-    file_sets = _build_file_sets(contents)
-    ci_files = {path: content for path, content in contents.items() if PurePosixPath(path).name in GITLAB_CI_FILENAMES}
+    ci_files = {
+        path: content for path, content in contents.items() if PurePosixPath(path).name in GITLAB_CI_FILENAMES
+    }
     project.revision = revision
-    project.subprojects = [_build_subproject(path, file_set) for path, file_set in file_sets]
+    project.subprojects = []
+    for language in project.languages:
+        _analyze_language(project, language, contents)
     project.package_manager = _project_package_manager(project.subprojects)
     project.has_docker = any(is_container_filename(PurePosixPath(path).name) for path in contents)
     project.has_gitlab_ci = bool(ci_files)
@@ -34,56 +30,46 @@ def analyze_project(project: Project, files: dict[str, str], revision: str | Non
     project.package_registries = sorted(
         {registry for item in project.subprojects for registry in item.package_registries}
     )
-    project.scan_error = None
+    language_errors = [language.error for language in project.languages if language.error]
+    project.scan_error = '; '.join(language_errors) if language_errors else None
     logger.info(
-        'Проект %s проанализирован: подпроектов %d, файлов %d',
+        'Проект %s проанализирован: языков %d, модулей %d, файлов %d',
         project.path_with_namespace,
+        len(project.languages),
         len(project.subprojects),
         len(contents),
     )
     return project
 
 
-def _build_file_sets(files: dict[str, bytes]) -> list[tuple[str, dict[str, bytes]]]:
-    subproject_files = {
-        path: content for path, content in files.items() if is_subproject_filename(PurePosixPath(path).name)
-    }
-    directories = {
-        _parent_directory(path) for path in subproject_files if is_package_discovery_filename(PurePosixPath(path).name)
-    }
-    if not directories:
-        return [('.', subproject_files)]
-    return [
-        (
-            directory or '.',
-            {
-                path: content
-                for path, content in sorted(subproject_files.items())
-                if _parent_directory(path) == directory
-            },
+def _analyze_language(project: Project, language: ProjectLanguage, files: dict[str, bytes]) -> None:
+    if language.analysis_status == 'disabled':
+        language.analyzer_version = None
+        language.error = None
+        return
+    analyzer = analyzer_for(language.code)
+    if analyzer is None:
+        language.analysis_status = 'unsupported'
+        language.analyzer_version = None
+        language.error = None
+        return
+    selected_paths = {selection.path for selection in analyzer.select_files(list(files))}
+    selected_files = {path: content for path, content in files.items() if path in selected_paths}
+    try:
+        project.subprojects.extend(analyzer.analyze(project, selected_files))
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        language.analysis_status = 'failed'
+        language.analyzer_version = analyzer.version
+        language.error = str(error)
+        logger.exception(
+            'Не удалось выполнить анализ языка %s в проекте %s',
+            language.name,
+            project.path_with_namespace,
         )
-        for directory in sorted(directories)
-    ]
-
-
-def _build_subproject(path: str, files: dict[str, bytes]) -> ProjectSubproject:
-    files_by_name = {PurePosixPath(file_path).name: content for file_path, content in files.items()}
-    pyproject = parse_pyproject_document(files_by_name.get(PYPROJECT_FILENAME))
-    metadata = parse_project_metadata(files_by_name, pyproject)
-    return ProjectSubproject(
-        path=path,
-        package_manager=detect_package_manager(pyproject, files_by_name),
-        python_version=metadata.python_version,
-        python_constraint=metadata.python_constraint,
-        python_version_source=metadata.python_version_source,
-        dependencies=metadata.dependencies,
-        optional_dependencies=metadata.optional_dependencies,
-        transitive_dependencies=metadata.transitive_dependencies,
-        configured_tools=metadata.configured_tools,
-        package_registries=metadata.package_registries,
-        container_images=parse_container_images(files),
-        has_docker=any(is_container_filename(name) for name in files_by_name),
-    )
+        return
+    language.analysis_status = 'analyzed'
+    language.analyzer_version = analyzer.version
+    language.error = None
 
 
 def _project_package_manager(subprojects: list[ProjectSubproject]) -> PackageManager:
@@ -97,8 +83,3 @@ def _project_package_manager(subprojects: list[ProjectSubproject]) -> PackageMan
     if not managers:
         return PackageManager.UNKNOWN
     return managers.pop() if len(managers) == 1 else PackageManager.MIXED
-
-
-def _parent_directory(path: str) -> str:
-    parent = str(PurePosixPath(path).parent)
-    return '' if parent == '.' else parent

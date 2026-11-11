@@ -3,6 +3,7 @@ import logging
 from gitlab.const import AccessLevel
 
 from gitlab_radar.clients.gitlab import gitlab_client
+from gitlab_radar.config import settings
 from gitlab_radar.database.repository import load_projects as load_projects_from_database
 from gitlab_radar.schemas.project import Project
 from gitlab_radar.services.visibility import filter_projects_for_user
@@ -11,12 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 def fetch_projects() -> tuple[list[Project], int]:
-    logger.info('Запрос доступных Python-проектов из GitLab')
+    logger.info('Запрос всех доступных проектов из GitLab')
     common_parameters = {
-        'with_programming_language': 'python',
         'active': True,
-        'iterator': True,
-        'per_page': 5,
+        'iterator': settings.gitlab.projects_iterator,
+        'per_page': 25,
     }
     project_queries = (
         {'min_access_level': AccessLevel.REPORTER},

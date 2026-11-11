@@ -23,7 +23,7 @@ function projectView(project) {
   const subprojects = project.subprojects.map((subproject) => subprojectView(project, subproject));
   const root = subprojects.find((subproject) => subproject.isRoot) || null;
   const monorepository = subprojects.length > 1;
-  const fallback = subprojects.length === 0
+  const fallback = subprojects.length === 0 && !project.is_empty && !(project.languages || []).length
     ? subprojectView(project, {
       path: '.', package_manager: project.package_manager, dependencies: [], optional_dependencies: [],
       transitive_dependencies: [],
@@ -46,7 +46,8 @@ function projectMatchesFilters(project) {
     .filter(Boolean)
     .map((version) => `Python ${version}`)
     .join(' ');
-  const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${pythonVersions}`.toLowerCase();
+  const languages = (project.languages || []).map((language) => `${language.name} ${language.code}`).join(' ');
+  const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${pythonVersions} ${languages}`.toLowerCase();
   return (!query || searchable.includes(query))
     && rules.every((rule) => project.company_rule_results?.[rule] === false);
 }
@@ -149,6 +150,15 @@ function renderProjects() {
     row.type = 'button';
     const identity = element('span');
     identity.append(element('strong', '', project.name), element('small', '', projectPathParts(project.path_with_namespace).join(' › ')));
+    const languages = sortedProjectLanguages(project);
+    if (languages.length) {
+      identity.append(element(
+        'small',
+        'project-language-summary',
+        languages.map((language) => `${language.name} ${formatLanguagePercentage(language.percentage)}%`).join(' · '),
+      ));
+    }
+    if (project.is_empty) identity.append(element('small', 'empty-project-status', 'Пустой проект'));
     if (view.monorepository) {
       identity.append(element('small', 'subproject-summary', `Монорепозиторий · подпроектов: ${view.children.length + (view.root ? 1 : 0)}`));
     }
@@ -180,6 +190,46 @@ function appendProjectPath(container, value) {
   const breadcrumb = element('div', 'project-path');
   projectPathParts(value).forEach((part) => breadcrumb.append(element('span', '', part)));
   appendDetail(container, 'Полный путь', breadcrumb);
+}
+function sortedProjectLanguages(project) {
+  return [...(project.languages || [])]
+    .sort((left, right) => right.percentage - left.percentage || left.name.localeCompare(right.name));
+}
+function formatLanguagePercentage(value) {
+  return Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+}
+function appendProjectLanguages(container, project) {
+  const languages = sortedProjectLanguages(project);
+  if (!languages.length) return;
+  const list = element('div', 'project-language-list');
+  languages.forEach((language) => {
+    const row = element('div', 'project-language-row');
+    const track = element('span', 'project-language-track');
+    const value = element('i');
+    value.style.width = `${Math.min(Math.max(language.percentage, 0), 100)}%`;
+    track.append(value);
+    row.append(
+      element('strong', '', language.name),
+      track,
+      element('b', '', `${formatLanguagePercentage(language.percentage)}%`),
+    );
+    list.append(row);
+  });
+  appendDetail(container, 'Языки программирования', list);
+}
+function appendProjectFrameworks(container, project) {
+  if (!project.frameworks?.length) return;
+  const badges = element('div', 'dependency-badges');
+  project.frameworks.forEach((framework) => {
+    const badge = element('span', 'dependency-badge project-framework-badge');
+    badge.append(element('strong', '', framework.name), element('span', '', framework.language));
+    badges.append(badge);
+  });
+  appendDetail(container, 'Фреймворки', badges);
+}
+function appendEmptyProjectStatus(container, project) {
+  if (!project.is_empty) return;
+  appendDetail(container, 'Статус', element('span', 'empty-project-badge', 'Пустой'));
 }
 function packageManagerBadge(value) {
   const badge = element('span', 'status-badge', value || '—');
@@ -332,9 +382,18 @@ function renderProjectDetail(view, subproject) {
   const detail = document.querySelector('#project-detail');
   detail.replaceChildren();
   if (!subproject) {
-    detail.append(element('h3', '', project.name), element('p', 'empty-state', 'Выберите подпроект. Корень репозитория не содержит отдельного проекта.'));
+    const message = project.is_empty
+      ? 'Языки программирования не обнаружены.'
+      : 'Для обнаруженных языков анализаторы не сформировали модули.';
+    detail.append(element('h3', '', project.name), element('p', 'empty-state', message));
     appendProjectPath(detail, project.path_with_namespace);
     appendDetail(detail, 'Основная ветка', project.default_branch);
+    appendEmptyProjectStatus(detail, project);
+    appendProjectLanguages(detail, project);
+    appendProjectFrameworks(detail, project);
+    const compliance = element('p', 'detail-value compliance-value', `${project.company_compliance_percentage || 0}%`);
+    compliance.classList.add(`compliance-${complianceTone(project.company_compliance_percentage || 0, 'project_compliance_thresholds')}`);
+    appendDetail(detail, 'Соответствие правилам компании', compliance);
     appendTechnologyStatuses(detail, project);
     appendRuleViolations(detail, project.company_rule_results);
     appendGitLabComponents(detail, project);
@@ -346,6 +405,9 @@ function renderProjectDetail(view, subproject) {
   appendDetail(detail, 'ID', String(project.id));
   appendProjectPath(detail, subproject.fullPath);
   appendDetail(detail, 'Основная ветка', project.default_branch);
+  appendEmptyProjectStatus(detail, project);
+  appendProjectLanguages(detail, project);
+  appendProjectFrameworks(detail, project);
   appendDetail(detail, 'Пакетный менеджер', packageManagerBadge(subproject.packageManager));
   const normalizedPython = normalizedPythonVersion(subproject.pythonVersion, subproject.pythonConstraint);
   const pythonDetails = [
