@@ -4,7 +4,12 @@ import re
 from pathlib import PurePosixPath
 
 from gitlab_radar.services.analysis.base import FileSelection, LanguageAnalyzer
-from gitlab_radar.services.analysis.languages import JavaAnalyzer, PythonAnalyzer
+from gitlab_radar.services.analysis.languages import (
+    JavaAnalyzer,
+    JavaScriptAnalyzer,
+    PythonAnalyzer,
+    TypeScriptAnalyzer,
+)
 from gitlab_radar.services.package_manager import is_container_filename
 
 GITLAB_CI_FILENAMES = frozenset({'.gitlab-ci.yml', '.gitlab-ci.yaml'})
@@ -20,6 +25,8 @@ LANGUAGE_ANALYZERS: dict[str, LanguageAnalyzer] = {
     for analyzer in (
         PythonAnalyzer(),
         JavaAnalyzer(),
+        JavaScriptAnalyzer(),
+        TypeScriptAnalyzer(),
     )
 }
 PROJECT_ANALYZER_VERSION = '1'

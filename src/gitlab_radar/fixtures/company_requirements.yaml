@@ -119,3 +119,27 @@
       - source: runtime_version
         operator: greater_than_or_equal
         values: ['$java_oldest_current_version']
+
+- code: javascript-version-current
+  language: javascript
+  title: Версия Node.js для JavaScript выше заданной
+  group: Версии языков
+  description: Проект использует версию Node.js не ниже минимальной поддерживаемой LTS для JavaScript.
+  condition:
+    logic: and
+    items:
+      - source: runtime_version
+        operator: greater_than_or_equal
+        values: ['$javascript_oldest_current_version']
+
+- code: typescript-version-current
+  language: typescript
+  title: Версия Node.js для TypeScript выше заданной
+  group: Версии языков
+  description: Проект использует версию Node.js не ниже минимальной поддерживаемой LTS для TypeScript.
+  condition:
+    logic: and
+    items:
+      - source: runtime_version
+        operator: greater_than_or_equal
+        values: ['$typescript_oldest_current_version']

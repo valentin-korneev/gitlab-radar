@@ -13,6 +13,8 @@ class FrameworkDefinition(Protocol):
 
 FRAMEWORK_SUPERSEDES = {
     'fastapi': frozenset({'starlette'}),
+    'javascript-next': frozenset({'javascript-react'}),
+    'typescript-next': frozenset({'typescript-react'}),
 }
 
 
@@ -44,7 +46,6 @@ def detected_framework_codes(
 def _subproject_framework_signals(subproject: ProjectSubproject) -> set[str]:
     dependencies = [
         *subproject.dependencies,
-        *subproject.transitive_dependencies,
         *(dependency for group in subproject.optional_dependencies for dependency in group.dependencies),
     ]
     return {

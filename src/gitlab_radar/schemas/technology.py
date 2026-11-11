@@ -6,5 +6,8 @@ class PackageManager(StrEnum):
     UV = 'uv'
     MAVEN = 'maven'
     GRADLE = 'gradle'
+    NPM = 'npm'
+    YARN = 'yarn'
+    PNPM = 'pnpm'
     MIXED = 'mixed'
     UNKNOWN = 'unknown'

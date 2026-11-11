@@ -126,10 +126,15 @@ def _display_language_statistics(
     counts: Counter[str],
     total_projects: int,
 ) -> list[LanguageStatistics]:
-    selected = sorted(
-        languages,
-        key=lambda item: (-counts[item.code], item.name.lower()),
-    )[:10]
+    def sort_key(item: ProgrammingLanguage) -> tuple[int, str]:
+        return -counts[item.code], item.name.lower()
+
+    enabled = sorted((language for language in languages if language.enabled), key=sort_key)[:10]
+    disabled_limit = 10 - len(enabled)
+    disabled = sorted((language for language in languages if not language.enabled), key=sort_key)[
+        :disabled_limit
+    ]
+    selected = sorted([*enabled, *disabled], key=sort_key)
     return [
         LanguageStatistics(
             code=language.code,
