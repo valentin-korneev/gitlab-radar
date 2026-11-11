@@ -330,6 +330,21 @@ def _language_target_statistics(
                         languages=[language.code],
                     ),
                 )
+    combined_codes = {'javascript', 'typescript'}
+    if combined_codes <= {language.code for language in languages}:
+        combined_projects = {
+            project.id
+            for project in projects
+            if any(language.code in combined_codes for language in project.languages)
+        }
+        if combined_projects:
+            result.append(
+                TechnologyUsage(
+                    name='JS + TS',
+                    projects_count=len(combined_projects),
+                    languages=sorted(combined_codes),
+                ),
+            )
     return result
 
 

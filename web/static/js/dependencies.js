@@ -154,11 +154,14 @@ async function openRuleViolations(code) {
   await ensurePageLoaded('projects');
   renderProjects();
 }
-async function openPythonVersion(version) {
+async function openLanguageVersion(language, version) {
   state.projectFilters.rules.clear();
-  state.projectFilters.query = `Python ${version}`;
+  state.projectFilters.query = `${language.name} ${version}`;
   syncProjectFilterControls();
-  window.location.hash = 'projects';
+  if (window.location.hash !== '#projects') {
+    window.location.hash = 'projects';
+    return;
+  }
   await ensurePageLoaded('projects');
   renderProjects();
 }

@@ -59,14 +59,30 @@ function compareProjectsByScanTime(left, right) {
 function projectMatchesFilters(project) {
   const query = state.projectFilters.query.trim().toLowerCase();
   const rules = [...state.projectFilters.rules];
-  const runtimeVersions = project.subprojects
-    .map((item) => item.runtime_version || item.python_version || item.python_constraint)
+  const languageNames = new Map(
+    (project.languages || []).map((language) => [language.code, language.name]),
+  );
+  const languageVersions = project.subprojects
+    .map((item) => {
+      const version = normalizedRuntimeVersion(
+        item.runtime_version || item.python_version || item.python_constraint,
+      );
+      if (!version) return '';
+      const language = item.language || 'python';
+      return `${languageNames.get(language) || language} ${version} ${language} ${version}`;
+    })
     .filter(Boolean)
     .join(' ');
   const languages = (project.languages || []).map((language) => `${language.name} ${language.code}`).join(' ');
-  const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${runtimeVersions} ${languages}`.toLowerCase();
+  const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${languageVersions} ${languages}`.toLowerCase();
   return (!query || searchable.includes(query))
     && rules.every((rule) => project.company_rule_results?.[rule] === false);
+}
+
+function normalizedRuntimeVersion(value) {
+  const match = value?.match(/(^|\D)(\d+)(?:\.(\d+))?/);
+  if (!match) return null;
+  return match[3] ? `${match[2]}.${match[3]}` : match[2];
 }
 function syncProjectFilterControls() {
   document.querySelector('#project-search').value = state.projectFilters.query;

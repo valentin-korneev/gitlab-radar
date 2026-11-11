@@ -4,18 +4,16 @@ function compactStatRow(label, value) {
   return row;
 }
 function languageVersionLink(language, item) {
-  const row = element(language.code === 'python' ? 'button' : 'div', 'compact-stat-link');
-  if (language.code === 'python') row.type = 'button';
+  const row = element('button', 'compact-stat-link');
+  row.type = 'button';
   const oldestCurrent = state.languageOldestCurrentVersions[language.code];
   if (oldestCurrent) {
     const comparison = compareVersions(item.name, oldestCurrent);
-    if (comparison < 0) row.classList.add('python-version-danger');
-    else if (comparison === 0) row.classList.add('python-version-warning');
+    if (comparison < 0) row.classList.add('language-version-danger');
+    else if (comparison === 0) row.classList.add('language-version-warning');
   }
   row.append(element('span', '', item.name), element('b', '', String(item.projects_count)));
-  if (language.code === 'python') {
-    row.addEventListener('click', () => openPythonVersion(item.name));
-  }
+  row.addEventListener('click', () => openLanguageVersion(language, item.name));
   return row;
 }
 function parameterValue(key) {

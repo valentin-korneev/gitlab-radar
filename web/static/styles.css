@@ -173,8 +173,8 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .compact-list span { overflow-wrap: anywhere; }
 .compact-stat-link { width: 100%; text-align: left; cursor: pointer; }
 .compact-stat-link:hover { color: var(--accent); }
-.compact-stat-link.python-version-danger, .compact-stat-link.python-version-danger b { color: var(--danger); }
-.compact-stat-link.python-version-warning, .compact-stat-link.python-version-warning b { color: var(--warning); }
+.compact-stat-link.language-version-danger, .compact-stat-link.language-version-danger b { color: var(--danger); }
+.compact-stat-link.language-version-warning, .compact-stat-link.language-version-warning b { color: var(--warning); }
 .infrastructure-stack { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .framework-card { grid-column: 1 / -1; min-height: 300px; overflow: visible; }
 .framework-bubbles { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; min-height: 210px; }
