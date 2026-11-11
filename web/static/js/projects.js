@@ -75,7 +75,15 @@ function projectMatchesFilters(project) {
     .join(' ');
   const languages = (project.languages || []).map((language) => `${language.name} ${language.code}`).join(' ');
   const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${languageVersions} ${languages}`.toLowerCase();
-  return (!query || searchable.includes(query))
+  const versionMatches = !state.projectFilters.language || project.subprojects.some((subproject) => (
+    subproject.language === state.projectFilters.language
+    && normalizedRuntimeVersion(
+      subproject.runtime_version || subproject.python_version || subproject.python_constraint,
+    ) === state.projectFilters.version
+  ));
+  const queryMatches = state.projectFilters.language !== null || !query || searchable.includes(query);
+  return queryMatches
+    && versionMatches
     && rules.every((rule) => project.company_rule_results?.[rule] === false);
 }
 
@@ -93,6 +101,8 @@ function syncProjectFilterControls() {
 function resetProjectFilters() {
   state.projectFilters.query = '';
   state.projectFilters.rules.clear();
+  state.projectFilters.language = null;
+  state.projectFilters.version = null;
   syncProjectFilterControls();
   if (state.loaded.projects) renderProjects();
 }
@@ -196,6 +206,12 @@ function renderProjects() {
         languages.map((language) => `${language.name} ${formatLanguagePercentage(language.percentage)}%`).join(' · '),
       ));
     }
+    const versionSummary = projectVersionSummary(project);
+    if (versionSummary) appendProjectCardSummary(identity, 'Версии', versionSummary);
+    const managerSummary = projectPackageManagerSummary(project);
+    if (managerSummary) appendProjectCardSummary(identity, 'Пакетные менеджеры', managerSummary);
+    const frameworkSummary = projectFrameworkSummary(project);
+    if (frameworkSummary) appendProjectCardSummary(identity, 'Фреймворки', frameworkSummary);
     if (project.is_empty) identity.append(element('small', 'empty-project-status', 'Пустой проект'));
     if (PROJECT_DATA_STATUS_TITLES[project.data_status]) {
       identity.append(element(
@@ -246,6 +262,53 @@ function sortedProjectLanguages(project) {
 function formatLanguagePercentage(value) {
   return Number(value).toLocaleString('ru-RU', { maximumFractionDigits: 1 });
 }
+
+function projectTechnologyGroups(project, valueProvider) {
+  const languageNames = new Map(
+    (project.languages || []).map((language) => [language.code, language.name]),
+  );
+  const valuesByLanguage = new Map();
+  project.subprojects.forEach((subproject) => {
+    const value = valueProvider(subproject);
+    if (!value) return;
+    const language = subproject.language || 'python';
+    if (!valuesByLanguage.has(language)) valuesByLanguage.set(language, new Set());
+    valuesByLanguage.get(language).add(value);
+  });
+  return [...valuesByLanguage.entries()]
+    .map(([code, values]) => ({
+      name: languageNames.get(code) || code,
+      values: [...values].sort((left, right) => left.localeCompare(right, undefined, { numeric: true })),
+    }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function projectVersionSummary(project) {
+  return projectTechnologyGroups(
+    project,
+    (subproject) => normalizedRuntimeVersion(
+      subproject.runtime_version || subproject.python_version || subproject.python_constraint,
+    ),
+  ).map((item) => `${item.name}: ${item.values.join(', ')}`).join(' · ');
+}
+
+function projectPackageManagerSummary(project) {
+  return projectTechnologyGroups(
+    project,
+    (subproject) => (subproject.package_manager === 'unknown' ? null : subproject.package_manager),
+  ).map((item) => `${item.name}: ${item.values.join(', ')}`).join(' · ');
+}
+
+function projectFrameworkSummary(project) {
+  return [...(project.frameworks || [])]
+    .sort((left, right) => left.language.localeCompare(right.language) || left.name.localeCompare(right.name))
+    .map((framework) => `${framework.name} (${framework.language})`)
+    .join(' · ');
+}
+
+function appendProjectCardSummary(container, label, value) {
+  container.append(element('small', 'project-technology-summary', `${label}: ${value}`));
+}
 function appendProjectLanguages(container, project) {
   const languages = sortedProjectLanguages(project);
   if (!languages.length) return;
@@ -274,6 +337,14 @@ function appendProjectFrameworks(container, project) {
     badges.append(badge);
   });
   appendDetail(container, 'Фреймворки', badges);
+}
+function appendProjectVersions(container, project) {
+  const summary = projectVersionSummary(project);
+  if (summary) appendDetail(container, 'Версии языков', summary);
+}
+function appendProjectPackageManagers(container, project) {
+  const summary = projectPackageManagerSummary(project);
+  if (summary) appendDetail(container, 'Пакетные менеджеры', summary);
 }
 function appendEmptyProjectStatus(container, project) {
   if (!project.is_empty) return;
@@ -448,6 +519,8 @@ function renderProjectDetail(view, subproject) {
     appendEmptyProjectStatus(detail, project);
     appendProjectDataStatus(detail, project);
     appendProjectLanguages(detail, project);
+    appendProjectVersions(detail, project);
+    appendProjectPackageManagers(detail, project);
     appendProjectFrameworks(detail, project);
     const compliance = element('p', 'detail-value compliance-value', `${project.company_compliance_percentage || 0}%`);
     compliance.classList.add(`compliance-${complianceTone(project.company_compliance_percentage || 0, 'project_compliance_thresholds')}`);
@@ -466,20 +539,9 @@ function renderProjectDetail(view, subproject) {
   appendEmptyProjectStatus(detail, project);
   appendProjectDataStatus(detail, project);
   appendProjectLanguages(detail, project);
+  appendProjectVersions(detail, project);
+  appendProjectPackageManagers(detail, project);
   appendProjectFrameworks(detail, project);
-  appendDetail(detail, 'Пакетный менеджер', packageManagerBadge(subproject.packageManager));
-  if (subproject.language === 'python') {
-    const normalizedPython = normalizedPythonVersion(subproject.pythonVersion, subproject.pythonConstraint);
-    const pythonDetails = [
-      normalizedPython ? `Python ${normalizedPython}` : 'Не определена',
-      subproject.pythonConstraint,
-    ].filter(Boolean).join(' · ');
-    appendDetail(detail, 'Python', pythonDetails);
-  } else {
-    const languageName = project.languages.find((item) => item.code === subproject.language)?.name
-      || subproject.language;
-    appendDetail(detail, `Версия ${languageName}`, subproject.runtimeVersion || 'Не определена');
-  }
   const compliance = element('p', 'detail-value compliance-value', `${subproject.compliance}%`);
   compliance.classList.add(`compliance-${complianceTone(subproject.compliance, 'project_compliance_thresholds')}`);
   appendDetail(detail, 'Соответствие правилам компании', compliance);

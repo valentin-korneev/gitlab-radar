@@ -149,6 +149,8 @@ async function openDependency(name, source = 'python') {
 async function openRuleViolations(code) {
   state.projectFilters.query = '';
   state.projectFilters.rules = new Set([code]);
+  state.projectFilters.language = null;
+  state.projectFilters.version = null;
   syncProjectFilterControls();
   window.location.hash = 'projects';
   await ensurePageLoaded('projects');
@@ -157,10 +159,11 @@ async function openRuleViolations(code) {
 async function openLanguageVersion(language, version) {
   state.projectFilters.rules.clear();
   state.projectFilters.query = `${language.name} ${version}`;
+  state.projectFilters.language = language.code;
+  state.projectFilters.version = version;
   syncProjectFilterControls();
   if (window.location.hash !== '#projects') {
     window.location.hash = 'projects';
-    return;
   }
   await ensurePageLoaded('projects');
   renderProjects();

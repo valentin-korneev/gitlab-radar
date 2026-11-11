@@ -305,6 +305,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .project-row small { color: var(--muted); }
 .project-row .subproject-summary { margin-top: 6px; color: var(--accent); font-size: .68rem; }
 .project-row .project-language-summary { margin-top: 6px; color: var(--text); font-size: .68rem; }
+.project-row .project-technology-summary { margin-top: 6px; overflow: visible; color: var(--muted); font-size: .68rem; overflow-wrap: anywhere; text-overflow: initial; white-space: normal; }
 .project-row .empty-project-status { margin-top: 6px; color: var(--warning); font-size: .68rem; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; }
 .project-row .project-data-status { margin-top: 6px; overflow: visible; text-overflow: initial; white-space: normal; font-size: .68rem; font-weight: 750; }
 .project-data-status.stale, .project-data-status-badge.stale { color: var(--warning); }

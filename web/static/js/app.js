@@ -21,6 +21,8 @@ document.querySelector('#auth-button').addEventListener('click', async () => {
 window.addEventListener('hashchange', () => { showPage().catch(showError); });
 document.querySelector('#project-search').addEventListener('input', (event) => {
   state.projectFilters.query = event.target.value;
+  state.projectFilters.language = null;
+  state.projectFilters.version = null;
   renderProjects();
 });
 document.querySelector('#export-projects').addEventListener('click', exportFilteredProjects);
