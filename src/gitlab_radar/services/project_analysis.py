@@ -89,7 +89,13 @@ def _build_subproject(path: str, files: dict[str, bytes]) -> ProjectSubproject:
 def _project_package_manager(subprojects: list[ProjectSubproject]) -> PackageManager:
     if not subprojects:
         return PackageManager.UNKNOWN
-    managers = {subproject.package_manager for subproject in subprojects}
+    managers = {
+        subproject.package_manager
+        for subproject in subprojects
+        if subproject.package_manager is not PackageManager.UNKNOWN
+    }
+    if not managers:
+        return PackageManager.UNKNOWN
     return managers.pop() if len(managers) == 1 else PackageManager.MIXED
 
 

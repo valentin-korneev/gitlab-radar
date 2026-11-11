@@ -11,6 +11,7 @@ from gitlab_radar.schemas.technology import PackageManager
 
 class ProjectSubproject(BaseModel):
     path: str
+    language: str = 'python'
     package_manager: PackageManager
     python_version: str | None = None
     python_constraint: str | None = None

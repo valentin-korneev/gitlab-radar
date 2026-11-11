@@ -120,7 +120,7 @@ def _pyproject_registries(pyproject: Mapping[str, object]) -> set[str]:
     registries: set[str] = set()
     tool = pyproject.get('tool')
     if isinstance(tool, Mapping):
-        for name in ('uv', 'poetry', 'pip'):
+        for name in ('uv', 'pip'):
             section = tool.get(name)
             if isinstance(section, Mapping):
                 registries.update(_index_urls(section))

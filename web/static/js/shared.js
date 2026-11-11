@@ -3,8 +3,9 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 }
 function formatDuration(seconds) {
-  if (seconds < 60) return `${seconds.toLocaleString('ru-RU')} сек.`;
-  return `${Math.floor(seconds / 60)} мин. ${Math.round(seconds % 60)} сек.`;
+  const roundedSeconds = Math.max(0, Math.round(seconds));
+  if (roundedSeconds < 60) return `${roundedSeconds.toLocaleString('ru-RU')} сек.`;
+  return `${Math.floor(roundedSeconds / 60)} мин. ${roundedSeconds % 60} сек.`;
 }
 function projectPathParts(value) { return value.split('/').filter(Boolean); }
 function normalizePythonVersion(value) {

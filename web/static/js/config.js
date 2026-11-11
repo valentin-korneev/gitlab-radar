@@ -47,6 +47,7 @@ const state = {
   selectedDependency: null, dependencyQuery: '', showTransitive: false, scanState: null, scanStatus: null,
   scanSocket: null, scanReconnectTimer: null,
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
+  dashboardRequirementLanguage: 'all',
   requirements: [], requirementGroups: [], requirementCatalog: null,
   parameters: [], authorizedUsers: [],
   visibilityGroups: [], selectedVisibilityGroup: null, visibilityPolicies: [], visibilityAdminUser: null,

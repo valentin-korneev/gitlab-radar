@@ -1,4 +1,5 @@
 - code: uv-required
+  language: python
   title: Менеджер uv
   group: Пакетный менеджер
   description: Проект использует uv как пакетный менеджер.
@@ -10,6 +11,7 @@
         values: [uv]
 
 - code: ruff-required
+  language: python
   title: Использование ruff
   group: Линтеры
   description: Проект использует ruff как зависимость и настроенный инструмент.
@@ -21,6 +23,7 @@
         values: [ruff]
 
 - code: bandit-required
+  language: python
   title: Использование bandit
   group: Линтеры
   description: Проект использует bandit как зависимость и настроенный инструмент.
@@ -32,6 +35,7 @@
         values: [bandit]
 
 - code: pylint-required
+  language: python
   title: Использование pylint
   group: Линтеры
   description: Проект использует pylint как зависимость и настроенный инструмент.
@@ -43,6 +47,7 @@
         values: [pylint]
 
 - code: python-linters-component-required
+  language: python
   title: CI-компонент python-linters
   group: GitLab (CI+Webhook)
   description: GitLab CI подключает компонент, имя которого содержит python-linters.
@@ -92,6 +97,7 @@
         empty_result: true
 
 - code: python-version-current
+  language: python
   title: Версия Python выше заданной
   group: Python
   description: Проект использует версию Python выше установленной минимальной актуальной версии.

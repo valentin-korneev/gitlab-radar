@@ -16,13 +16,12 @@ class LockMetadata:
 def parse_lock_metadata(files: dict[str, bytes]) -> LockMetadata:
     dependencies: list[Dependency] = []
     registries: set[str] = set()
-    for filename in ('uv.lock', 'poetry.lock'):
-        content = files.get(filename)
-        if content:
-            document = parse_toml(content, filename)
-            packages = document.get('package')
-            dependencies.extend(_package_list(packages))
-            registries.update(_package_registries(packages))
+    content = files.get('uv.lock')
+    if content:
+        document = parse_toml(content, 'uv.lock')
+        packages = document.get('package')
+        dependencies.extend(_package_list(packages))
+        registries.update(_package_registries(packages))
 
     return LockMetadata(unique_dependencies(dependencies), sorted(registries))
 

@@ -12,7 +12,12 @@ function renderScanStatus(scan) {
   document.querySelector('#scan-progress-label').textContent = `${scan.completed_steps} из ${scan.total_steps} этапов · собрано ${scan.collected_projects}, проанализировано ${scan.analyzed_projects}, повторно ${scan.reused_projects}`;
   document.querySelector('#scan-duration').textContent = formatDuration(scan.duration_seconds);
   document.querySelector('#scan-requests').textContent = `Обращений к GitLab: ${scan.gitlab_requests}`;
-  document.querySelector('#scan-current-project').textContent = scan.current_project ? `Сейчас: ${scan.current_project}` : '';
+  let currentActivity = '';
+  if (scan.current_project) currentActivity = `Сейчас: ${scan.current_project}`;
+  else if (scan.state === 'running' && scan.phase === 'collecting' && scan.total_steps === 0) {
+    currentActivity = 'Сейчас: Получение списка проектов из GitLab';
+  } else if (scan.state === 'running') currentActivity = `Сейчас: ${PHASE_TITLES[scan.phase]}`;
+  document.querySelector('#scan-current-project').textContent = currentActivity;
   const errors = document.querySelector('#scan-errors');
   const errorList = document.querySelector('#scan-errors-list');
   const allErrors = [...scan.errors];
@@ -41,14 +46,17 @@ async function connectScanStatusSocket() {
 }
 async function handleScanStatus(scan) {
   const previousState = state.scanState;
+  const previousCompletedSteps = state.scanStatus?.completed_steps;
   state.scanState = scan.state;
   state.scanStatus = scan;
   renderScanStatus(scan);
-  if (previousState === 'running' && scan.state === 'completed') {
+  const progressChanged = scan.state === 'running' && scan.completed_steps !== previousCompletedSteps;
+  const finished = previousState === 'running' && ['completed', 'failed'].includes(scan.state);
+  if (progressChanged || finished) {
     state.dependencyCache = {};
     const reloads = [loadDashboard()];
-    if (state.loaded.projects) reloads.push(loadProjects());
-    if (state.loaded.dependencies) reloads.push(loadDependencies());
+    if (finished && state.loaded.projects) reloads.push(loadProjects());
+    if (finished && state.loaded.dependencies) reloads.push(loadDependencies());
     await Promise.all(reloads);
   }
 }

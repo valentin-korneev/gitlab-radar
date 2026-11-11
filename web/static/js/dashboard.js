@@ -127,12 +127,52 @@ function renderDashboard(dashboard) {
   });
   if (!dashboard.top_dependencies.length) topDependencies.append(element('p', 'empty-state', 'Зависимости еще не найдены.'));
 
+  renderCompanyRequirements(dashboard.company_requirements);
+
+  const quality = dashboard.data_quality;
+  renderDataQuality(quality);
+  renderLastScan(dashboard.last_scan);
+}
+function renderCompanyRequirements(dashboardRequirements) {
   const requirements = document.querySelector('#company-requirements');
   requirements.replaceChildren();
   const configuredByCode = new Map(activeRequirements().map((item) => [item.code, item]));
+  const languages = [...new Set(
+    activeRequirements().map((item) => item.language).filter(Boolean),
+  )].sort((left, right) => left.localeCompare(right));
+  if (
+    !['all', 'global'].includes(state.dashboardRequirementLanguage)
+    && !languages.includes(state.dashboardRequirementLanguage)
+  ) {
+    state.dashboardRequirementLanguage = 'all';
+  }
+  const languageFilter = document.querySelector('#company-requirement-language-filter');
+  languageFilter.replaceChildren(...[
+    { value: 'all', title: 'Все' },
+    { value: 'global', title: 'Глобальные' },
+    ...languages.map((language) => ({ value: language, title: language })),
+  ].map((option) => {
+    const label = element('label', 'requirement-language-option');
+    const input = element('input');
+    input.type = 'radio';
+    input.name = 'company-requirement-language';
+    input.value = option.value;
+    input.checked = state.dashboardRequirementLanguage === option.value;
+    input.addEventListener('change', () => {
+      if (!input.checked) return;
+      state.dashboardRequirementLanguage = input.value;
+      renderCompanyRequirements(dashboardRequirements);
+    });
+    label.append(input, element('span', '', option.title));
+    return label;
+  }));
   const groups = new Map(state.requirementGroups.map((group) => [group.name, []]));
-  dashboard.company_requirements.forEach((item) => {
+  dashboardRequirements.forEach((item) => {
     const configured = configuredByCode.get(item.code);
+    if (!configured) return;
+    if (state.dashboardRequirementLanguage === 'global' && configured.language !== null) return;
+    if (!['all', 'global'].includes(state.dashboardRequirementLanguage)
+      && configured.language !== state.dashboardRequirementLanguage) return;
     const groupName = state.requirementGroups.find((group) => group.id === configured?.group_id)?.name || 'Без группы';
     if (!groups.has(groupName)) groups.set(groupName, []);
     groups.get(groupName).push(item);
@@ -162,10 +202,6 @@ function renderDashboard(dashboard) {
     group.append(element('h4', '', groupName), items);
     requirements.append(group);
   });
-
-  const quality = dashboard.data_quality;
-  renderDataQuality(quality);
-  renderLastScan(dashboard.last_scan);
 }
 function renderDataQuality(quality) {
   document.querySelector('#data-quality-stats').replaceChildren(

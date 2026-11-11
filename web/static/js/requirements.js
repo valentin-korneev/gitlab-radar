@@ -142,6 +142,7 @@ function requirementPayload() {
     title: document.querySelector('#requirement-title').value.trim(),
     group_id: current?.group_id || state.selectedRequirementGroupId,
     description: document.querySelector('#requirement-description').value.trim(),
+    language: document.querySelector('#requirement-language').value || null,
     enabled: current?.enabled ?? true,
     sort_order: current?.sort_order || (
       state.requirements.filter((requirement) => requirement.group_id === state.selectedRequirementGroupId).length + 1
@@ -164,6 +165,7 @@ function editRequirement(requirement) {
   document.querySelector('#requirement-title').value = requirement.title;
   document.querySelector('#requirement-code').value = requirement.code;
   document.querySelector('#requirement-description').value = requirement.description;
+  document.querySelector('#requirement-language').value = requirement.language || '';
   document.querySelector('#requirement-condition-logic').value = requirement.condition.logic;
   document.querySelector('#requirement-conditions').replaceChildren();
   requirement.condition.items.forEach((condition) => addRequirementConditionNode(condition));
@@ -291,7 +293,11 @@ function requirementTreeItem(requirement) {
   const summary = element('div', 'requirement-tree-summary');
   summary.append(
     element('strong', '', requirement.title),
-    element('small', '', `${requirement.code} · условий: ${countConditionNodes(requirement.condition.items)}`),
+    element(
+      'small',
+      '',
+      `${requirement.code} · ${requirement.language || 'все языки'} · условий: ${countConditionNodes(requirement.condition.items)}`,
+    ),
   );
   const enabled = element('label', 'switch requirement-enabled-switch');
   const input = element('input');
@@ -405,6 +411,12 @@ async function reloadRequirements() {
 
 async function loadRequirementsPage() {
   await ensureRequirements(true);
+  const language = document.querySelector('#requirement-language');
+  language.replaceChildren(...state.requirementCatalog.languages.map((item) => {
+    const option = element('option', '', item.title);
+    option.value = item.value;
+    return option;
+  }));
   renderRequirementGroups();
   if (!document.querySelector('.requirement-condition')) addRequirementCondition();
   state.loaded.requirements = true;

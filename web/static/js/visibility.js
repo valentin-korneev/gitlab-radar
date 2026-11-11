@@ -1,16 +1,26 @@
-function visibilityRuleRow(rule = { action: 'include', pattern: '' }) {
+function visibilityRuleRow(rule = { action: 'include', target: 'path', pattern: '' }) {
   const row = element('div', 'visibility-rule-row');
   const action = document.createElement('select');
+  action.className = 'visibility-rule-action';
   action.innerHTML = '<option value="include">Включить</option><option value="exclude">Исключить</option>';
   action.value = rule.action;
+  const target = document.createElement('select');
+  target.className = 'visibility-rule-target';
+  target.innerHTML = '<option value="path">Путь проекта</option><option value="language">Язык</option>';
+  target.value = rule.target || 'path';
   const pattern = document.createElement('input');
+  pattern.className = 'visibility-rule-pattern';
   pattern.required = true;
   pattern.maxLength = 500;
-  pattern.placeholder = 'mlops/*';
   pattern.value = rule.pattern;
+  const updatePlaceholder = () => {
+    pattern.placeholder = target.value === 'language' ? 'python' : 'mlops/*';
+  };
+  target.addEventListener('change', updatePlaceholder);
+  updatePlaceholder();
   const remove = iconButton('trash', 'danger-button', 'Удалить правило');
   remove.addEventListener('click', () => row.remove());
-  row.append(action, pattern, remove);
+  row.append(action, target, pattern, remove);
   return row;
 }
 
@@ -20,8 +30,9 @@ function appendVisibilityRule(container, rule) {
 
 function visibilityRulesPayload(container) {
   return [...container.querySelectorAll('.visibility-rule-row')].map((row) => ({
-    action: row.querySelector('select').value,
-    pattern: row.querySelector('input').value.trim(),
+    action: row.querySelector('.visibility-rule-action').value,
+    target: row.querySelector('.visibility-rule-target').value,
+    pattern: row.querySelector('.visibility-rule-pattern').value.trim(),
   })).filter((rule) => rule.pattern);
 }
 

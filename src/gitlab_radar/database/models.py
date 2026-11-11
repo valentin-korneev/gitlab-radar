@@ -88,6 +88,7 @@ class UserVisibilityRule(RadarModel):
     id = fields.IntField(primary_key=True)
     group = fields.ForeignKeyField('models.UserVisibilityGroup', related_name='rules', on_delete=fields.CASCADE)
     action = fields.CharField(max_length=10)
+    target = fields.CharField(max_length=20, default='path', db_default='path')
     pattern = fields.CharField(max_length=500)
     sort_order = fields.IntField(default=0)
 
@@ -101,6 +102,7 @@ class AdminVisibilityPolicyRule(RadarModel):
     id = fields.IntField(primary_key=True)
     policy = fields.ForeignKeyField('models.AdminVisibilityPolicy', related_name='rules', on_delete=fields.CASCADE)
     action = fields.CharField(max_length=10)
+    target = fields.CharField(max_length=20, default='path', db_default='path')
     pattern = fields.CharField(max_length=500)
     sort_order = fields.IntField(default=0)
 
@@ -124,6 +126,7 @@ class AdminUserVisibilityRule(RadarModel):
         'models.AuthorizedUser', related_name='admin_visibility_rules', on_delete=fields.CASCADE
     )
     action = fields.CharField(max_length=10)
+    target = fields.CharField(max_length=20, default='path', db_default='path')
     pattern = fields.CharField(max_length=500)
     sort_order = fields.IntField(default=0)
 
@@ -145,6 +148,7 @@ class CompanyRequirement(RadarModel):
         on_delete=fields.RESTRICT,
     )
     description = fields.TextField(default='')
+    language = fields.CharField(max_length=50, null=True, index=True)
     condition = fields.JSONField()
     enabled = fields.BooleanField(default=True, index=True)
     sort_order = fields.IntField(default=0)

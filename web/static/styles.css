@@ -109,7 +109,7 @@ button { color: inherit; }
 .visibility-editor-fields { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(260px, 2fr); gap: 14px; }
 .visibility-editor-fields > :only-child { grid-column: 1 / -1; }
 .visibility-rules { display: grid; gap: 9px; }
-.visibility-rule-row { display: grid; grid-template-columns: 140px minmax(180px, 1fr) auto; gap: 9px; }
+.visibility-rule-row { display: grid; grid-template-columns: 120px 150px minmax(180px, 1fr) auto; gap: 9px; }
 .visibility-rule-row > .icon-button { height: auto; min-height: 42px; }
 .visibility-editor-actions { display: flex; flex-wrap: wrap; gap: 9px; }
 .compact-button { width: max-content; padding: 9px 12px; }
@@ -201,6 +201,14 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .statistics-track span, .requirement-progress span { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
 .statistics-row b { text-align: right; font-size: .8rem; }
 .requirements-list { display: grid; gap: 12px; }
+.requirements-card-heading { align-items: center; }
+.requirements-card-heading > div:first-child > span { display: block; margin-top: 5px; }
+.requirement-language-filter { display: flex; flex-wrap: wrap; gap: 6px; }
+.requirement-language-option { position: relative; cursor: pointer; }
+.requirement-language-option input { position: absolute; opacity: 0; pointer-events: none; }
+.requirement-language-option span { display: block; border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; background: var(--surface-low); color: var(--muted); font-size: .7rem; font-weight: 700; text-transform: capitalize; }
+.requirement-language-option input:checked + span { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, var(--surface-low)); color: var(--text); }
+.requirement-language-option input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .requirement-group { display: grid; grid-template-columns: 100px minmax(0, 1fr); align-items: stretch; gap: 14px; }
 .requirement-group > h4 { margin: 0; padding: 15px 0; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
 .requirement-group-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }

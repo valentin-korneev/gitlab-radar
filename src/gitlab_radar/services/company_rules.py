@@ -50,6 +50,7 @@ def serialize_company_requirement(row: CompanyRequirementModel) -> CompanyRequir
             'title': row.title,
             'group_id': row.group_id,
             'description': row.description,
+            'language': row.language,
             'condition': row.condition,
             'enabled': row.enabled,
             'sort_order': row.sort_order,
@@ -90,7 +91,12 @@ def subproject_rule_results(
             )
         },
     )
-    return {requirement.code: _matches_requirement(requirement, context) for requirement in requirements}
+    applicable_requirements = [
+        requirement for requirement in requirements if requirement.language in {None, subproject.language}
+    ]
+    return {
+        requirement.code: _matches_requirement(requirement, context) for requirement in applicable_requirements
+    }
 
 
 def _matches_requirement(requirement: CompanyRequirement, context: RuleContext) -> bool:
@@ -219,8 +225,13 @@ def _project_rule_results(
     requirements: list[CompanyRequirement],
 ) -> dict[str, bool]:
     return {
-        requirement.code: bool(subproject_results) and all(result[requirement.code] for result in subproject_results)
+        requirement.code: all(applicable_results)
         for requirement in requirements
+        if (
+            applicable_results := [
+                result[requirement.code] for result in subproject_results if requirement.code in result
+            ]
+        )
     }
 
 

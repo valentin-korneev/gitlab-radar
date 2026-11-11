@@ -30,12 +30,9 @@ def parse_pyproject_document(content: bytes | None) -> dict[str, Any]:
 def parse_pyproject(document: dict[str, Any]) -> DependencyDeclarations:
     project = table(document, 'project')
     tool = table(document, 'tool')
-    poetry = table(tool, 'poetry')
     dependencies = requirement_list(project.get('dependencies'))
-    dependencies.extend(_poetry_direct_dependencies(poetry))
     groups = _pyproject_dependency_groups(document, project, tool)
-    _extend_poetry_groups(groups, poetry)
-    project_name = project.get('name') or poetry.get('name')
+    project_name = project.get('name')
     return DependencyDeclarations(
         dependencies=unique_dependencies(dependencies),
         optional_dependencies=dependency_groups(groups),
@@ -57,39 +54,6 @@ def _pyproject_dependency_groups(
         groups.setdefault(name, []).extend(requirement_list(values))
     groups.setdefault('dev', []).extend(requirement_list(table(tool, 'uv').get('dev-dependencies')))
     return groups
-
-
-def _poetry_direct_dependencies(poetry: dict[str, Any]) -> list[Dependency]:
-    poetry_dependencies = table(poetry, 'dependencies')
-    return [
-        poetry_dependency(name, value)
-        for name, value in poetry_dependencies.items()
-        if name != 'python' and not is_optional_poetry_dependency(value)
-    ]
-
-
-def _extend_poetry_groups(groups: dict[str, list[Dependency]], poetry: dict[str, Any]) -> None:
-    poetry_dependencies = table(poetry, 'dependencies')
-    optional_poetry = {
-        name: poetry_dependency(name, value)
-        for name, value in poetry_dependencies.items()
-        if name != 'python' and is_optional_poetry_dependency(value)
-    }
-    assigned_optional: set[str] = set()
-    for group_name, names in table(poetry, 'extras').items():
-        if not isinstance(names, list):
-            continue
-        for name in names:
-            if isinstance(name, str) and name in optional_poetry:
-                groups.setdefault(group_name, []).append(optional_poetry[name])
-                assigned_optional.add(name)
-    for name, dependency in optional_poetry.items():
-        if name not in assigned_optional:
-            groups.setdefault('optional', []).append(dependency)
-
-    groups.setdefault('dev', []).extend(poetry_dependencies_from_table(table(poetry, 'dev-dependencies')))
-    for name, group in table(poetry, 'group').items():
-        groups.setdefault(name, []).extend(poetry_dependencies_from_table(table(group, 'dependencies')))
 
 
 def parse_requirements(content: bytes) -> list[Dependency]:
@@ -145,40 +109,10 @@ def requirement_list(value: object) -> list[Dependency]:
     return dependencies
 
 
-def poetry_dependency(name: str, value: object) -> Dependency:
-    version: str | None = None
-    if isinstance(value, str):
-        version = value if value != '*' else None
-    elif isinstance(value, dict):
-        configured_version = value.get('version')
-        if isinstance(configured_version, str):
-            version = configured_version if configured_version != '*' else None
-        else:
-            for source in ('path', 'git', 'url'):
-                configured_source = value.get(source)
-                if isinstance(configured_source, str):
-                    version = f'{source}: {configured_source}'
-                    break
-    return Dependency(name=canonicalize_name(name), version=version)
-
-
-def poetry_dependencies_from_table(values: dict[str, Any]) -> list[Dependency]:
-    return [poetry_dependency(name, value) for name, value in values.items() if name != 'python']
-
-
-def is_optional_poetry_dependency(value: object) -> bool:
-    return isinstance(value, dict) and value.get('optional') is True
-
-
 def pyproject_python_constraint(document: dict[str, Any]) -> str | None:
     requires_python = table(document, 'project').get('requires-python')
     if isinstance(requires_python, str):
         return requires_python.strip() or None
-    poetry_python = table(table(table(document, 'tool'), 'poetry'), 'dependencies').get('python')
-    if isinstance(poetry_python, str):
-        return poetry_python.strip() or None
-    if isinstance(poetry_python, dict):
-        return string_value(poetry_python.get('version'))
     return None
 
 
@@ -209,5 +143,3 @@ def table(value: object, name: str) -> dict[str, Any]:
     return result if isinstance(result, dict) else {}
 
 
-def string_value(value: object) -> str | None:
-    return value.strip() if isinstance(value, str) and value.strip() else None

@@ -46,6 +46,7 @@ class CollectedSnapshot:
 class ScanTask:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
+        self._update_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
         self._database_lock: Connection | None = None
         self._status = ScanStatus()
@@ -120,7 +121,7 @@ class ScanTask:
         errors: list[str] = []
         with GitLabRequestCounter() as request_counter:
             try:
-                projects, skipped_without_branch = await asyncio.to_thread(fetch_projects)
+                projects, skipped_without_branch = await self._fetch_projects(scan, request_counter)
                 total_steps = len(projects) * 2 + 1
                 await self._update(
                     scan,
@@ -129,8 +130,7 @@ class ScanTask:
                     skipped_projects=skipped_without_branch,
                     gitlab_requests=request_counter.count,
                 )
-                collected = await self._collect_projects(scan, projects, errors, request_counter)
-                await self._analyze_projects(scan, collected, errors)
+                await self._scan_projects(scan, projects, errors, request_counter)
                 await self._publish(scan, len(projects), total_steps, errors, request_counter.count)
             except Exception as error:  # pylint: disable=broad-exception-caught
                 logger.exception('Сканирование проектов завершилось из-за ошибки')
@@ -141,27 +141,57 @@ class ScanTask:
                 if database_lock is not None:
                     await release_scan_lock(database_lock)
 
-    async def _collect_projects(
+    async def _fetch_projects(
+        self,
+        scan: ScanRun,
+        request_counter: GitLabRequestCounter,
+    ) -> tuple[list[Project], int]:
+        fetch_task = asyncio.create_task(asyncio.to_thread(fetch_projects))
+        try:
+            while True:
+                done, _ = await asyncio.wait({fetch_task}, timeout=1)
+                if fetch_task in done:
+                    return fetch_task.result()
+                if request_counter.count != scan.gitlab_requests:
+                    await self._update(scan, gitlab_requests=request_counter.count)
+        finally:
+            if not fetch_task.done():
+                fetch_task.cancel()
+
+    async def _scan_projects(
         self,
         scan: ScanRun,
         projects: list[Project],
         errors: list[str],
         request_counter: GitLabRequestCounter,
-    ) -> list[CollectedSnapshot]:
+    ) -> None:
         collector = ProjectCollector()
-        collected: list[CollectedSnapshot] = []
-        for number, project in enumerate(projects, start=1):
-            await self._update(scan, current_project=project.path_with_namespace)
-            logger.info('Сбор файлов проекта %d/%d: %s', number, len(projects), project.path_with_namespace)
-            collected.append(await self._collect_project(scan, collector, project, errors))
-            await self._update(
-                scan,
-                collected_projects=number,
-                completed_steps=number,
-                errors=errors,
-                gitlab_requests=request_counter.count,
+        analysis_queue: asyncio.Queue[CollectedSnapshot | None] = asyncio.Queue()
+        workers = [
+            asyncio.create_task(
+                self._analysis_worker(scan, analysis_queue, errors),
+                name=f'gitlab-radar-analysis-{number}',
             )
-        return collected
+            for number in range(LOCAL_ANALYSIS_CONCURRENCY)
+        ]
+        try:
+            for number, project in enumerate(projects, start=1):
+                await self._update(scan, current_project=project.path_with_namespace)
+                logger.info('Сбор файлов проекта %d/%d: %s', number, len(projects), project.path_with_namespace)
+                collected = await self._collect_project(scan, collector, project, errors)
+                await analysis_queue.put(collected)
+                await self._record_collected(scan, errors, request_counter.count)
+
+            await self._update(scan, phase=ScanPhase.ANALYZING, current_project=None)
+            logger.info('Сбор файлов завершен; ожидается завершение локального анализа')
+            for _ in workers:
+                await analysis_queue.put(None)
+            await asyncio.gather(*workers)
+        finally:
+            for worker in workers:
+                if not worker.done():
+                    worker.cancel()
+            await asyncio.gather(*workers, return_exceptions=True)
 
     @staticmethod
     async def _collect_project(
@@ -195,51 +225,56 @@ class ScanTask:
             logger.exception('Не удалось собрать файлы проекта %s', project.path_with_namespace)
             return CollectedSnapshot(snapshot.id, project, False, False)
 
-    async def _analyze_projects(
+    async def _analysis_worker(
         self,
         scan: ScanRun,
-        collected: list[CollectedSnapshot],
+        analysis_queue: asyncio.Queue[CollectedSnapshot | None],
         errors: list[str],
     ) -> None:
-        await self._update(scan, phase=ScanPhase.ANALYZING, current_project=None)
-        logger.info('Сбор файлов завершен; начинается локальный анализ проектов')
-        total = len(collected)
-
-        semaphore = asyncio.Semaphore(LOCAL_ANALYSIS_CONCURRENCY)
-
-        async def analyze(item: CollectedSnapshot) -> tuple[CollectedSnapshot, str, str | None]:
+        while True:
+            item = await analysis_queue.get()
+            if item is None:
+                return
             if item.reused:
-                return item, 'reused', None
-            if not item.collection_succeeded:
-                return item, 'skipped', None
-            async with semaphore:
+                result = 'reused'
+                error = None
+            elif not item.collection_succeeded:
+                result = 'skipped'
+                error = None
+            else:
                 logger.info('Локальный анализ проекта: %s', item.project.path_with_namespace)
                 error = await self._analyze_snapshot(item)
-            return item, 'analyzed', error
+                result = 'analyzed'
+            if error is not None:
+                errors.append(error)
+            await self._record_analyzed(scan, result, errors)
 
-        tasks = [asyncio.create_task(analyze(item)) for item in collected]
-        try:
-            for number, completed in enumerate(asyncio.as_completed(tasks), start=1):
-                _, result, error = await completed
-                if error is not None:
-                    errors.append(error)
-                values: dict[str, object] = {}
-                if result == 'reused':
-                    values['reused_projects'] = scan.reused_projects + 1
-                elif result == 'skipped':
-                    values['skipped_projects'] = scan.skipped_projects + 1
-                await self._update(
-                    scan,
-                    analyzed_projects=number,
-                    completed_steps=total + number,
-                    errors=errors,
-                    **values,
-                )
-        finally:
-            for task in tasks:
-                if not task.done():
-                    task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+    async def _record_collected(self, scan: ScanRun, errors: list[str], gitlab_requests: int) -> None:
+        async with self._update_lock:
+            collected_projects = scan.collected_projects + 1
+            await self._save_update(
+                scan,
+                collected_projects=collected_projects,
+                completed_steps=collected_projects + scan.analyzed_projects,
+                errors=list(errors),
+                gitlab_requests=gitlab_requests,
+            )
+
+    async def _record_analyzed(self, scan: ScanRun, result: str, errors: list[str]) -> None:
+        async with self._update_lock:
+            analyzed_projects = scan.analyzed_projects + 1
+            values: dict[str, object] = {}
+            if result == 'reused':
+                values['reused_projects'] = scan.reused_projects + 1
+            elif result == 'skipped':
+                values['skipped_projects'] = scan.skipped_projects + 1
+            await self._save_update(
+                scan,
+                analyzed_projects=analyzed_projects,
+                completed_steps=scan.collected_projects + analyzed_projects,
+                errors=list(errors),
+                **values,
+            )
 
     @staticmethod
     async def _analyze_snapshot(item: CollectedSnapshot) -> str | None:
@@ -313,8 +348,13 @@ class ScanTask:
             errors=errors,
             gitlab_requests=gitlab_requests,
         )
+        invalidate_project_cache()
 
     async def _update(self, scan: ScanRun, **values: object) -> None:
+        async with self._update_lock:
+            await self._save_update(scan, **values)
+
+    async def _save_update(self, scan: ScanRun, **values: object) -> None:
         database_values = dict(values)
         for key, value in database_values.items():
             setattr(scan, key, value)

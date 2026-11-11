@@ -51,7 +51,10 @@ async def _user_group_schema(group: UserVisibilityGroup) -> UserVisibilityGroupS
         id=group.id,
         name=group.name,
         is_default=group.is_active,
-        rules=[VisibilityRule(id=rule.id, action=rule.action, pattern=rule.pattern) for rule in rules],
+        rules=[
+            VisibilityRule(id=rule.id, action=rule.action, target=rule.target, pattern=rule.pattern)
+            for rule in rules
+        ],
     )
 
 
@@ -60,7 +63,10 @@ async def _policy_schema(policy: AdminVisibilityPolicy) -> AdminVisibilityPolicy
     return AdminVisibilityPolicySchema(
         id=policy.id,
         name=policy.name,
-        rules=[VisibilityRule(id=rule.id, action=rule.action, pattern=rule.pattern) for rule in rules],
+        rules=[
+            VisibilityRule(id=rule.id, action=rule.action, target=rule.target, pattern=rule.pattern)
+            for rule in rules
+        ],
     )
 
 
@@ -218,7 +224,10 @@ async def get_admin_user_visibility(preferred_username: str) -> AdminUserVisibil
     return AdminUserVisibility(
         preferred_username=preferred_username,
         policy_ids=list(policy_ids),
-        rules=[VisibilityRule(id=rule.id, action=rule.action, pattern=rule.pattern) for rule in rules],
+        rules=[
+            VisibilityRule(id=rule.id, action=rule.action, target=rule.target, pattern=rule.pattern)
+            for rule in rules
+        ],
     )
 
 

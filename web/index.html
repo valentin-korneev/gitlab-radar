@@ -123,7 +123,10 @@
             <div id="registry-stats" class="compact-list"></div>
           </article>
           <article class="dashboard-card requirements-card">
-            <div class="card-heading"><p>Требования компании</p><span>Соответствие</span></div>
+            <div class="card-heading requirements-card-heading">
+              <div><p>Требования компании</p><span>Соответствие</span></div>
+              <div id="company-requirement-language-filter" class="requirement-language-filter"></div>
+            </div>
             <div id="company-requirements" class="requirements-list"></div>
           </article>
           <article class="dashboard-card requirements-card">
@@ -226,6 +229,7 @@
               <input id="requirement-id" type="hidden">
               <label>Название<input id="requirement-title" required maxlength="200" placeholder="Обязательный webhook"></label>
               <label>Код<input id="requirement-code" required maxlength="100" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="reviewer-hook-required"></label>
+              <label>Язык программирования<select id="requirement-language"></select></label>
               <label class="requirement-description">Описание<textarea id="requirement-description" rows="2"></textarea></label>
               <div class="requirement-conditions-heading">
                 <strong>Условия</strong>
@@ -303,7 +307,7 @@
           <div class="intro"><p>Персональная настройка</p><h2>Фильтры проектов</h2></div>
           <button id="create-visibility-group" class="primary-button icon-button" type="button" title="Создать группу" aria-label="Создать группу" data-icon="plus"></button>
         </div>
-        <p class="visibility-help">Включения формируют выборку, затем из неё удаляются исключения. Шаблон применяется к полному пути проекта, например <code>mlops/*</code>.</p>
+        <p class="visibility-help">Включения формируют выборку, затем из неё удаляются исключения. Правило применяется к полному пути проекта, например <code>mlops/*</code>, или к языку, например <code>python</code>.</p>
         <div id="visibility-group-list" class="visibility-card-list"></div>
       </section>
 

@@ -46,8 +46,18 @@ async def latest_scan() -> ScanRun | None:
     return await ScanRun.all().order_by('-id').first()
 
 
+async def latest_data_scan() -> ScanRun | None:
+    scan = await latest_scan()
+    if scan is not None:
+        if scan.state == 'running':
+            return scan
+        if scan.state == 'failed' and await ProjectSnapshot.filter(scan_id=scan.id, analyzed=True).exists():
+            return scan
+    return await latest_published_scan()
+
+
 async def load_projects() -> list[Project]:
-    scan = await latest_published_scan()
+    scan = await latest_data_scan()
     if scan is None:
         return []
     if PROJECT_CACHE.scan_id != scan.id:
@@ -55,7 +65,10 @@ async def load_projects() -> list[Project]:
             load_company_requirements(),
             application_parameter_values(),
         )
-        rows = await ProjectSnapshot.filter(scan_id=scan.id).order_by('gitlab_id').values_list('payload', flat=True)
+        snapshots = ProjectSnapshot.filter(scan_id=scan.id)
+        if not scan.published:
+            snapshots = snapshots.filter(analyzed=True)
+        rows = await snapshots.order_by('gitlab_id').values_list('payload', flat=True)
         projects = [Project.model_validate(payload) for payload in rows]
         for project in projects:
             if not project.subprojects:
@@ -98,7 +111,7 @@ async def clone_project(
             include=REUSED_PROJECT_METADATA_FIELDS,
         ),
     )
-    return await ProjectSnapshot.create(
+    snapshot = await ProjectSnapshot.create(
         scan=scan,
         gitlab_id=project.id,
         revision=source.revision,
@@ -107,6 +120,8 @@ async def clone_project(
         analyzed=True,
         reused=True,
     )
+    invalidate_project_cache()
+    return snapshot
 
 
 async def save_collected_project(
@@ -162,6 +177,7 @@ async def save_analysis(snapshot_id: int, project: Project, error: str | None = 
         analyzed=error is None,
         error=error,
     )
+    invalidate_project_cache()
 
 
 async def restore_previous_analysis(snapshot_id: int, project: Project, error: str) -> bool:
@@ -189,6 +205,7 @@ async def restore_previous_analysis(snapshot_id: int, project: Project, error: s
         analyzed=False,
         error=error,
     )
+    invalidate_project_cache()
     return True
 
 

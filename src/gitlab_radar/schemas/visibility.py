@@ -3,12 +3,14 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, StringConstraints
 
 VisibilityAction = Literal['include', 'exclude']
+VisibilityTarget = Literal['path', 'language']
 VisibilityName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 VisibilityPattern = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
 
 
 class VisibilityRulePayload(BaseModel):
     action: VisibilityAction
+    target: VisibilityTarget = 'path'
     pattern: VisibilityPattern
 
 

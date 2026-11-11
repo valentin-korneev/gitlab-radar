@@ -9,7 +9,6 @@ from gitlab_radar.schemas.technology import PackageManager
 PYPROJECT_FILENAME = 'pyproject.toml'
 UV_CONFIG_FILENAME = 'uv.toml'
 PIP_CONFIG_FILENAME = 'pip.conf'
-POETRY_LOCK_FILENAME = 'poetry.lock'
 UV_LOCK_FILENAME = 'uv.lock'
 REQUIREMENTS_FILENAME = 'requirements.txt'
 REQUIREMENTS_FILENAME_PATTERN = 'requirements.*.txt'
@@ -18,7 +17,6 @@ PACKAGE_FILES = (
     PYPROJECT_FILENAME,
     UV_CONFIG_FILENAME,
     PIP_CONFIG_FILENAME,
-    POETRY_LOCK_FILENAME,
     UV_LOCK_FILENAME,
 )
 PACKAGE_DISCOVERY_FILES = (*PACKAGE_FILES, REQUIREMENTS_FILENAME)
@@ -45,12 +43,6 @@ def detect_package_manager(
         or _uses_build_system(pyproject, backend_prefix='uv_build', package='uv-build')
     ):
         detected.add(PackageManager.UV)
-    if (
-        POETRY_LOCK_FILENAME in available_files
-        or _has_tool_section(pyproject, 'poetry')
-        or _uses_build_system(pyproject, backend_prefix='poetry.core', package='poetry-core')
-    ):
-        detected.add(PackageManager.POETRY)
     if len(detected) == 1:
         return detected.pop()
     if detected:

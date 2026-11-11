@@ -20,18 +20,27 @@ def apply_visibility_rules(
     rules: Iterable[VisibilityRulePayload | UserVisibilityRule | AdminVisibilityPolicyRule | AdminUserVisibilityRule],
 ) -> list[Project]:
     rule_list = list(rules)
-    includes = [rule.pattern for rule in rule_list if rule.action == 'include']
-    excludes = [rule.pattern for rule in rule_list if rule.action == 'exclude']
-    selected = (
-        [project for project in projects if any(_matches(project.path_with_namespace, pattern) for pattern in includes)]
-        if includes
-        else list(projects)
-    )
-    return [
-        project
-        for project in selected
-        if not any(_matches(project.path_with_namespace, pattern) for pattern in excludes)
-    ]
+    selected = list(projects)
+    for target in ('path', 'language'):
+        target_rules = [rule for rule in rule_list if rule.target == target]
+        includes = [rule for rule in target_rules if rule.action == 'include']
+        excludes = [rule for rule in target_rules if rule.action == 'exclude']
+        if includes:
+            selected = [project for project in selected if any(_matches_rule(project, rule) for rule in includes)]
+        if excludes:
+            selected = [
+                project for project in selected if not any(_matches_rule(project, rule) for rule in excludes)
+            ]
+    return selected
+
+
+def _matches_rule(
+    project: Project,
+    rule: VisibilityRulePayload | UserVisibilityRule | AdminVisibilityPolicyRule | AdminUserVisibilityRule,
+) -> bool:
+    if rule.target == 'language':
+        return any(_matches(subproject.language, rule.pattern) for subproject in project.subprojects)
+    return _matches(project.path_with_namespace, rule.pattern)
 
 
 async def filter_projects_for_user(
@@ -49,31 +58,7 @@ async def filter_projects_for_user(
     assignments = await AdminVisibilityPolicyAssignment.filter(user_id=preferred_username).values_list(
         'policy_id', flat=True
     )
-    if assignments:
-        policy_projects: dict[int, Project] = {}
-        for policy_id in assignments:
-            rules = await AdminVisibilityPolicyRule.filter(policy_id=policy_id).order_by('sort_order', 'id')
-            policy_projects.update({project.id: project for project in apply_visibility_rules(all_projects, rules)})
-        projects = [project for project in all_projects if project.id in policy_projects]
-
-    admin_rules = await AdminUserVisibilityRule.filter(user_id=preferred_username).order_by('sort_order', 'id')
-    if assignments:
-        include_patterns = [rule.pattern for rule in admin_rules if rule.action == 'include']
-        exclude_patterns = [rule.pattern for rule in admin_rules if rule.action == 'exclude']
-        selected_ids = {project.id for project in projects}
-        selected_ids.update(
-            project.id
-            for project in all_projects
-            if any(_matches(project.path_with_namespace, pattern) for pattern in include_patterns)
-        )
-        projects = [
-            project
-            for project in all_projects
-            if project.id in selected_ids
-            and not any(_matches(project.path_with_namespace, pattern) for pattern in exclude_patterns)
-        ]
-    else:
-        projects = apply_visibility_rules(all_projects, admin_rules)
+    admin_rules_query = AdminUserVisibilityRule.filter(user_id=preferred_username)
     selected_group = None
     if visibility_group != 'all':
         if visibility_group and visibility_group.isdigit():
@@ -84,7 +69,45 @@ async def filter_projects_for_user(
             selected_group = (
                 await UserVisibilityGroup.filter(user_id=preferred_username, is_active=True).order_by('id').first()
             )
-    if selected_group is not None:
+    has_user_rules = (
+        selected_group is not None
+        and await UserVisibilityRule.filter(group_id=selected_group.id).exists()
+    )
+    has_admin_rules = await admin_rules_query.exists()
+    if not assignments and not has_admin_rules and not has_user_rules:
+        return projects
+
+    if assignments:
+        policy_projects: dict[int, Project] = {}
+        for policy_id in assignments:
+            policy_rules_query = AdminVisibilityPolicyRule.filter(policy_id=policy_id)
+            rules = (
+                await policy_rules_query.order_by('sort_order', 'id')
+                if await policy_rules_query.exists()
+                else []
+            )
+            policy_projects.update({project.id: project for project in apply_visibility_rules(all_projects, rules)})
+        projects = [project for project in all_projects if project.id in policy_projects]
+
+    admin_rules = await admin_rules_query.order_by('sort_order', 'id') if has_admin_rules else []
+    if assignments:
+        include_rules = [rule for rule in admin_rules if rule.action == 'include']
+        exclude_rules = [rule for rule in admin_rules if rule.action == 'exclude']
+        selected_ids = {project.id for project in projects}
+        selected_ids.update(
+            project.id
+            for project in all_projects
+            if any(_matches_rule(project, rule) for rule in include_rules)
+        )
+        projects = [
+            project
+            for project in all_projects
+            if project.id in selected_ids
+            and not any(_matches_rule(project, rule) for rule in exclude_rules)
+        ]
+    else:
+        projects = apply_visibility_rules(all_projects, admin_rules)
+    if selected_group is not None and has_user_rules:
         user_rules = await UserVisibilityRule.filter(group_id=selected_group.id).order_by('sort_order', 'id')
         projects = apply_visibility_rules(projects, user_rules)
     return projects
@@ -93,7 +116,13 @@ async def filter_projects_for_user(
 async def replace_user_group_rules(group_id: int, rules: list[VisibilityRulePayload], connection: object) -> None:
     await UserVisibilityRule.filter(group_id=group_id).using_db(connection).delete()
     rows = [
-        UserVisibilityRule(group_id=group_id, action=rule.action, pattern=rule.pattern, sort_order=index)
+        UserVisibilityRule(
+            group_id=group_id,
+            action=rule.action,
+            target=rule.target,
+            pattern=rule.pattern,
+            sort_order=index,
+        )
         for index, rule in enumerate(rules)
     ]
     if rows:
@@ -103,7 +132,13 @@ async def replace_user_group_rules(group_id: int, rules: list[VisibilityRulePayl
 async def replace_policy_rules(policy_id: int, rules: list[VisibilityRulePayload], connection: object) -> None:
     await AdminVisibilityPolicyRule.filter(policy_id=policy_id).using_db(connection).delete()
     rows = [
-        AdminVisibilityPolicyRule(policy_id=policy_id, action=rule.action, pattern=rule.pattern, sort_order=index)
+        AdminVisibilityPolicyRule(
+            policy_id=policy_id,
+            action=rule.action,
+            target=rule.target,
+            pattern=rule.pattern,
+            sort_order=index,
+        )
         for index, rule in enumerate(rules)
     ]
     if rows:
@@ -128,6 +163,7 @@ async def replace_admin_user_visibility(
             AdminUserVisibilityRule(
                 user_id=preferred_username,
                 action=rule.action,
+                target=rule.target,
                 pattern=rule.pattern,
                 sort_order=index,
             )

@@ -56,6 +56,10 @@ async def get_requirement_catalog() -> RequirementCatalog:
     parameters = await application_parameter_values()
     python_version = parameters.get('python_oldest_current_version')
     return RequirementCatalog(
+        languages=[
+            RequirementOption(value='', title='Без привязки к языку'),
+            RequirementOption(value='python', title='Python'),
+        ],
         sources=[
             RequirementOption(
                 value=value,

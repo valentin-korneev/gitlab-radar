@@ -49,6 +49,7 @@ class CompanyRequirementBase(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     group_id: int = Field(gt=0)
     description: str = ''
+    language: str | None = Field(default=None, max_length=50, pattern=r'^[a-z0-9][a-z0-9+.#-]*$')
     condition: RequirementConditionGroup
     enabled: bool = True
     sort_order: int = 0
@@ -109,5 +110,6 @@ class RequirementOption(BaseModel):
 
 
 class RequirementCatalog(BaseModel):
+    languages: list[RequirementOption]
     sources: list[RequirementOption]
     operators: list[RequirementOption]

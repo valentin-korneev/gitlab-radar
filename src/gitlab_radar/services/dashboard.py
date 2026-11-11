@@ -26,7 +26,6 @@ from gitlab_radar.services.project import load_projects
 PACKAGE_MANAGER_TITLES = {
     PackageManager.UV: 'uv',
     PackageManager.PIP: 'pip',
-    PackageManager.POETRY: 'Poetry',
     PackageManager.MIXED: 'Смешанный',
     PackageManager.UNKNOWN: 'Не определен',
 }
@@ -53,6 +52,7 @@ async def build_dashboard(
     rule_matches = Counter(
         code for project in projects for code, matches in project.company_rule_results.items() if matches
     )
+    rule_totals = Counter(code for project in projects for code in project.company_rule_results)
     python_versions = _python_versions(projects)
     image_statistics, registry_statistics = _registry_statistics(projects)
 
@@ -79,8 +79,8 @@ async def build_dashboard(
                 title=rule.title,
                 description=rule.description,
                 matching_projects=rule_matches[rule.code],
-                total_projects=total_projects,
-                compliance_percentage=_percentage(rule_matches[rule.code], total_projects),
+                total_projects=rule_totals[rule.code],
+                compliance_percentage=_percentage(rule_matches[rule.code], rule_totals[rule.code]),
             )
             for rule in requirements
         ],
