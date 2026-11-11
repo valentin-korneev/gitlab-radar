@@ -27,10 +27,11 @@ from gitlab_radar.database.scan_lock import acquire_scan_lock, release_scan_lock
 from gitlab_radar.schemas.project import Project, ProjectLanguage
 from gitlab_radar.schemas.scan import ScanPhase, ScanState, ScanStatus
 from gitlab_radar.schemas.technology import PackageManager
-from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.analysis import analysis_fingerprint, language_code, select_project_files
+from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.project import fetch_projects
 from gitlab_radar.services.project_analysis import analyze_project
+from gitlab_radar.services.project_blacklist import blacklist_patterns
 from gitlab_radar.services.project_collection import ProjectCollector, ProjectNotScannableError
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ class ScanTask:
         self._task: asyncio.Task[None] | None = None
         self._database_lock: Connection | None = None
         self._status = ScanStatus()
+        self._updated_project_ids: list[int] = []
 
     async def start(self) -> bool:
         async with self._lock:
@@ -74,6 +76,7 @@ class ScanTask:
                 await release_scan_lock(database_lock)
                 raise
             self._database_lock = database_lock
+            self._updated_project_ids = []
             self._status = ScanStatus(
                 id=scan.id,
                 state=ScanState.RUNNING,
@@ -89,7 +92,12 @@ class ScanTask:
             if self._task is not None and not self._task.done():
                 return self._status.model_copy(deep=True)
         scan = await latest_scan()
-        return _scan_status(scan) if scan is not None else ScanStatus()
+        if scan is None:
+            return ScanStatus()
+        status = _scan_status(scan)
+        if self._status.id == scan.id:
+            status.updated_project_ids = list(self._updated_project_ids)
+        return status
 
     async def stop(self) -> None:
         async with self._lock:
@@ -148,7 +156,8 @@ class ScanTask:
         scan: ScanRun,
         request_counter: GitLabRequestCounter,
     ) -> tuple[list[Project], int]:
-        fetch_task = asyncio.create_task(asyncio.to_thread(fetch_projects))
+        blacklist = tuple(await blacklist_patterns())
+        fetch_task = asyncio.create_task(asyncio.to_thread(fetch_projects, blacklist))
         try:
             while True:
                 done, _ = await asyncio.wait({fetch_task}, timeout=1)
@@ -294,7 +303,7 @@ class ScanTask:
                 result = 'analyzed'
             if error is not None:
                 errors.append(error)
-            await self._record_analyzed(scan, result, errors)
+            await self._record_analyzed(scan, result, errors, item)
 
     async def _record_collected(self, scan: ScanRun, errors: list[str], gitlab_requests: int) -> None:
         async with self._update_lock:
@@ -307,7 +316,13 @@ class ScanTask:
                 gitlab_requests=gitlab_requests,
             )
 
-    async def _record_analyzed(self, scan: ScanRun, result: str, errors: list[str]) -> None:
+    async def _record_analyzed(
+        self,
+        scan: ScanRun,
+        result: str,
+        errors: list[str],
+        item: CollectedSnapshot,
+    ) -> None:
         async with self._update_lock:
             analyzed_projects = scan.analyzed_projects + 1
             values: dict[str, object] = {}
@@ -315,10 +330,14 @@ class ScanTask:
                 values['reused_projects'] = scan.reused_projects + 1
             elif result == 'skipped':
                 values['skipped_projects'] = scan.skipped_projects + 1
+            invalidate_project_cache()
+            if item.snapshot_id is not None:
+                self._updated_project_ids.append(item.project.id)
             await self._save_update(
                 scan,
                 analyzed_projects=analyzed_projects,
                 completed_steps=scan.collected_projects + analyzed_projects,
+                updated_project_ids=list(self._updated_project_ids),
                 errors=list(errors),
                 **values,
             )
@@ -404,10 +423,13 @@ class ScanTask:
             await self._save_update(scan, **values)
 
     async def _save_update(self, scan: ScanRun, **values: object) -> None:
-        database_values = dict(values)
+        database_values = {
+            key: value for key, value in values.items() if key != 'updated_project_ids'
+        }
         for key, value in database_values.items():
             setattr(scan, key, value)
-        await scan.save(update_fields=list(database_values))
+        if database_values:
+            await scan.save(update_fields=list(database_values))
         async with self._lock:
             status_values = {
                 key: value for key, value in values.items() if ScanStatus.model_fields.get(key) is not None

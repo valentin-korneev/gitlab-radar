@@ -1,6 +1,6 @@
 from collections import defaultdict
-from collections.abc import Iterable
 from dataclasses import dataclass, field
+lazy from collections.abc import Iterable
 
 from packaging.version import InvalidVersion, Version
 

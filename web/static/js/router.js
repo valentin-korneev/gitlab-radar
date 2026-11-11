@@ -42,6 +42,7 @@ async function ensurePageLoaded(pageName) {
       requirements: loadRequirementsPage, parameters: loadParametersPage, users: loadAuthorizedUsersPage, admin: loadAdmin,
       languages: loadProgrammingLanguages,
       visibility: loadVisibilityPage, 'visibility-admin': loadAdminVisibilityPage,
+      blacklist: loadProjectBlacklist,
     };
     state.loading[pageName] = loaders[pageName]().finally(() => { delete state.loading[pageName]; });
   }

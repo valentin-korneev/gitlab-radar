@@ -323,9 +323,9 @@ function renderCompanyRequirements(dashboardRequirements) {
 }
 function renderDataQuality(quality) {
   document.querySelector('#data-quality-stats').replaceChildren(
-    compactStatRow('Менеджер не определен', quality.unknown_package_manager),
-    compactStatRow('Версия Python не определена', quality.unknown_python_version),
-    compactStatRow('Без подпроектов', quality.projects_without_subprojects),
+    compactStatRow('Пакетный менеджер не определён', quality.unknown_package_manager),
+    compactStatRow('Версия языка не определена', quality.unknown_language_version),
+    compactStatRow('Проекты без обнаруженных модулей', quality.projects_without_subprojects),
     compactStatRow('Ошибки анализа', quality.analysis_errors),
   );
 }

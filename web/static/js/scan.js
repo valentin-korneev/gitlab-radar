@@ -40,7 +40,9 @@ async function connectScanStatusSocket() {
   });
   socket.addEventListener('close', () => {
     if (state.scanSocket === socket) state.scanSocket = null;
-    if (window.location.hash === '#admin') state.scanReconnectTimer = window.setTimeout(connectScanStatusSocket, 3000);
+    if (state.auth.user && ['admin', 'projects'].includes(state.currentRoute)) {
+      state.scanReconnectTimer = window.setTimeout(connectScanStatusSocket, 3000);
+    }
   });
   socket.addEventListener('error', () => socket.close());
 }
@@ -50,6 +52,15 @@ async function handleScanStatus(scan) {
   state.scanState = scan.state;
   state.scanStatus = scan;
   renderScanStatus(scan);
+  if (state.scanStreamId !== scan.id) {
+    state.scanStreamId = scan.id;
+    state.streamedProjectIds = new Set();
+  }
+  for (const projectId of scan.updated_project_ids || []) {
+    if (state.streamedProjectIds.has(projectId)) continue;
+    state.streamedProjectIds.add(projectId);
+    await upsertScannedProject(projectId);
+  }
   const progressChanged = scan.state === 'running' && scan.completed_steps !== previousCompletedSteps;
   const finished = previousState === 'running' && ['completed', 'failed'].includes(scan.state);
   if (progressChanged || finished) {

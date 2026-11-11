@@ -1,5 +1,5 @@
-from collections.abc import Iterable
 from fnmatch import fnmatchcase
+lazy from collections.abc import Iterable
 
 from tortoise.transactions import in_transaction
 
@@ -11,8 +11,8 @@ from gitlab_radar.database.models import (
     UserVisibilityGroup,
     UserVisibilityRule,
 )
-from gitlab_radar.schemas.project import Project
-from gitlab_radar.schemas.visibility import VisibilityRulePayload
+lazy from gitlab_radar.schemas.project import Project
+lazy from gitlab_radar.schemas.visibility import VisibilityRulePayload
 
 
 def apply_visibility_rules(

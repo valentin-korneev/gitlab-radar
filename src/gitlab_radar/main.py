@@ -1,5 +1,5 @@
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+lazy from collections.abc import AsyncIterator
 
 import uvicorn
 from fastapi import FastAPI
@@ -10,7 +10,8 @@ from gitlab_radar.config import settings
 from gitlab_radar.config.logging import configure_logging
 from gitlab_radar.database import database_lifespan
 from gitlab_radar.tasks.scan import scan_task
-from gitlab_radar.web import STATIC_VERSION, router as web_router
+from gitlab_radar.web import STATIC_VERSION
+from gitlab_radar.web import router as web_router
 
 configure_logging()
 

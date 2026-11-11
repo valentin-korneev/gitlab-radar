@@ -52,6 +52,14 @@ class ProgrammingFramework(RadarModel):
         table = 'programming_framework'
 
 
+class ProjectBlacklistRule(RadarModel):
+    id = fields.IntField(primary_key=True)
+    pattern = fields.CharField(max_length=500, unique=True)
+
+    class Meta:
+        table = 'project_blacklist_rule'
+
+
 class ProjectSnapshot(RadarModel):
     id = fields.IntField(primary_key=True)
     scan = fields.ForeignKeyField('models.ScanRun', related_name='projects', on_delete=fields.CASCADE)

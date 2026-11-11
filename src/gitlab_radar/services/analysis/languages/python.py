@@ -66,6 +66,7 @@ def _build_subproject(path: str, files: dict[str, bytes]) -> ProjectSubproject:
         path=path,
         language='python',
         package_manager=detect_package_manager(pyproject, files_by_name),
+        runtime_version=metadata.python_version or metadata.python_constraint,
         python_version=metadata.python_version,
         python_constraint=metadata.python_constraint,
         python_version_source=metadata.python_version_source,

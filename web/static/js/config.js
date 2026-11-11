@@ -10,11 +10,12 @@ const API = {
   visibility: '/api/visibility/',
   visibilityAdmin: '/api/visibility/admin/',
   programmingLanguages: '/api/programming-language/',
+  projectBlacklist: '/api/project-blacklist/',
 };
 const AUTHENTICATED_ROUTES = new Set([
   'visibility', 'admin',
 ]);
-const ADMINISTRATOR_ROUTES = new Set(['requirements', 'parameters', 'languages', 'users', 'visibility-admin']);
+const ADMINISTRATOR_ROUTES = new Set(['requirements', 'parameters', 'languages', 'users', 'visibility-admin', 'blacklist']);
 const PAGE_ROUTES = {
   dashboard: { page: 'dashboard' },
   projects: { page: 'projects' },
@@ -28,6 +29,7 @@ const PAGE_ROUTES = {
   users: { page: 'users' },
   visibility: { page: 'visibility' },
   'visibility-admin': { page: 'visibility-admin' },
+  blacklist: { page: 'blacklist' },
   admin: { page: 'admin' },
 };
 const SOURCE_ROUTES = { python: 'dependencies', docker: 'images', ci: 'components', webhook: 'webhooks' };
@@ -48,19 +50,20 @@ const state = {
   projectFilters: { query: '', rules: new Set() },
   selectedDependency: null, dependencyQuery: '', dependencyLanguages: new Set(), dependencyLanguagesInitialized: false, showTransitive: false, scanState: null, scanStatus: null,
   scanSocket: null, scanReconnectTimer: null,
+  scanStreamId: null, streamedProjectIds: new Set(),
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
   technologyTargetLanguages: new Set(), technologyTargetLanguageOptions: [], technologyTargetLanguagesInitialized: false,
   languageOldestCurrentVersions: {},
   dashboardRequirementLanguage: 'all',
   requirements: [], requirementGroups: [], requirementCatalog: null,
   parameters: [], programmingLanguages: [], programmingFrameworks: [], selectedProgrammingLanguageCode: null, authorizedUsers: [],
-  visibilityGroups: [], selectedVisibilityGroup: null, visibilityPolicies: [], visibilityAdminUser: null,
+  visibilityGroups: [], selectedVisibilityGroup: null, visibilityPolicies: [], visibilityAdminUser: null, blacklistRules: [],
   auth: { config: null, user: null },
   currentRoute: null,
   selectedRequirementGroupId: null,
   loaded: {
     dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false, languages: false,
-    users: false, visibility: false, 'visibility-admin': false, admin: false,
+    users: false, visibility: false, 'visibility-admin': false, blacklist: false, admin: false,
   }, loading: {},
 };
 const STATE_CHANNEL = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('gitlab-radar-state');

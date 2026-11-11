@@ -1,9 +1,11 @@
+from collections import Counter
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from gitlab_radar.auth import management_access_dependency
-from gitlab_radar.database.repository import invalidate_project_cache
 from gitlab_radar.database.models import ProgrammingFramework as ProgrammingFrameworkModel
 from gitlab_radar.database.models import ProgrammingLanguage as ProgrammingLanguageModel
+from gitlab_radar.database.repository import invalidate_project_cache
 from gitlab_radar.schemas.programming_language import (
     ProgrammingFramework,
     ProgrammingFrameworkEnabled,
@@ -13,13 +15,30 @@ from gitlab_radar.schemas.programming_language import (
 )
 from gitlab_radar.services.analysis import analyzer_for
 from gitlab_radar.services.dashboard import invalidate_dashboard_cache
+from gitlab_radar.services.project import load_projects
 
 router = APIRouter()
 
 
 @router.get('/')
 async def get_programming_languages() -> list[ProgrammingLanguage]:
-    rows = await ProgrammingLanguageModel.all().order_by('name')
+    rows = await ProgrammingLanguageModel.all()
+    projects = await load_projects()
+    project_counts = Counter(
+        language.code
+        for project in projects
+        for language in {item.code: item for item in project.languages}.values()
+    )
+    framework_counts = Counter(
+        await ProgrammingFrameworkModel.all().values_list('language_id', flat=True)
+    )
+    rows.sort(
+        key=lambda row: (
+            -project_counts[row.code],
+            -framework_counts[row.id],
+            row.name.casefold(),
+        ),
+    )
     return [_serialize(row) for row in rows]
 
 

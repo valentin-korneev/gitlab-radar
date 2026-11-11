@@ -454,5 +454,24 @@ async function loadProjects() {
     state.selectedSubprojectPath = subproject?.path || null;
     renderProjectDetail(view, subproject);
   }
+  if (state.auth.user) await connectScanStatusSocket();
+}
+
+async function upsertScannedProject(projectId) {
+  if (!state.loaded.projects || projectId === null || projectId === undefined) return;
+  const project = await api(`${API.projects}${projectId}`);
+  if (!project) return;
+  const existingIndex = state.projects.findIndex((item) => item.id === project.id);
+  if (existingIndex >= 0) state.projects.splice(existingIndex, 1, project);
+  else state.projects.push(project);
+  state.projects.sort((left, right) => left.id - right.id);
+  renderProjects();
+  if (state.selectedId === project.id) {
+    const view = projectView(project);
+    const entries = [view.root, ...view.children].filter(Boolean);
+    const subproject = entries.find((item) => item.path === state.selectedSubprojectPath) || view.root;
+    state.selectedSubprojectPath = subproject?.path || null;
+    renderProjectDetail(view, subproject);
+  }
 }
 

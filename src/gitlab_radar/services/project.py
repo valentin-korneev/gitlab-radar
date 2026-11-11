@@ -6,12 +6,13 @@ from gitlab_radar.clients.gitlab import gitlab_client
 from gitlab_radar.config import settings
 from gitlab_radar.database.repository import load_projects as load_projects_from_database
 from gitlab_radar.schemas.project import Project
+from gitlab_radar.services.project_blacklist import project_is_blacklisted
 from gitlab_radar.services.visibility import filter_projects_for_user
 
 logger = logging.getLogger(__name__)
 
 
-def fetch_projects() -> tuple[list[Project], int]:
+def fetch_projects(blacklist: tuple[str, ...] = ()) -> tuple[list[Project], int]:
     logger.info('Запрос всех доступных проектов из GitLab')
     common_parameters = {
         'active': True,
@@ -33,6 +34,11 @@ def fetch_projects() -> tuple[list[Project], int]:
             if project_id in seen_project_ids:
                 continue
             seen_project_ids.add(project_id)
+            path_with_namespace = str(project_data.get('path_with_namespace') or '')
+            if project_is_blacklisted(path_with_namespace, blacklist):
+                skipped_projects += 1
+                logger.info('Проект %s пропущен по чёрному списку', path_with_namespace or project_id)
+                continue
             if not project_data.get('default_branch'):
                 skipped_projects += 1
                 logger.info(

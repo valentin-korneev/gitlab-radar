@@ -1,7 +1,7 @@
 import logging
 import re
-from collections.abc import Mapping
 from urllib.parse import urlsplit
+lazy from collections.abc import Mapping
 
 import yaml
 

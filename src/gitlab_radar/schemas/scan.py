@@ -42,6 +42,7 @@ class ScanStatus(BaseModel):
     skipped_projects: int = 0
     gitlab_requests: int = 0
     current_project: str | None = None
+    updated_project_ids: list[int] = Field(default_factory=list)
     error: str | None = None
     errors: list[str] = Field(default_factory=list)
 

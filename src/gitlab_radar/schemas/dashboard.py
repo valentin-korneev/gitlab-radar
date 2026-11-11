@@ -62,7 +62,7 @@ class FrameworkStatistics(BaseModel):
 
 class DataQualityStatistics(BaseModel):
     unknown_package_manager: int
-    unknown_python_version: int
+    unknown_language_version: int
     projects_without_subprojects: int
     analysis_errors: int
 

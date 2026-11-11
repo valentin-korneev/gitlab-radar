@@ -420,6 +420,16 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .authorized-user-summary strong, .authorized-user-summary small { display: block; overflow-wrap: anywhere; }
 .authorized-user-summary small { margin-top: 5px; color: var(--muted); font-size: .7rem; }
 .authorized-user-actions { display: flex; align-items: center; gap: 18px; }
+.blacklist-card { max-width: 760px; }
+.blacklist-card #blacklist-form { grid-template-columns: minmax(0, 1fr) 44px; }
+.blacklist-card #blacklist-form input { box-sizing: border-box; height: 44px; }
+.blacklist-card #blacklist-form > .icon-button { width: 44px; height: 44px; padding: 0; }
+.blacklist-rule-list { display: grid; gap: 9px; margin-top: 24px; }
+.blacklist-rule-row { display: grid; grid-template-columns: minmax(0, 1fr) 44px 44px; gap: 9px; }
+.blacklist-rule-row input { box-sizing: border-box; min-width: 0; height: 44px; border: 1px solid var(--line); border-radius: 9px; padding: 0 13px; outline: 0; background: var(--surface-low); color: var(--text); font: inherit; }
+.blacklist-rule-row input[readonly] { color: var(--muted); cursor: default; }
+.blacklist-rule-row input:focus { border-color: var(--accent); }
+.blacklist-rule-row > .icon-button { width: 44px; height: 44px; padding: 0; }
 .percentage-parameter { grid-template-columns: 1fr; }
 .threshold-slider { position: relative; grid-column: 1 / -1; height: 24px; }
 .threshold-preview { position: absolute; top: 6px; right: 0; left: 0; display: flex; height: 12px; overflow: hidden; border-radius: 999px; background: var(--surface-high); }

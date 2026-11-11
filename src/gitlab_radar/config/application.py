@@ -1,4 +1,4 @@
-from pathlib import Path
+lazy from pathlib import Path
 
 from pydantic import AnyHttpUrl, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict

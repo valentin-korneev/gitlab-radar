@@ -3,8 +3,8 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends
 
 from gitlab_radar.auth import optional_authenticated_access_dependency
-from gitlab_radar.schemas.dashboard import Dashboard
 from gitlab_radar.services.dashboard import build_dashboard
+lazy from gitlab_radar.schemas.dashboard import Dashboard
 
 router = APIRouter()
 

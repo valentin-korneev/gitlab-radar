@@ -132,6 +132,10 @@ document.querySelector('#authorized-user-form').addEventListener('submit', async
   event.preventDefault();
   try { await addAuthorizedUser(); } catch (error) { showError(error); }
 });
+document.querySelector('#blacklist-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  try { await addProjectBlacklistRule(); } catch (error) { showError(error); }
+});
 document.querySelector('#add-condition').addEventListener('click', () => addRequirementCondition());
 document.querySelector('#add-condition-group').addEventListener('click', () => addRequirementConditionGroup());
 document.querySelector('#create-group').addEventListener('click', () => {

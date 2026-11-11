@@ -22,6 +22,7 @@ from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.analysis import FileSelection, analyzer_for
 from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.company_rules import apply_company_compliance, load_company_requirements
+from gitlab_radar.services.frameworks import detected_framework_codes
 from gitlab_radar.services.programming_languages import oldest_current_versions
 
 logger = logging.getLogger(__name__)
@@ -107,32 +108,16 @@ def _project_frameworks(
     project: Project,
     frameworks: list[ProgrammingFramework],
 ) -> list[ProjectFramework]:
-    result: list[ProjectFramework] = []
-    for framework in frameworks:
-        expected_dependencies = {str(name).casefold() for name in framework.dependency_names}
-        detected = any(
-            subproject.language == framework.language.code
-            and bool(expected_dependencies & _subproject_dependency_names(subproject))
-            for subproject in project.subprojects
+    detected_codes = detected_framework_codes(project, frameworks)
+    return [
+        ProjectFramework(
+            code=framework.code,
+            name=framework.name,
+            language=framework.language.name,
         )
-        if detected:
-            result.append(
-                ProjectFramework(
-                    code=framework.code,
-                    name=framework.name,
-                    language=framework.language.name,
-                ),
-            )
-    return result
-
-
-def _subproject_dependency_names(subproject: ProjectSubproject) -> set[str]:
-    dependencies = [
-        *subproject.dependencies,
-        *subproject.transitive_dependencies,
-        *(dependency for group in subproject.optional_dependencies for dependency in group.dependencies),
+        for framework in frameworks
+        if framework.code in detected_codes
     ]
-    return {dependency.name.casefold() for dependency in dependencies}
 
 
 async def find_reusable_project(

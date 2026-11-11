@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
 from enum import StrEnum
+lazy from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from gitlab_radar.schemas.dependency import Dependency, DependencyGroup
-from gitlab_radar.schemas.technology import PackageManager
+lazy from gitlab_radar.schemas.technology import PackageManager
 
 
 class ProjectLanguage(BaseModel):
@@ -28,6 +28,7 @@ class ProjectSubproject(BaseModel):
     path: str
     language: str = 'python'
     package_manager: PackageManager
+    runtime_version: str | None = None
     python_version: str | None = None
     python_constraint: str | None = None
     python_version_source: str | None = None

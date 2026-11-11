@@ -21,13 +21,14 @@ from gitlab_radar.schemas.dashboard import (
     TechnologyTarget,
     TechnologyUsage,
 )
-from gitlab_radar.schemas.company_requirement import CompanyRequirement as CompanyRequirementRule
 from gitlab_radar.schemas.dependency import DependencyLevel
 from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.company_rules import load_company_requirements
 from gitlab_radar.services.dependency import build_dependency_catalog, subproject_dependency_entries
+from gitlab_radar.services.frameworks import detected_framework_codes
 from gitlab_radar.services.project import load_projects
+lazy from gitlab_radar.schemas.company_requirement import CompanyRequirement as CompanyRequirementRule
 
 DEPENDENCY_LEVEL_TITLES = {
     DependencyLevel.DIRECT: 'Прямые',
@@ -246,19 +247,14 @@ async def _framework_statistics(projects: list[Project]) -> list[FrameworkStatis
         .order_by('name')
     )
     result: list[FrameworkStatistics] = []
+    detected_by_project = {
+        project.id: detected_framework_codes(project, frameworks) for project in projects
+    }
     for framework in frameworks:
-        dependency_names = {str(name).lower() for name in framework.dependency_names}
         project_ids = {
             project.id
             for project in projects
-            if any(
-                subproject.language == framework.language.code
-                and any(
-                    dependency.name.lower() in dependency_names
-                    for dependency, _ in subproject_dependency_entries(subproject)
-                )
-                for subproject in project.subprojects
-            )
+            if framework.code in detected_by_project[project.id]
         }
         if project_ids:
             result.append(
@@ -406,6 +402,8 @@ def _usage_from_projects(
 
 
 def _runtime_version(subproject: ProjectSubproject) -> str | None:
+    if subproject.runtime_version:
+        return _normalize_version(subproject.runtime_version)
     if subproject.language == 'python':
         return _normalize_version(subproject.python_version or subproject.python_constraint)
     return None
@@ -433,17 +431,11 @@ def _percentage(value: int, total: int) -> float:
 
 def _data_quality_statistics(projects: list[Project]) -> DataQualityStatistics:
     subprojects = [subproject for project in projects for subproject in project.subprojects]
-    python_subprojects = [
-        subproject for subproject in subprojects if subproject.language == 'python'
-    ]
     return DataQualityStatistics(
         unknown_package_manager=sum(
             subproject.package_manager is PackageManager.UNKNOWN for subproject in subprojects
         ),
-        unknown_python_version=sum(
-            not (subproject.python_version or subproject.python_constraint)
-            for subproject in python_subprojects
-        ),
+        unknown_language_version=sum(_runtime_version(subproject) is None for subproject in subprojects),
         projects_without_subprojects=sum(not project.subprojects for project in projects),
         analysis_errors=sum(bool(project.scan_error) for project in projects),
     )

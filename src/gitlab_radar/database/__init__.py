@@ -1,5 +1,5 @@
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+lazy from collections.abc import AsyncIterator
 
 from tortoise.contrib.fastapi import RegisterTortoise
 lazy from fastapi import FastAPI

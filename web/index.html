@@ -27,6 +27,7 @@
   <script src="/static/js/languages.js" defer></script>
   <script src="/static/js/users.js" defer></script>
   <script src="/static/js/visibility.js" defer></script>
+  <script src="/static/js/blacklist.js" defer></script>
   <script src="/static/js/admin.js" defer></script>
   <script src="/static/js/dependencies.js" defer></script>
   <script src="/static/js/scan.js" defer></script>
@@ -56,6 +57,7 @@
         <button class="nav-item administrator-navigation" data-route="languages" hidden>Языки программирования</button>
         <button class="nav-item administrator-navigation" data-route="users" hidden>Пользователи</button>
         <button class="nav-item administrator-navigation" data-route="visibility-admin" hidden>Политики видимости</button>
+        <button class="nav-item administrator-navigation" data-route="blacklist" hidden>Чёрный список</button>
         <button class="nav-item authenticated-navigation" data-route="admin" hidden>Управление</button>
       </nav>
       <div class="sidebar-footer">
@@ -324,6 +326,19 @@
         <article class="dashboard-card">
           <div class="card-heading"><p>Ролевые политики</p><button id="create-visibility-policy" class="primary-button icon-button" type="button" title="Добавить политику" aria-label="Добавить политику" data-icon="plus"></button></div>
           <div id="visibility-policy-list" class="visibility-card-list"></div>
+        </article>
+      </section>
+
+      <section id="blacklist" class="page">
+        <div class="intro"><p>Управление</p><h2>Чёрный список проектов</h2></div>
+        <article class="dashboard-card blacklist-card">
+          <div class="card-heading"><p>Исключённые пути</p><span>Применяется до сохранения проектов</span></div>
+          <p class="visibility-help">Укажите полный путь проекта или шаблон с <code>*</code>, например <code>archive/*</code>. Совпавшие проекты будут полностью пропущены при следующем сканировании.</p>
+          <form id="blacklist-form" class="authorized-user-form">
+            <label><span>Путь или шаблон</span><input id="blacklist-pattern" required maxlength="500" autocomplete="off" placeholder="group/project или group/*"></label>
+            <button class="primary-button icon-button" type="submit" title="Добавить правило" aria-label="Добавить правило" data-icon="plus"></button>
+          </form>
+          <div id="blacklist-rules" class="blacklist-rule-list"></div>
         </article>
       </section>
 

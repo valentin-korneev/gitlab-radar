@@ -25,20 +25,19 @@ OAUTH_NONCE_COOKIE = 'radar_oauth_nonce'
 OAUTH_RETURN_COOKIE = 'radar_oauth_return'
 WEBSOCKET_TICKET_TTL = timedelta(seconds=30)
 
-_OIDC_METADATA: dict[str, Any] | None = None
+_OIDC_METADATA_CACHE: list[dict[str, Any]] = []
 _OIDC_METADATA_LOCK = asyncio.Lock()
 _JWK_CLIENTS: dict[str, PyJWKClient] = {}
 
 
 async def oidc_metadata() -> dict[str, Any]:
-    global _OIDC_METADATA
-    if _OIDC_METADATA is not None:
-        return _OIDC_METADATA
+    if _OIDC_METADATA_CACHE:
+        return _OIDC_METADATA_CACHE[0]
     async with _OIDC_METADATA_LOCK:
-        if _OIDC_METADATA is None:
+        if not _OIDC_METADATA_CACHE:
             url = f'{settings.auth.internal_issuer}/.well-known/openid-configuration'
-            _OIDC_METADATA = await _request_json(url)
-    return _OIDC_METADATA
+            _OIDC_METADATA_CACHE.append(await _request_json(url))
+    return _OIDC_METADATA_CACHE[0]
 
 
 async def exchange_authorization_code(code: str, redirect_uri: str, verifier: str) -> dict[str, Any]:
