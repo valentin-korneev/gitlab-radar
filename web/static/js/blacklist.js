@@ -66,7 +66,7 @@ function renderProjectBlacklist() {
   const list = document.querySelector('#blacklist-rules');
   list.replaceChildren(...state.blacklistRules.map(blacklistRuleRow));
   if (!state.blacklistRules.length) {
-    list.append(element('p', 'empty-state', 'Чёрный список пуст.'));
+    list.append(element('p', 'empty-state', 'Черный список пуст.'));
   }
 }
 

@@ -9,6 +9,7 @@ lazy from asyncpg import Connection
 from gitlab_radar.clients.gitlab import GitLabRequestCounter
 from gitlab_radar.database.models import ScanRun
 from gitlab_radar.database.repository import (
+    carry_forward_missing_projects,
     clone_project,
     delete_project_files,
     delete_scan_files,
@@ -20,6 +21,7 @@ from gitlab_radar.database.repository import (
     restore_previous_analysis,
     save_analysis,
     save_collected_project,
+    set_project_scanned_at,
     sync_programming_languages,
     trim_old_scans,
 )
@@ -330,6 +332,10 @@ class ScanTask:
                 values['reused_projects'] = scan.reused_projects + 1
             elif result == 'skipped':
                 values['skipped_projects'] = scan.skipped_projects + 1
+            if item.snapshot_id is not None:
+                scanned_at = datetime.now(UTC)
+                item.project.scanned_at = scanned_at
+                await set_project_scanned_at(item.snapshot_id, scanned_at)
             invalidate_project_cache()
             if item.snapshot_id is not None:
                 self._updated_project_ids.append(item.project.id)
@@ -373,6 +379,8 @@ class ScanTask:
     ) -> None:
         await self._update(scan, phase=ScanPhase.PUBLISHING, current_project=None)
         logger.info('Локальный анализ завершен; результаты публикуются')
+        blacklist = tuple(await blacklist_patterns())
+        await carry_forward_missing_projects(scan, blacklist)
         completed_at = datetime.now(UTC)
         await self._update(
             scan,

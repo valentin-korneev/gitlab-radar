@@ -113,7 +113,7 @@ function visibilityEditorCard(item, kind) {
         await reloadVisibilityGroups();
         invalidateVisibilityData();
         await showPage();
-        showSuccess(groupId === null ? 'Фильтр по умолчанию снят' : 'Фильтр по умолчанию сохранён');
+        showSuccess(groupId === null ? 'Фильтр по умолчанию снят' : 'Фильтр по умолчанию сохранен');
       } catch (error) { showError(error); }
     });
     actions.append(defaultButton);

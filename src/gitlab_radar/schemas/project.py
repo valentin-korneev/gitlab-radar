@@ -24,6 +24,12 @@ class ProjectFramework(BaseModel):
     language: str
 
 
+class ProjectDataStatus(StrEnum):
+    CURRENT = 'current'
+    STALE = 'stale'
+    MISSING = 'missing'
+
+
 class ProjectSubproject(BaseModel):
     path: str
     language: str = 'python'
@@ -80,6 +86,8 @@ class Project(BaseModel):
     default_branch: str | None
     web_url: str
     last_activity_at: datetime | None
+    scanned_at: datetime | None = None
+    data_status: ProjectDataStatus = ProjectDataStatus.CURRENT
     package_manager: PackageManager | None = None
     languages: list[ProjectLanguage] = Field(default_factory=list)
     frameworks: list[ProjectFramework] = Field(default_factory=list)

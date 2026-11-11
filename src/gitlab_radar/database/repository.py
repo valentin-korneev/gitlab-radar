@@ -17,13 +17,20 @@ from gitlab_radar.database.models import (
     ProjectSnapshotLanguage,
     ScanRun,
 )
-from gitlab_radar.schemas.project import Project, ProjectFramework, ProjectLanguage, ProjectSubproject
+from gitlab_radar.schemas.project import (
+    Project,
+    ProjectDataStatus,
+    ProjectFramework,
+    ProjectLanguage,
+    ProjectSubproject,
+)
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.analysis import FileSelection, analyzer_for
 from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.company_rules import apply_company_compliance, load_company_requirements
 from gitlab_radar.services.frameworks import detected_framework_codes
 from gitlab_radar.services.programming_languages import oldest_current_versions
+from gitlab_radar.services.project_blacklist import project_is_blacklisted
 
 logger = logging.getLogger(__name__)
 REUSED_PROJECT_METADATA_FIELDS = {
@@ -33,6 +40,7 @@ REUSED_PROJECT_METADATA_FIELDS = {
     'default_branch',
     'web_url',
     'last_activity_at',
+    'scanned_at',
     'webhooks',
     'webhooks_accessible',
     'gitlab_access_level',
@@ -60,13 +68,7 @@ async def latest_scan() -> ScanRun | None:
 
 
 async def latest_data_scan() -> ScanRun | None:
-    scan = await latest_scan()
-    if scan is not None:
-        if scan.state == 'running':
-            return scan
-        if scan.state == 'failed' and await ProjectSnapshot.filter(scan_id=scan.id, analyzed=True).exists():
-            return scan
-    return await latest_published_scan()
+    return await latest_scan()
 
 
 async def load_projects() -> list[Project]:
@@ -82,11 +84,7 @@ async def load_projects() -> list[Project]:
             .prefetch_related('language')
             .order_by('name'),
         )
-        snapshots = ProjectSnapshot.filter(scan_id=scan.id)
-        if not scan.published:
-            snapshots = snapshots.filter(analyzed=True)
-        rows = await snapshots.order_by('gitlab_id').values_list('payload', flat=True)
-        projects = [Project.model_validate(payload) for payload in rows]
+        projects = await _projects_for_scan(scan)
         for project in projects:
             if not project.is_empty and not project.subprojects and (
                 not project.languages or any(language.code == 'python' for language in project.languages)
@@ -94,10 +92,57 @@ async def load_projects() -> list[Project]:
                 project.subprojects.append(ProjectSubproject(path='.', package_manager=PackageManager.UNKNOWN))
             project.frameworks = _project_frameworks(project, framework_rows)
             apply_company_compliance(project, requirements, parameter_values, language_versions)
+        projects.sort(
+            key=lambda project: (
+                project.data_status is not ProjectDataStatus.CURRENT,
+                project.scanned_at is None,
+                project.scanned_at,
+                project.id,
+            ),
+        )
         PROJECT_CACHE.scan_id = scan.id
         PROJECT_CACHE.projects = projects
         logger.info('Снимок %d загружен из PostgreSQL: проектов %d', scan.id, len(projects))
     return [project.model_copy(deep=True) for project in PROJECT_CACHE.projects]
+
+
+async def _projects_for_scan(scan: ScanRun) -> list[Project]:
+    current_rows = await (
+        ProjectSnapshot.filter(scan_id=scan.id)
+        .order_by('gitlab_id')
+        .values('gitlab_id', 'payload', 'analyzed', 'error')
+    )
+    current_rows = [row for row in current_rows if row['analyzed'] or row['error'] is not None]
+    current_ids = {int(row['gitlab_id']) for row in current_rows}
+    fallback_rows = await (
+        ProjectSnapshot.filter(analyzed=True, scan__published=True)
+        .exclude(scan_id=scan.id)
+        .order_by('-scan_id', 'gitlab_id')
+        .values('gitlab_id', 'payload')
+    )
+    fallback_by_id: dict[int, dict] = {}
+    for row in fallback_rows:
+        fallback_by_id.setdefault(int(row['gitlab_id']), row['payload'])
+
+    projects = [_current_project(row, published=scan.published) for row in current_rows]
+    fallback_status = ProjectDataStatus.MISSING if scan.published else ProjectDataStatus.STALE
+    projects.extend(
+        Project.model_validate(payload).model_copy(update={'data_status': fallback_status})
+        for project_id, payload in fallback_by_id.items()
+        if project_id not in current_ids
+    )
+    return projects
+
+
+def _current_project(row: dict, *, published: bool) -> Project:
+    project = Project.model_validate(row['payload'])
+    if not row['analyzed']:
+        project.data_status = ProjectDataStatus.STALE
+    elif published and project.data_status is ProjectDataStatus.MISSING:
+        project.data_status = ProjectDataStatus.MISSING
+    else:
+        project.data_status = ProjectDataStatus.CURRENT
+    return project
 
 
 def invalidate_project_cache() -> None:
@@ -166,6 +211,42 @@ async def clone_project(
     await _clone_language_analysis(source.id, snapshot.id)
     invalidate_project_cache()
     return snapshot
+
+
+async def carry_forward_missing_projects(
+    scan: ScanRun,
+    blacklist: tuple[str, ...],
+) -> None:
+    current_ids = set(
+        await ProjectSnapshot.filter(scan_id=scan.id).values_list('gitlab_id', flat=True),
+    )
+    source_rows = await (
+        ProjectSnapshot.filter(analyzed=True, scan__published=True)
+        .order_by('-scan_id', 'gitlab_id')
+    )
+    carried_ids: set[int] = set()
+    for source in source_rows:
+        project_id = int(source.gitlab_id)
+        if project_id in current_ids or project_id in carried_ids:
+            continue
+        payload = dict(source.payload)
+        path = str(payload.get('path_with_namespace') or '')
+        if project_is_blacklisted(path, blacklist):
+            carried_ids.add(project_id)
+            continue
+        payload['data_status'] = ProjectDataStatus.MISSING.value
+        target = await ProjectSnapshot.create(
+            scan=scan,
+            gitlab_id=project_id,
+            revision=source.revision,
+            analysis_fingerprint=source.analysis_fingerprint,
+            payload=payload,
+            collected=True,
+            analyzed=True,
+            reused=True,
+        )
+        await _clone_language_analysis(source.id, target.id)
+        carried_ids.add(project_id)
 
 
 async def save_collected_project(
@@ -248,6 +329,13 @@ async def save_analysis(snapshot_id: int, project: Project, error: str | None = 
         error=error,
     )
     invalidate_project_cache()
+
+
+async def set_project_scanned_at(snapshot_id: int, scanned_at: datetime) -> None:
+    snapshot = await ProjectSnapshot.get(id=snapshot_id)
+    payload = dict(snapshot.payload)
+    payload['scanned_at'] = scanned_at.isoformat()
+    await ProjectSnapshot.filter(id=snapshot_id).update(payload=payload)
 
 
 async def restore_previous_analysis(snapshot_id: int, project: Project, error: str) -> bool:

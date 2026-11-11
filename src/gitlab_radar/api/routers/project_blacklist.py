@@ -30,7 +30,7 @@ async def update_project_blacklist_rule(
 ) -> ProjectBlacklistRule:
     row = await ProjectBlacklistRuleModel.get_or_none(id=rule_id)
     if row is None:
-        raise HTTPException(status_code=404, detail='Правило чёрного списка не найдено')
+        raise HTTPException(status_code=404, detail='Правило черного списка не найдено')
     row.pattern = payload.pattern
     try:
         await row.save(update_fields=['pattern'])
@@ -43,4 +43,4 @@ async def update_project_blacklist_rule(
 async def delete_project_blacklist_rule(rule_id: int) -> None:
     deleted = await ProjectBlacklistRuleModel.filter(id=rule_id).delete()
     if not deleted:
-        raise HTTPException(status_code=404, detail='Правило чёрного списка не найдено')
+        raise HTTPException(status_code=404, detail='Правило черного списка не найдено')

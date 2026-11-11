@@ -412,8 +412,8 @@ def _runtime_version(subproject: ProjectSubproject) -> str | None:
 def _normalize_version(value: str | None) -> str | None:
     if not value:
         return None
-    match = re.search(r'(?<!\d)(\d+)\.(\d+)', value)
-    return '.'.join(match.groups()) if match else None
+    match = re.search(r'(?<!\d)(\d+)(?:\.(\d+))?', value)
+    return '.'.join(part for part in match.groups() if part is not None) if match else None
 
 
 def _safe_version(value: str | None) -> Version | None:

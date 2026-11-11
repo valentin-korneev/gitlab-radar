@@ -6,7 +6,7 @@ from gitlab_radar.clients.gitlab import gitlab_client
 from gitlab_radar.config import settings
 from gitlab_radar.database.repository import load_projects as load_projects_from_database
 from gitlab_radar.schemas.project import Project
-from gitlab_radar.services.project_blacklist import project_is_blacklisted
+from gitlab_radar.services.project_blacklist import blacklist_patterns, project_is_blacklisted
 from gitlab_radar.services.visibility import filter_projects_for_user
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ def fetch_projects(blacklist: tuple[str, ...] = ()) -> tuple[list[Project], int]
     common_parameters = {
         'active': True,
         'iterator': settings.gitlab.projects_iterator,
-        'per_page': 25,
+        'per_page': 50,
     }
     project_queries = (
         {'min_access_level': AccessLevel.REPORTER},
@@ -37,7 +37,7 @@ def fetch_projects(blacklist: tuple[str, ...] = ()) -> tuple[list[Project], int]
             path_with_namespace = str(project_data.get('path_with_namespace') or '')
             if project_is_blacklisted(path_with_namespace, blacklist):
                 skipped_projects += 1
-                logger.info('Проект %s пропущен по чёрному списку', path_with_namespace or project_id)
+                logger.info('Проект %s пропущен по черному списку', path_with_namespace or project_id)
                 continue
             if not project_data.get('default_branch'):
                 skipped_projects += 1
@@ -61,6 +61,12 @@ async def load_projects(
     visibility_group: str | None = None,
 ) -> list[Project]:
     projects = await load_projects_from_database()
+    blacklist = await blacklist_patterns()
+    projects = [
+        project
+        for project in projects
+        if not project_is_blacklisted(project.path_with_namespace, blacklist)
+    ]
     return await filter_projects_for_user(projects, preferred_username, visibility_group)
 
 

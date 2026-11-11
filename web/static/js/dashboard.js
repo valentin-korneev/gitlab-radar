@@ -118,7 +118,7 @@ function renderTargetLanguageFilter(languages) {
 function renderDependencyCountMatrix(statistics) {
   const container = document.querySelector('#dependency-count-matrix');
   if (!statistics.languages.length) {
-    container.replaceChildren(element('p', 'empty-state', 'Нет включённых языков со статистикой.'));
+    container.replaceChildren(element('p', 'empty-state', 'Нет включенных языков со статистикой.'));
     return;
   }
   const table = element('table', 'dependency-matrix-table');
@@ -155,7 +155,7 @@ function renderLanguageStatistics(languages) {
     row.append(heading, track, element('b', '', String(item.projects_count)));
     container.append(row);
   });
-  if (!languages.length) container.append(element('p', 'empty-state', 'Языки ещё не определены.'));
+  if (!languages.length) container.append(element('p', 'empty-state', 'Языки еще не определены.'));
 }
 function renderLanguageTechnologyCards(statistics) {
   const container = document.querySelector('#language-technology-cards');
@@ -167,7 +167,7 @@ function renderLanguageTechnologyCards(statistics) {
     managersHeading.append(element('p', '', `${language.name} · пакетные менеджеры`));
     const managers = element('div', 'compact-list');
     managers.append(...language.package_managers.map(
-      (item) => compactStatRow(item.name === 'unknown' ? 'Не определён' : item.name, item.projects_count),
+      (item) => compactStatRow(item.name === 'unknown' ? 'Не определен' : item.name, item.projects_count),
     ));
     const versionsCard = element('article', 'dashboard-card');
     const versionsHeading = element('div', 'card-heading');
@@ -323,7 +323,7 @@ function renderCompanyRequirements(dashboardRequirements) {
 }
 function renderDataQuality(quality) {
   document.querySelector('#data-quality-stats').replaceChildren(
-    compactStatRow('Пакетный менеджер не определён', quality.unknown_package_manager),
+    compactStatRow('Пакетный менеджер не определен', quality.unknown_package_manager),
     compactStatRow('Версия языка не определена', quality.unknown_language_version),
     compactStatRow('Проекты без обнаруженных модулей', quality.projects_without_subprojects),
     compactStatRow('Ошибки анализа', quality.analysis_errors),

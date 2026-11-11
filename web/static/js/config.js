@@ -46,7 +46,7 @@ const PHASE_TITLES = {
   publishing: 'Публикация результатов', completed: 'Результаты опубликованы',
 };
 const state = {
-  projects: [], dependencies: [], dependencyCache: {}, dependencySource: 'python', selectedId: null, selectedSubprojectPath: null,
+  projects: [], dependencies: [], dependencyCache: {}, dependencySource: 'python', selectedId: null, selectedSubprojectKey: null,
   projectFilters: { query: '', rules: new Set() },
   selectedDependency: null, dependencyQuery: '', dependencyLanguages: new Set(), dependencyLanguagesInitialized: false, showTransitive: false, scanState: null, scanStatus: null,
   scanSocket: null, scanReconnectTimer: null,

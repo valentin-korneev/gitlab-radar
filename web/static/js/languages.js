@@ -37,7 +37,7 @@ function languageRow(language) {
   );
   const analyzer = element('div', 'programming-language-analyzer');
   analyzer.append(
-    element('span', '', language.analyzer_key ? `Анализатор: ${language.analyzer_key}` : 'Анализатор не подключён'),
+    element('span', '', language.analyzer_key ? `Анализатор: ${language.analyzer_key}` : 'Анализатор не подключен'),
     element('small', '', language.analyzer_version ? `Версия ${language.analyzer_version}` : 'Только определение и статистика'),
   );
   if (language.package_managers.length) {
@@ -87,7 +87,7 @@ function languageRow(language) {
         .forEach((framework) => { framework.language_enabled = language.enabled; });
       renderProgrammingFrameworks();
       invalidateLanguageDependentData();
-      showSuccess(language.enabled ? 'Язык включён' : 'Язык выключен');
+      showSuccess(language.enabled ? 'Язык включен' : 'Язык выключен');
     } catch (error) {
       input.checked = language.enabled;
       showError(error);
@@ -95,7 +95,7 @@ function languageRow(language) {
       input.disabled = false;
     }
   });
-  toggle.append(input, element('span'), element('b', '', 'Включён'));
+  toggle.append(input, element('span'), element('b', '', 'Включен'));
   row.append(identity, analyzer, version, toggle);
   return row;
 }
@@ -129,7 +129,7 @@ function frameworkRow(framework) {
       });
       Object.assign(framework, updated);
       invalidateLanguageDependentData();
-      showSuccess(framework.enabled ? 'Фреймворк включён' : 'Фреймворк выключен');
+      showSuccess(framework.enabled ? 'Фреймворк включен' : 'Фреймворк выключен');
     } catch (error) {
       input.checked = framework.enabled;
       showError(error);
@@ -137,7 +137,7 @@ function frameworkRow(framework) {
       input.disabled = false;
     }
   });
-  toggle.append(input, element('span'), element('b', '', 'Включён'));
+  toggle.append(input, element('span'), element('b', '', 'Включен'));
   row.append(identity, dependencies, toggle);
   return row;
 }

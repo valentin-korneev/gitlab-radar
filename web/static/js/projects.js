@@ -1,10 +1,19 @@
+const PROJECT_DATA_STATUS_TITLES = {
+  stale: 'Устаревшие данные — проект не обработан в текущем сканировании',
+  missing: 'Проект не найден при последнем сканировании',
+};
+
 function subprojectView(project, subproject, detected = true) {
   const isRoot = subproject.path === '.';
+  const language = subproject.language || 'python';
   return {
+    key: `${language}:${subproject.path}`,
     path: subproject.path,
     title: isRoot ? project.name : projectPathParts(subproject.path).at(-1),
     fullPath: isRoot ? project.path_with_namespace : `${project.path_with_namespace}/${subproject.path}`,
     packageManager: subproject.package_manager,
+    language,
+    runtimeVersion: subproject.runtime_version || null,
     pythonVersion: subproject.python_version || null,
     pythonConstraint: subproject.python_constraint || null,
     pythonVersionSource: subproject.python_version_source || null,
@@ -29,25 +38,33 @@ function projectView(project) {
       transitive_dependencies: [],
     }, false)
     : null;
+  const displayRoot = root || (monorepository ? null : subprojects[0]) || fallback;
   return {
     project,
-    root: root || (monorepository ? null : subprojects[0]) || fallback,
-    children: monorepository ? subprojects.filter((subproject) => !subproject.isRoot) : [],
+    root: displayRoot,
+    children: monorepository ? subprojects.filter((subproject) => subproject !== displayRoot) : [],
     monorepository,
   };
+}
+
+function compareProjectsByScanTime(left, right) {
+  const leftStatus = left.data_status === 'current' ? 0 : 1;
+  const rightStatus = right.data_status === 'current' ? 0 : 1;
+  const leftTime = left.scanned_at ? new Date(left.scanned_at).getTime() : Number.POSITIVE_INFINITY;
+  const rightTime = right.scanned_at ? new Date(right.scanned_at).getTime() : Number.POSITIVE_INFINITY;
+  return leftStatus - rightStatus || leftTime - rightTime || left.id - right.id;
 }
 
 
 function projectMatchesFilters(project) {
   const query = state.projectFilters.query.trim().toLowerCase();
   const rules = [...state.projectFilters.rules];
-  const pythonVersions = project.subprojects
-    .map((item) => normalizePythonVersion(item.python_version || item.python_constraint))
+  const runtimeVersions = project.subprojects
+    .map((item) => item.runtime_version || item.python_version || item.python_constraint)
     .filter(Boolean)
-    .map((version) => `Python ${version}`)
     .join(' ');
   const languages = (project.languages || []).map((language) => `${language.name} ${language.code}`).join(' ');
-  const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${pythonVersions} ${languages}`.toLowerCase();
+  const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${runtimeVersions} ${languages}`.toLowerCase();
   return (!query || searchable.includes(query))
     && rules.every((rule) => project.company_rule_results?.[rule] === false);
 }
@@ -79,8 +96,11 @@ function exportFilteredProjects() {
   const projects = state.projects.filter(projectMatchesFilters);
   const rows = projects.map((project) => {
     const root = project.subprojects.find((subproject) => subproject.path === '.');
-    const pythonVersion = normalizedPythonVersion(root?.python_version, root?.python_constraint);
-    const python = [pythonVersion ? `Python ${pythonVersion}` : null, root?.python_constraint]
+    const pythonRoot = project.subprojects.find(
+      (subproject) => subproject.path === '.' && subproject.language === 'python',
+    );
+    const pythonVersion = normalizedPythonVersion(pythonRoot?.python_version, pythonRoot?.python_constraint);
+    const python = [pythonVersion ? `Python ${pythonVersion}` : null, pythonRoot?.python_constraint]
       .filter(Boolean)
       .join(' · ');
     return [
@@ -96,6 +116,7 @@ function exportFilteredProjects() {
       projectRegistries(project).join('\n'),
       projectViolationTitles(project.company_rule_results, requirements).join('\n'),
       project.scan_error || '',
+      PROJECT_DATA_STATUS_TITLES[project.data_status] || 'Актуальные данные',
       formatDate(project.last_activity_at),
       project.web_url,
     ];
@@ -116,6 +137,7 @@ function exportFilteredProjects() {
       { title: 'Registry', width: 42 },
       { title: 'Типы нарушений', width: 55 },
       { title: 'Ошибка анализа', width: 45 },
+      { title: 'Состояние данных', width: 42 },
       { title: 'Последняя активность', width: 22 },
       { title: 'GitLab URL', width: 48 },
     ],
@@ -124,7 +146,7 @@ function exportFilteredProjects() {
 }
 function clearProjectSelection() {
   state.selectedId = null;
-  state.selectedSubprojectPath = null;
+  state.selectedSubprojectKey = null;
   document.querySelector('#project-detail').replaceChildren(
     element('p', 'empty-state', 'Выберите проект, чтобы посмотреть детали.'),
   );
@@ -146,7 +168,7 @@ function renderProjects() {
     const selectedProject = project.id === state.selectedId;
     const tree = element('div', 'project-tree');
     const row = element('button');
-    row.className = `project-row${selectedProject && state.selectedSubprojectPath === (view.root?.path || null) ? ' active' : ''}`;
+    row.className = `project-row${selectedProject && state.selectedSubprojectKey === (view.root?.key || null) ? ' active' : ''}`;
     row.type = 'button';
     const identity = element('span');
     identity.append(element('strong', '', project.name), element('small', '', projectPathParts(project.path_with_namespace).join(' › ')));
@@ -159,6 +181,13 @@ function renderProjects() {
       ));
     }
     if (project.is_empty) identity.append(element('small', 'empty-project-status', 'Пустой проект'));
+    if (PROJECT_DATA_STATUS_TITLES[project.data_status]) {
+      identity.append(element(
+        'small',
+        `project-data-status ${project.data_status}`,
+        PROJECT_DATA_STATUS_TITLES[project.data_status],
+      ));
+    }
     if (view.monorepository) {
       identity.append(element('small', 'subproject-summary', `Монорепозиторий · подпроектов: ${view.children.length + (view.root ? 1 : 0)}`));
     }
@@ -169,9 +198,12 @@ function renderProjects() {
       const children = element('div', 'project-children');
       view.children.forEach((subproject) => {
         const child = element('button');
-        child.className = `project-child${selectedProject && state.selectedSubprojectPath === subproject.path ? ' active' : ''}`;
+        child.className = `project-child${selectedProject && state.selectedSubprojectKey === subproject.key ? ' active' : ''}`;
         child.type = 'button';
-        child.append(element('span', '', projectPathParts(subproject.path).join(' › ')), packageManagerBadge(subproject.packageManager));
+        const childPath = subproject.isRoot
+          ? `Корневой модуль · ${subproject.language}`
+          : projectPathParts(subproject.path).join(' › ');
+        child.append(element('span', '', childPath), packageManagerBadge(subproject.packageManager));
         child.addEventListener('click', () => selectProject(view, subproject, child));
         children.append(child);
       });
@@ -230,6 +262,15 @@ function appendProjectFrameworks(container, project) {
 function appendEmptyProjectStatus(container, project) {
   if (!project.is_empty) return;
   appendDetail(container, 'Статус', element('span', 'empty-project-badge', 'Пустой'));
+}
+function appendProjectDataStatus(container, project) {
+  const title = PROJECT_DATA_STATUS_TITLES[project.data_status];
+  if (!title) return;
+  appendDetail(container, 'Состояние данных', element(
+    'span',
+    `project-data-status-badge ${project.data_status}`,
+    title,
+  ));
 }
 function packageManagerBadge(value) {
   const badge = element('span', 'status-badge', value || '—');
@@ -389,6 +430,7 @@ function renderProjectDetail(view, subproject) {
     appendProjectPath(detail, project.path_with_namespace);
     appendDetail(detail, 'Основная ветка', project.default_branch);
     appendEmptyProjectStatus(detail, project);
+    appendProjectDataStatus(detail, project);
     appendProjectLanguages(detail, project);
     appendProjectFrameworks(detail, project);
     const compliance = element('p', 'detail-value compliance-value', `${project.company_compliance_percentage || 0}%`);
@@ -406,15 +448,22 @@ function renderProjectDetail(view, subproject) {
   appendProjectPath(detail, subproject.fullPath);
   appendDetail(detail, 'Основная ветка', project.default_branch);
   appendEmptyProjectStatus(detail, project);
+  appendProjectDataStatus(detail, project);
   appendProjectLanguages(detail, project);
   appendProjectFrameworks(detail, project);
   appendDetail(detail, 'Пакетный менеджер', packageManagerBadge(subproject.packageManager));
-  const normalizedPython = normalizedPythonVersion(subproject.pythonVersion, subproject.pythonConstraint);
-  const pythonDetails = [
-    normalizedPython ? `Python ${normalizedPython}` : 'Не определена',
-    subproject.pythonConstraint,
-  ].filter(Boolean).join(' · ');
-  appendDetail(detail, 'Python', pythonDetails);
+  if (subproject.language === 'python') {
+    const normalizedPython = normalizedPythonVersion(subproject.pythonVersion, subproject.pythonConstraint);
+    const pythonDetails = [
+      normalizedPython ? `Python ${normalizedPython}` : 'Не определена',
+      subproject.pythonConstraint,
+    ].filter(Boolean).join(' · ');
+    appendDetail(detail, 'Python', pythonDetails);
+  } else {
+    const languageName = project.languages.find((item) => item.code === subproject.language)?.name
+      || subproject.language;
+    appendDetail(detail, `Версия ${languageName}`, subproject.runtimeVersion || 'Не определена');
+  }
   const compliance = element('p', 'detail-value compliance-value', `${subproject.compliance}%`);
   compliance.classList.add(`compliance-${complianceTone(subproject.compliance, 'project_compliance_thresholds')}`);
   appendDetail(detail, 'Соответствие правилам компании', compliance);
@@ -434,7 +483,7 @@ function renderProjectDetail(view, subproject) {
 }
 function selectProject(view, subproject, row) {
   state.selectedId = view.project.id;
-  state.selectedSubprojectPath = subproject?.path || null;
+  state.selectedSubprojectKey = subproject?.key || null;
   document.querySelectorAll('.project-row.active, .project-child.active').forEach((node) => node.classList.remove('active'));
   row.classList.add('active');
   renderProjectDetail(view, subproject);
@@ -443,15 +492,15 @@ function selectProject(view, subproject, row) {
 
 async function loadProjects() {
   const [projects] = await Promise.all([api(API.projects), ensureRequirements(), ensureParameters()]);
-  state.projects = projects;
+  state.projects = projects.sort(compareProjectsByScanTime);
   state.loaded.projects = true;
   renderProjects();
   const selected = state.projects.find((project) => project.id === state.selectedId);
   if (selected) {
     const view = projectView(selected);
     const entries = [view.root, ...view.children].filter(Boolean);
-    const subproject = entries.find((item) => item.path === state.selectedSubprojectPath) || view.root;
-    state.selectedSubprojectPath = subproject?.path || null;
+    const subproject = entries.find((item) => item.key === state.selectedSubprojectKey) || view.root;
+    state.selectedSubprojectKey = subproject?.key || null;
     renderProjectDetail(view, subproject);
   }
   if (state.auth.user) await connectScanStatusSocket();
@@ -464,13 +513,12 @@ async function upsertScannedProject(projectId) {
   const existingIndex = state.projects.findIndex((item) => item.id === project.id);
   if (existingIndex >= 0) state.projects.splice(existingIndex, 1, project);
   else state.projects.push(project);
-  state.projects.sort((left, right) => left.id - right.id);
   renderProjects();
   if (state.selectedId === project.id) {
     const view = projectView(project);
     const entries = [view.root, ...view.children].filter(Boolean);
-    const subproject = entries.find((item) => item.path === state.selectedSubprojectPath) || view.root;
-    state.selectedSubprojectPath = subproject?.path || null;
+    const subproject = entries.find((item) => item.key === state.selectedSubprojectKey) || view.root;
+    state.selectedSubprojectKey = subproject?.key || null;
     renderProjectDetail(view, subproject);
   }
 }

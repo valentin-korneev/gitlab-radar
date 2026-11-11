@@ -92,5 +92,5 @@ async function removeAuthorizedUser(user) {
   });
   state.authorizedUsers = state.authorizedUsers.filter((item) => item.preferred_username !== user.preferred_username);
   renderAuthorizedUsers();
-  showSuccess('Пользователь удалён');
+  showSuccess('Пользователь удален');
 }

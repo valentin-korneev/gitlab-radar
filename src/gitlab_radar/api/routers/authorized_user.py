@@ -86,7 +86,7 @@ async def update_authorized_user(payload: AuthorizedUserUpdate) -> AuthorizedUse
 async def delete_authorized_user(preferred_username: str) -> None:
     environment_admins = _environment_admins()
     if preferred_username in environment_admins:
-        raise HTTPException(status_code=409, detail='Пользователь задан в окружении и не может быть удалён')
+        raise HTTPException(status_code=409, detail='Пользователь задан в окружении и не может быть удален')
     async with in_transaction() as connection:
         await connection.execute_query("SELECT pg_advisory_xact_lock(hashtext('gitlab-radar-authorized-users'))")
         user = await AuthorizedUserModel.filter(preferred_username=preferred_username).using_db(connection).first()

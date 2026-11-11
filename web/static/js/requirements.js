@@ -379,7 +379,7 @@ async function saveRequirementGroupOrder() {
   });
   state.loaded.dashboard = false;
   renderRequirementGroups();
-  showSuccess('Порядок групп сохранён');
+  showSuccess('Порядок групп сохранен');
 }
 async function saveRequirementOrder(groupNode) {
   const requirementIds = [...groupNode.querySelectorAll('[data-requirement-id]')]
@@ -391,7 +391,7 @@ async function saveRequirementOrder(groupNode) {
   });
   state.loaded.dashboard = false;
   renderRequirementGroups();
-  showSuccess('Порядок требований сохранён');
+  showSuccess('Порядок требований сохранен');
 }
 async function reloadRequirements() {
   [state.requirements, state.requirementGroups] = await Promise.all([

@@ -49,12 +49,18 @@ async function connectScanStatusSocket() {
 async function handleScanStatus(scan) {
   const previousState = state.scanState;
   const previousCompletedSteps = state.scanStatus?.completed_steps;
+  const streamChanged = state.scanStreamId !== scan.id;
   state.scanState = scan.state;
   state.scanStatus = scan;
   renderScanStatus(scan);
-  if (state.scanStreamId !== scan.id) {
+  if (streamChanged) {
     state.scanStreamId = scan.id;
-    state.streamedProjectIds = new Set();
+    if (state.loaded.projects && scan.state === 'running') await loadProjects();
+    state.streamedProjectIds = new Set(
+      state.projects
+        .filter((project) => project.data_status === 'current')
+        .map((project) => project.id),
+    );
   }
   for (const projectId of scan.updated_project_ids || []) {
     if (state.streamedProjectIds.has(projectId)) continue;
