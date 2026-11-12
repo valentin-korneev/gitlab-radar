@@ -52,8 +52,8 @@ function renderTechnologyTarget(target) {
   ];
   const markers = document.querySelector('#target-markers');
   const visibleItems = definitions.map(([, sourceItems], categoryIndex) => sourceItems
-    .filter((item) => categoryIndex >= 2 || technologyVisibleForLanguages(item))
-    .filter((item) => state.showSingleTechnologies || item.projects_count > 1));
+      .filter((item) => categoryIndex >= 2 || technologyVisibleForLanguages(item))
+      .filter((item) => state.showSingleTechnologies || item.projects_count > 1));
   const maximumTechnologyProjects = Math.max(0, ...visibleItems.flat().map((item) => item.projects_count));
   const scaleMaximum = Math.max(maximumTechnologyProjects * 1.1, 1);
   const markerNodes = definitions.flatMap(([category], categoryIndex) => {
