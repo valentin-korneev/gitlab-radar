@@ -426,33 +426,48 @@ function dependencyGroup(title, dependencies) {
   group.append(items);
   return group;
 }
-function appendProjectDependencies(container, subproject) {
-  const groups = [];
-  if (subproject.dependencies.length) groups.push(dependencyGroup('Основные', subproject.dependencies));
-  subproject.optionalDependencies.forEach((group) => {
-    if (group.dependencies.length) groups.push(dependencyGroup(`Опциональные · ${group.name}`, group.dependencies));
+function appendProjectDependencies(container, subproject, project) {
+  const relatedSubprojects = project.subprojects
+    .filter((item) => item.path === subproject.path
+      && canonicalLanguageCode(item.language) === canonicalLanguageCode(subproject.language))
+    .map((item) => subprojectView(project, item));
+  const sources = relatedSubprojects.length ? relatedSubprojects : [subproject];
+  const seen = new Set();
+  const unique = (dependencies) => dependencies.filter((dependency) => {
+    const key = `${dependency.name}\u0000${dependency.version || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
+  const direct = unique(sources.flatMap((item) => item.dependencies));
+  const optional = new Map();
+  sources.flatMap((item) => item.optionalDependencies).forEach((group) => {
+    const dependencies = unique(group.dependencies);
+    if (!dependencies.length) return;
+    if (!optional.has(group.name)) optional.set(group.name, []);
+    optional.get(group.name).push(...dependencies);
+  });
+  const transitive = unique(sources.flatMap((item) => item.transitiveDependencies));
+  const groups = [];
+  if (direct.length) groups.push(dependencyGroup('Основные', direct));
+  optional.forEach((dependencies, name) => groups.push(dependencyGroup(`Опциональные · ${name}`, dependencies)));
   const content = element('div', 'project-dependencies');
   if (groups.length) content.append(...groups);
   else content.append(element('p', 'empty-state', 'Основные и опциональные зависимости не найдены.'));
-  if (subproject.transitiveDependencies.length) {
-    const transitive = dependencyGroup('Транзитивные', subproject.transitiveDependencies);
-    transitive.hidden = true;
-    const button = element('button', 'transitive-toggle', `Показать транзитивные · ${subproject.transitiveDependencies.length}`);
+  if (transitive.length) {
+    const transitiveGroup = dependencyGroup('Транзитивные', transitive);
+    transitiveGroup.hidden = true;
+    const button = element('button', 'transitive-toggle', `Показать транзитивные · ${transitive.length}`);
     button.type = 'button';
     button.addEventListener('click', () => {
-      transitive.hidden = !transitive.hidden;
-      button.textContent = transitive.hidden
-        ? `Показать транзитивные · ${subproject.transitiveDependencies.length}`
+      transitiveGroup.hidden = !transitiveGroup.hidden;
+      button.textContent = transitiveGroup.hidden
+        ? `Показать транзитивные · ${transitive.length}`
         : 'Скрыть транзитивные';
     });
-    content.append(button, transitive);
+    content.append(button, transitiveGroup);
   }
-  const count = new Set([
-    ...subproject.dependencies.map((dependency) => dependency.name),
-    ...subproject.optionalDependencies.flatMap((group) => group.dependencies.map((dependency) => dependency.name)),
-    ...subproject.transitiveDependencies.map((dependency) => dependency.name),
-  ]).size;
+  const count = seen.size;
   const disclosure = element('details', 'dependency-disclosure');
   disclosure.append(element('summary', '', `Зависимости · ${count}`), content);
   container.append(disclosure);
@@ -512,14 +527,14 @@ function appendProjectHooks(container, project) {
   project.webhooks.forEach((hook) => {
     const entry = element('button', 'webhook-entry');
     entry.type = 'button';
-    entry.append(element('strong', '', hook.name || hook.url));
-    if (hook.name) entry.append(element('small', '', hook.url));
+    entry.append(element('strong', '', hook.name || maskWebhookUrl(hook.url)));
+    if (hook.name) entry.append(element('small', '', maskWebhookUrl(hook.url)));
     entry.append(element(
       'small',
       '',
       hook.events.map((event) => HOOK_EVENT_TITLES[event] || event).join(', ') || 'События не выбраны',
     ));
-    entry.addEventListener('click', () => openDependency(hook.url, 'webhook'));
+    entry.addEventListener('click', () => openDependency(webhookDomain(hook.url), 'webhook'));
     hooks.append(entry);
   });
   appendDetail(container, 'Webhooks', hooks);
@@ -591,7 +606,7 @@ function renderProjectDetail(view, subproject) {
   appendDetail(detail, 'Соответствие правилам компании', compliance);
   appendTechnologyStatuses(detail, project);
   appendRuleViolations(detail, subproject.ruleResults);
-  appendProjectDependencies(detail, subproject);
+  appendProjectDependencies(detail, subproject, project);
   appendGitLabComponents(detail, project);
   appendContainerImages(detail, project);
   appendProjectHooks(detail, project);
