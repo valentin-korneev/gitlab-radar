@@ -9,8 +9,7 @@ function renderDependencies() {
     .filter(({ dependency, visible }) => {
       const searchable = state.dependencySource === 'webhook'
         ? [dependency.name, ...dependency.versions.map((version) => version.version || '')]
-          .map((value) => maskWebhookText(value)).join(' ')
-        : dependency.name;
+        : [dependency.name];
       return searchable.some((value) => (
         state.dependencySource === 'webhook' ? maskWebhookText(value) : value
       ).toLowerCase().includes(query)) && visible.projectsCount;
@@ -243,7 +242,6 @@ function clearDependencySelection() {
 function resetDependencyPage() {
   state.dependencyQuery = '';
   state.showTransitive = false;
-  state.dependencyTreeExpanded.clear();
   state.dependencyLanguages.clear();
   state.dependencyLanguagesInitialized = false;
   document.querySelector('#dependency-search').value = '';
@@ -371,7 +369,6 @@ function renderDependencyLanguageOptions(languages) {
       if (selected) renderDependencyDetail(selected);
     });
     label.append(input, element('span', '', languageDisplayName(language)));
-
     return label;
   }));
   if (!languages.length) options.append(element('small', 'muted', 'Нет языков'));
