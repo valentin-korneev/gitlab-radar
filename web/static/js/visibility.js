@@ -14,13 +14,17 @@ function visibilityRuleRow(rule = { action: 'include', target: 'path', pattern: 
       select.className = 'visibility-rule-pattern';
       select.required = true;
       select.append(new Option('Выберите язык', ''));
+      const languages = new Map();
       state.programmingLanguages.forEach((language) => {
-        select.add(new Option(language.name, language.code));
+        const code = canonicalLanguageCode(language.code);
+        if (!languages.has(code)) languages.set(code, languageDisplayName(code, language.name));
       });
-      if (value && !state.programmingLanguages.some((language) => language.code === value)) {
+      languages.forEach((name, code) => select.add(new Option(name, code)));
+      const selectedCode = canonicalLanguageCode(value);
+      if (value && !languages.has(selectedCode)) {
         select.add(new Option(value, value));
       }
-      select.value = value;
+      select.value = selectedCode;
       return select;
     }
     const input = document.createElement('input');
