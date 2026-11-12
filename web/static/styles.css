@@ -614,10 +614,9 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .project-heading-actions { align-items: stretch; flex-direction: column; margin-bottom: 36px; }
   .project-controls, .dependency-controls { justify-content: stretch; }
   .project-controls > *, .dependency-controls > * { width: 100%; }
-  .dependency-top::after { display: none; }
-  .rule-switches, .rule-switches.six-columns { grid-template-columns: 1fr; }
   .scan-card { align-items: flex-start; flex-direction: column; }
   .dependency-top { grid-template-columns: 1fr; }
+  .dependency-top::after { display: none; }
   .rule-switches, .rule-switches.six-columns { grid-template-columns: 1fr; }
   .requirement-form { grid-template-columns: 1fr; }
   .requirement-form > * { grid-column: 1; }
