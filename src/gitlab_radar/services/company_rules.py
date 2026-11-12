@@ -15,6 +15,7 @@ from gitlab_radar.schemas.company_requirement import (
     RequirementSource,
 )
 from gitlab_radar.schemas.project import Project, ProjectSubproject
+from gitlab_radar.services.programming_languages import canonical_language_code
 
 PYTHON_CONSTRAINT_VERSION_PATTERN = re.compile(
     r'(?P<operator>===|==|~=|>=|<=|!=|\^|~|>|<)?\s*(?P<version>\d+(?:\.\d+){0,2})(?:\.\*)?',
@@ -34,6 +35,7 @@ class RuleContext:
     hooks: set[str]
     package_registries: set[str]
     container_registries: set[str]
+    project_languages: set[str]
 
 
 async def load_company_requirements(*, enabled: bool | None = True) -> list[CompanyRequirement]:
@@ -54,6 +56,7 @@ def serialize_company_requirement(
     row: CompanyRequirementModel,
     language: str | None = None,
 ) -> CompanyRequirement:
+    language = canonical_language_code(language) if language is not None else None
     return CompanyRequirement.model_validate(
         {
             'id': row.id,
@@ -87,10 +90,24 @@ def subproject_rule_results(
     }
     python_version = _subproject_python_version(subproject)
     context_parameters = dict(application_parameters or {})
-    oldest_current_version = (language_versions or {}).get(subproject.language)
+    language_code = canonical_language_code(subproject.language)
+    oldest_current_version = (language_versions or {}).get(subproject.language) or (language_versions or {}).get(
+        language_code,
+    )
     if oldest_current_version:
         context_parameters['oldest_current_version'] = oldest_current_version
         context_parameters[f'{subproject.language}_oldest_current_version'] = oldest_current_version
+        context_parameters[f'{language_code}_oldest_current_version'] = oldest_current_version
+        if language_code == 'javascript':
+            context_parameters['typescript_oldest_current_version'] = oldest_current_version
+    project_languages = {
+        language.code for language in project.languages
+    } | {item.language for item in project.subprojects} if project else set()
+    has_javascript = 'javascript' in project_languages
+    has_typescript = 'typescript' in project_languages
+    if has_javascript and has_typescript:
+        project_languages -= {'javascript', 'typescript'}
+        project_languages.add('javascript+typescript')
     context = RuleContext(
         application_parameters=context_parameters,
         python_versions={str(python_version)} if python_version else set(),
@@ -110,11 +127,15 @@ def subproject_rule_results(
                 _project_container_registries(project) if project else _subproject_container_registries(subproject)
             )
         },
+        project_languages=project_languages,
     )
     applicable_requirements = [
         requirement
         for requirement in requirements
-        if requirement.language == subproject.language or (include_global and requirement.language is None)
+        if (
+            requirement.language is not None
+            and canonical_language_code(requirement.language) == language_code
+        ) or (include_global and requirement.language is None)
     ]
     return {
         requirement.code: _matches_requirement(requirement, context) for requirement in applicable_requirements
@@ -180,6 +201,7 @@ def _source_values(source: RequirementSource, context: RuleContext) -> set[str]:
         RequirementSource.WEBHOOK: context.hooks,
         RequirementSource.PACKAGE_REGISTRY: context.package_registries,
         RequirementSource.CONTAINER_REGISTRY: context.container_registries,
+        RequirementSource.PROJECT_LANGUAGES: context.project_languages,
     }
     return values[source]
 
