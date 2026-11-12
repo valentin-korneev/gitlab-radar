@@ -76,7 +76,7 @@ function projectMatchesFilters(project) {
   const languages = (project.languages || []).map((language) => `${language.name} ${language.code}`).join(' ');
   const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${languageVersions} ${languages}`.toLowerCase();
   const versionMatches = !state.projectFilters.language || project.subprojects.some((subproject) => (
-    subproject.language === state.projectFilters.language
+    canonicalLanguageCode(subproject.language) === canonicalLanguageCode(state.projectFilters.language)
     && normalizedRuntimeVersion(
       subproject.runtime_version || subproject.python_version || subproject.python_constraint,
     ) === state.projectFilters.version
@@ -265,19 +265,19 @@ function formatLanguagePercentage(value) {
 
 function projectTechnologyGroups(project, valueProvider) {
   const languageNames = new Map(
-    (project.languages || []).map((language) => [language.code, language.name]),
+    (project.languages || []).map((language) => [canonicalLanguageCode(language.code), language.name]),
   );
   const valuesByLanguage = new Map();
   project.subprojects.forEach((subproject) => {
     const value = valueProvider(subproject);
     if (!value) return;
-    const language = subproject.language || 'python';
+    const language = canonicalLanguageCode(subproject.language || 'python');
     if (!valuesByLanguage.has(language)) valuesByLanguage.set(language, new Set());
     valuesByLanguage.get(language).add(value);
   });
   return [...valuesByLanguage.entries()]
     .map(([code, values]) => ({
-      name: languageNames.get(code) || code,
+      name: languageDisplayName(code, languageNames.get(code)),
       values: [...values].sort((left, right) => left.localeCompare(right, undefined, { numeric: true })),
     }))
     .sort((left, right) => left.name.localeCompare(right.name));
@@ -300,10 +300,21 @@ function projectPackageManagerSummary(project) {
 }
 
 function projectFrameworkSummary(project) {
-  return [...(project.frameworks || [])]
+  return [...new Map((project.frameworks || []).map((framework) => {
+    const code = frameworkLanguageCode(framework);
+    return [`${code}:${framework.name}`, {
+      name: framework.name,
+      language: languageDisplayName(code, framework.language),
+    }];
+  })).values()]
     .sort((left, right) => left.language.localeCompare(right.language) || left.name.localeCompare(right.name))
     .map((framework) => `${framework.name} (${framework.language})`)
     .join(' · ');
+}
+
+function frameworkLanguageCode(framework) {
+  if (/^(javascript|typescript)-/.test(framework.code)) return 'javascript';
+  return framework.language;
 }
 
 function appendProjectCardSummary(container, label, value) {
@@ -331,7 +342,14 @@ function appendProjectLanguages(container, project) {
 function appendProjectFrameworks(container, project) {
   if (!project.frameworks?.length) return;
   const badges = element('div', 'dependency-badges');
-  project.frameworks.forEach((framework) => {
+  const frameworks = new Map(project.frameworks.map((framework) => {
+    const code = frameworkLanguageCode(framework);
+    return [`${code}:${framework.name}`, {
+      ...framework,
+      language: languageDisplayName(code, framework.language),
+    }];
+  }));
+  frameworks.forEach((framework) => {
     const badge = element('span', 'dependency-badge project-technology-badge');
     badge.append(element('strong', '', framework.name), element('span', '', framework.language));
     badges.append(badge);
