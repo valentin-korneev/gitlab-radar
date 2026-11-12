@@ -45,7 +45,7 @@ function technologyVisibleForLanguages(item) {
   if (!(item.languages || []).length) return true;
   return item.languages.some((language) => state.technologyTargetLanguages.has(language));
 }
-function renderTechnologyTarget(target, projectsCount) {
+function renderTechnologyTarget(target) {
   const definitions = [
     ['Языки', target.languages], ['Зависимости', target.dependencies],
     ['Образы', target.images], ['Registry', target.registries],
