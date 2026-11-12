@@ -1,6 +1,5 @@
 from gitlab_radar.database.models import ProgrammingLanguage
 
-
 JAVASCRIPT_TYPESCRIPT_CODES = frozenset({'javascript', 'typescript'})
 
 
