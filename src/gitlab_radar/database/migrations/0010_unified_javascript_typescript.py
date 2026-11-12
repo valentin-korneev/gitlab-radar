@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from tortoise import migrations
 from tortoise.migrations import operations as ops
 
