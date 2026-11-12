@@ -35,7 +35,7 @@ class Migration(migrations.Migration):
                 "для JavaScript.', 'Проект использует версию Node.js не ниже минимальной поддерживаемой LTS "
                 "для TypeScript.') "
                 "THEN 'Проект использует версию Node.js не ниже единой минимальной поддерживаемой LTS.' "
-                'ELSE description END '
+                ' ELSE description END '
                 "WHERE code = 'javascript-version-current'; "
                 'DELETE FROM company_requirement_language '
                 "WHERE requirement_id IN (SELECT id FROM companyrequirement "
