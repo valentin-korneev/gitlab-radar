@@ -250,9 +250,9 @@ def _dependency_count_statistics(
                 level=level.value,
                 title=DEPENDENCY_LEVEL_TITLES[level],
                 by_language={
-                    language.code: len(by_language[language.code][level]) for language in languages
+                    language.code: len(by_language[language.code][level]) for language in language_options
                 },
-                total=sum(len(by_language[language.code][level]) for language in languages),
+                total=sum(len(by_language[language.code][level]) for language in language_options),
             )
             for level in DependencyLevel
         ],
