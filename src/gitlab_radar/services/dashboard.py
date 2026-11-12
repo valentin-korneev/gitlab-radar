@@ -27,6 +27,7 @@ from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.company_rules import load_company_requirements
 from gitlab_radar.services.dependency import build_dependency_catalog, subproject_dependency_entries
 from gitlab_radar.services.frameworks import detected_framework_codes
+from gitlab_radar.services.programming_languages import canonical_language_code, language_display_name
 from gitlab_radar.services.project import load_projects
 lazy from gitlab_radar.schemas.company_requirement import CompanyRequirement as CompanyRequirementRule
 
@@ -50,14 +51,7 @@ async def build_dashboard(
     requirements = await load_company_requirements()
     language_rows = await ProgrammingLanguage.all().order_by('name')
     enabled_rows = [row for row in language_rows if row.enabled]
-    enabled_languages = [
-        LanguageOption(
-            code=row.code,
-            name=row.name,
-            oldest_current_version=row.oldest_current_version,
-        )
-        for row in enabled_rows
-    ]
+    enabled_languages = _language_options(enabled_rows)
     language_counts = _language_project_counts(projects)
     non_empty_projects = [project for project in projects if not project.is_empty]
     dependency_catalog = await build_dependency_catalog(projects)
@@ -117,7 +111,7 @@ async def build_dashboard(
 def _language_project_counts(projects: list[Project]) -> Counter[str]:
     counts: Counter[str] = Counter()
     for project in projects:
-        counts.update({language.code for language in project.languages})
+        counts.update({canonical_language_code(language.code) for language in project.languages})
     return counts
 
 
@@ -126,26 +120,63 @@ def _display_language_statistics(
     counts: Counter[str],
     total_projects: int,
 ) -> list[LanguageStatistics]:
-    def sort_key(item: ProgrammingLanguage) -> tuple[int, str]:
-        return -counts[item.code], item.name.lower()
+    grouped = _group_language_rows(languages)
+    entries = [
+        (
+            code,
+            rows,
+            counts[code],
+            any(row.enabled for row in rows),
+            _language_group_version(rows),
+        )
+        for code, rows in grouped.items()
+    ]
 
-    enabled = sorted((language for language in languages if language.enabled), key=sort_key)[:10]
+    def sort_key(item: tuple[str, list[ProgrammingLanguage], int, bool, str | None]) -> tuple[int, str]:
+        return -item[2], language_display_name(item[0], item[1][0].name).lower()
+
+    enabled = sorted((item for item in entries if item[3]), key=sort_key)[:10]
     disabled_limit = 10 - len(enabled)
-    disabled = sorted((language for language in languages if not language.enabled), key=sort_key)[
+    disabled = sorted((item for item in entries if not item[3]), key=sort_key)[
         :disabled_limit
     ]
     selected = sorted([*enabled, *disabled], key=sort_key)
     return [
         LanguageStatistics(
-            code=language.code,
-            name=language.name,
-            projects_count=counts[language.code],
-            percentage=_percentage(counts[language.code], total_projects),
-            enabled=language.enabled,
-            oldest_current_version=language.oldest_current_version,
+            code=code,
+            name=language_display_name(code, rows[0].name),
+            projects_count=project_count,
+            percentage=_percentage(project_count, total_projects),
+            enabled=enabled,
+            oldest_current_version=oldest_current_version,
         )
-        for language in selected
+        for code, rows, project_count, enabled, oldest_current_version in selected
     ]
+
+
+def _language_options(languages: list[ProgrammingLanguage]) -> list[LanguageOption]:
+    return [
+        LanguageOption(
+            code=code,
+            name=language_display_name(code, rows[0].name),
+            oldest_current_version=_language_group_version(rows),
+        )
+        for code, rows in _group_language_rows(languages).items()
+    ]
+
+
+def _group_language_rows(
+    languages: list[ProgrammingLanguage],
+) -> dict[str, list[ProgrammingLanguage]]:
+    grouped: dict[str, list[ProgrammingLanguage]] = {}
+    for language in languages:
+        grouped.setdefault(canonical_language_code(language.code), []).append(language)
+    return grouped
+
+
+def _language_group_version(languages: list[ProgrammingLanguage]) -> str | None:
+    ordered = sorted(languages, key=lambda language: language.code != 'javascript')
+    return next((language.oldest_current_version for language in ordered if language.oldest_current_version), None)
 
 
 def _language_technology_statistics(
@@ -153,15 +184,20 @@ def _language_technology_statistics(
     languages: list[ProgrammingLanguage],
 ) -> list[LanguageTechnologyStatistics]:
     result: list[LanguageTechnologyStatistics] = []
-    for language in languages:
+    for code, language_rows in _group_language_rows(languages).items():
+        name = language_display_name(code, language_rows[0].name)
         language_projects = [
-            project for project in projects if any(item.code == language.code for item in project.languages)
+            project
+            for project in projects
+            if any(canonical_language_code(item.code) == code for item in project.languages)
         ]
         manager_projects: dict[str, set[int]] = {}
         version_projects: dict[str, set[int]] = {}
         for project in language_projects:
             subprojects = [
-                subproject for subproject in project.subprojects if subproject.language == language.code
+                subproject
+                for subproject in project.subprojects
+                if canonical_language_code(subproject.language) == code
             ]
             managers = {
                 subproject.package_manager.value
@@ -180,8 +216,8 @@ def _language_technology_statistics(
         if package_managers or versions:
             result.append(
                 LanguageTechnologyStatistics(
-                    code=language.code,
-                    name=language.name,
+                    code=code,
+                    name=name,
                     projects_count=len(language_projects),
                     package_managers=package_managers,
                     versions=versions,
@@ -195,11 +231,12 @@ def _dependency_count_statistics(
     languages: list[ProgrammingLanguage],
 ) -> DependencyCountStatistics:
     by_language: dict[str, dict[DependencyLevel, set[str]]] = {}
-    for language in languages:
+    language_options = _language_options(languages)
+    for language in language_options:
         names = {level: set() for level in DependencyLevel}
         for project in projects:
             for subproject in project.subprojects:
-                if subproject.language != language.code:
+                if canonical_language_code(subproject.language) != language.code:
                     continue
                 for dependency, level in subproject_dependency_entries(subproject):
                     names[level].add(dependency.name)
@@ -207,7 +244,7 @@ def _dependency_count_statistics(
         names[DependencyLevel.TRANSITIVE] -= names[DependencyLevel.DIRECT] | names[DependencyLevel.OPTIONAL]
         by_language[language.code] = names
     return DependencyCountStatistics(
-        languages=[LanguageOption(code=language.code, name=language.name) for language in languages],
+        languages=language_options,
         levels=[
             DependencyLevelStatistics(
                 level=level.value,
@@ -230,7 +267,10 @@ def _company_requirement_statistics(
         project
         for project in projects
         if requirement.language is None
-        or any(language.code == requirement.language for language in project.languages)
+        or any(
+            canonical_language_code(language.code) == canonical_language_code(requirement.language)
+            for language in project.languages
+        )
     ]
     matching_projects = sum(
         project.company_rule_results.get(requirement.code) is True for project in eligible_projects
@@ -251,10 +291,10 @@ async def _framework_statistics(projects: list[Project]) -> list[FrameworkStatis
         .prefetch_related('language')
         .order_by('name')
     )
-    result: list[FrameworkStatistics] = []
     detected_by_project = {
         project.id: detected_framework_codes(project, frameworks) for project in projects
     }
+    grouped: dict[tuple[str, str], tuple[set[int], set[str]]] = {}
     for framework in frameworks:
         project_ids = {
             project.id
@@ -262,14 +302,18 @@ async def _framework_statistics(projects: list[Project]) -> list[FrameworkStatis
             if framework.code in detected_by_project[project.id]
         }
         if project_ids:
-            result.append(
-                FrameworkStatistics(
-                    code=framework.code,
-                    name=framework.name,
-                    language=framework.language.name,
-                    projects_count=len(project_ids),
-                ),
-            )
+            code = canonical_language_code(framework.language.code)
+            grouped.setdefault((code, framework.name), (set(), set()))[0].update(project_ids)
+            grouped[(code, framework.name)][1].add(framework.code)
+    result = [
+        FrameworkStatistics(
+            code=min(codes),
+            name=name,
+            language=language_display_name(code),
+            projects_count=len(project_ids),
+        )
+        for (code, name), (project_ids, codes) in grouped.items()
+    ]
     return sorted(result, key=lambda item: (-item.projects_count, item.name.lower()))
 
 
@@ -281,11 +325,15 @@ def _top_dependencies(projects: list[Project]) -> list[DependencyStatistics]:
                 if level is DependencyLevel.TRANSITIVE:
                     continue
                 projects_by_dependency.setdefault(
-                    (dependency.name, subproject.language),
+                    (dependency.name, canonical_language_code(subproject.language)),
                     set(),
                 ).add(project.id)
     return [
-        DependencyStatistics(name=name, language=language, projects_count=len(project_ids))
+        DependencyStatistics(
+            name=name,
+            language=language_display_name(language),
+            projects_count=len(project_ids),
+        )
         for (name, language), project_ids in sorted(
             projects_by_dependency.items(),
             key=lambda item: (-len(item[1]), item[0][0], item[0][1]),
@@ -298,25 +346,29 @@ def _language_target_statistics(
     languages: list[ProgrammingLanguage],
 ) -> list[TechnologyUsage]:
     result: list[TechnologyUsage] = []
-    for language in languages:
+    for code, language_rows in _group_language_rows(languages).items():
+        name = language_display_name(code, language_rows[0].name)
         language_projects = [
-            project for project in projects if any(item.code == language.code for item in project.languages)
+            project
+            for project in projects
+            if any(canonical_language_code(item.code) == code for item in project.languages)
         ]
         if not language_projects:
             continue
         result.append(
             TechnologyUsage(
-                name=language.name,
+                name=name,
                 projects_count=len(language_projects),
-                languages=[language.code],
+                languages=[code],
             ),
         )
-        if language.oldest_current_version:
-            threshold = _safe_version(language.oldest_current_version)
+        oldest_current_version = _language_group_version(language_rows)
+        if oldest_current_version:
+            threshold = _safe_version(oldest_current_version)
             if threshold is not None:
                 lts_projects = sum(
                     any(
-                        subproject.language == language.code
+                        canonical_language_code(subproject.language) == code
                         and (version := _safe_version(_runtime_version(subproject))) is not None
                         and version >= threshold
                         for subproject in project.subprojects
@@ -325,26 +377,11 @@ def _language_target_statistics(
                 )
                 result.append(
                     TechnologyUsage(
-                        name=f'{language.name} LTS',
+                        name=f'{name} LTS',
                         projects_count=lts_projects,
-                        languages=[language.code],
+                        languages=[code],
                     ),
                 )
-    combined_codes = {'javascript', 'typescript'}
-    if combined_codes <= {language.code for language in languages}:
-        combined_projects = {
-            project.id
-            for project in projects
-            if any(language.code in combined_codes for language in project.languages)
-        }
-        if combined_projects:
-            result.append(
-                TechnologyUsage(
-                    name='JS + TS',
-                    projects_count=len(combined_projects),
-                    languages=sorted(combined_codes),
-                ),
-            )
     return result
 
 
@@ -354,7 +391,7 @@ def _registry_statistics(
     image_projects: dict[str, tuple[set[int], set[str]]] = {}
     registry_projects: dict[str, tuple[set[int], set[str]]] = {}
     for project in projects:
-        languages = {language.code for language in project.languages}
+        languages = {canonical_language_code(language.code) for language in project.languages}
         for image in project.container_images:
             _add_technology_project(
                 image_projects,
