@@ -31,7 +31,7 @@ function webhookDomain(value) {
 function maskWebhookUrl(value) {
   const rawUrl = String(value || '');
   const url = rawUrl.includes('://') ? rawUrl : `https://${rawUrl}`;
-  const parts = url.match(/^([a-z][a-z\d+.-]*:\/\/[^/?#]+)([^?#]*)(\?[^#]*)?(#.*)?$/i);
+  const parts = url.match(/^([a-z][a-z\d+.-]*:\/\/[^/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$/i);
   if (!parts) return url;
   const [, authority, pathname, search = '', fragment = ''] = parts;
   const hooksIndex = pathname.toLowerCase().indexOf('/hooks/');
