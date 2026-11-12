@@ -35,7 +35,7 @@ class Migration(migrations.Migration):
                 "для JavaScript.', 'Проект использует версию Node.js не ниже минимальной поддерживаемой LTS "
                 "для TypeScript.') "
                 "THEN 'Проект использует версию Node.js не ниже единой минимальной поддерживаемой LTS.' "
-                ' ELSE description END '
+                " ELSE description END "
                 "WHERE code = 'javascript-version-current'; "
                 'DELETE FROM company_requirement_language '
                 "WHERE requirement_id IN (SELECT id FROM companyrequirement "
@@ -48,7 +48,7 @@ class Migration(migrations.Migration):
                 'requirement_group.id, '
                 "'Если в проекте есть JavaScript или TypeScript, используются только файлы TypeScript, "
                 "а не оба языка.', "
-                "'{\"logic\":\"and\",\"items\":[{\"source\":\"project_languages\", "
+                "'{\"logic\":\"and\",\"items\":[{\"source\":\"project_languages\","
                 "\"operator\":\"equals\",\"values\":[\"javascript\",\"typescript\"]}]}'::jsonb, "
                 'TRUE, COALESCE(MAX(requirement.sort_order), 0) + 1 '
                 'FROM companyrequirementgroup requirement_group '
