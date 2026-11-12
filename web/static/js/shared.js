@@ -12,6 +12,46 @@ function normalizePythonVersion(value) {
   const match = value?.match(/(?:^|\D)(\d+)\.(\d+)/);
   return match ? `${match[1]}.${match[2]}` : null;
 }
+function canonicalLanguageCode(code) {
+  return ['javascript', 'typescript'].includes(code) ? 'javascript' : code;
+}
+function languageDisplayName(code, name = null) {
+  return canonicalLanguageCode(code) === 'javascript' ? 'JS / TS' : name || code;
+}
+function maskWebhookText(value) {
+  return String(value || '').replace(/\[masked-[a-f0-9]{10}\]/gi, '[masked]');
+}
+function webhookDomain(value) {
+  try {
+    const url = new URL(value.includes('://') ? value : `https://${value}`);
+    return `${url.hostname}${url.port ? `:${url.port}` : ''}`.toLowerCase();
+  }
+  catch (error) { return 'unknown-domain'; }
+}
+function maskWebhookUrl(value) {
+  const rawUrl = String(value || '');
+  const url = rawUrl.includes('://') ? rawUrl : `https://${rawUrl}`;
+  const parts = url.match(/^([a-z][a-z\d+.-]*:\/\/[^/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$/i);
+  if (!parts) return url;
+  const [, authority, pathname, search = '', fragment = ''] = parts;
+  const hooksIndex = pathname.toLowerCase().indexOf('/hooks/');
+  const maskedPath = hooksIndex < 0
+    ? pathname
+    : `${pathname.slice(0, hooksIndex + 7)}${pathname.slice(hooksIndex + 7).split('/').map((segment) => (
+      segment ? '[masked]' : ''
+    )).join('/')}`;
+  const maskedSearch = search
+    ? `?${search.slice(1).split('&').map((parameter) => {
+      const separatorIndex = parameter.indexOf('=');
+      if (separatorIndex < 0) return parameter;
+      const rawKey = parameter.slice(0, separatorIndex);
+      let key = rawKey;
+      try { key = decodeURIComponent(rawKey.replace(/\+/g, ' ')); } catch (error) {}
+      return /(?:token|secret)/i.test(key) ? `${rawKey}=[masked]` : parameter;
+    }).join('&')}`
+    : '';
+  return `${authority}${maskedPath}${maskedSearch}${fragment}`;
+}
 function registryName(value) {
   try { return new URL(value.includes('://') ? value : `https://${value}`).host.toLowerCase(); }
   catch (error) { return value.split('/')[0].toLowerCase(); }

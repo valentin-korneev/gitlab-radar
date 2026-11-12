@@ -47,6 +47,7 @@ function languageRow(language) {
   version.append(element('span', '', 'Самая старая актуальная версия'));
   const versionInput = element('input');
   versionInput.value = language.oldest_current_version || '';
+  versionInput.dataset.languageCode = language.code;
   versionInput.placeholder = 'Все версии актуальны';
   versionInput.maxLength = 50;
   versionInput.addEventListener('change', async () => {
@@ -58,6 +59,14 @@ function languageRow(language) {
         body: JSON.stringify({ oldest_current_version: versionInput.value.trim() || null }),
       });
       Object.assign(language, updated);
+      state.programmingLanguages
+        .filter((item) => canonicalLanguageCode(item.code) === canonicalLanguageCode(language.code))
+        .forEach((item) => { item.oldest_current_version = updated.oldest_current_version; });
+      document.querySelectorAll('.programming-language-version input').forEach((input) => {
+        if (canonicalLanguageCode(input.dataset.languageCode) === canonicalLanguageCode(language.code)) {
+          input.value = updated.oldest_current_version || '';
+        }
+      });
       versionInput.value = language.oldest_current_version || '';
       invalidateLanguageDependentData();
       showSuccess('Версия сохранена');
@@ -72,6 +81,7 @@ function languageRow(language) {
   const toggle = element('label', 'switch programming-language-switch');
   const input = element('input');
   input.type = 'checkbox';
+  input.dataset.languageCode = language.code;
   input.checked = language.enabled;
   input.addEventListener('change', async () => {
     input.disabled = true;
@@ -83,8 +93,16 @@ function languageRow(language) {
       });
       Object.assign(language, updated);
       state.programmingFrameworks
-        .filter((framework) => framework.language_code === language.code)
+        .filter((framework) => canonicalLanguageCode(framework.language_code) === canonicalLanguageCode(language.code))
         .forEach((framework) => { framework.language_enabled = language.enabled; });
+      state.programmingLanguages
+        .filter((item) => canonicalLanguageCode(item.code) === canonicalLanguageCode(language.code))
+        .forEach((item) => { item.enabled = language.enabled; });
+      document.querySelectorAll('.programming-language-switch input').forEach((toggle) => {
+        if (canonicalLanguageCode(toggle.dataset.languageCode) === canonicalLanguageCode(language.code)) {
+          toggle.checked = language.enabled;
+        }
+      });
       renderProgrammingFrameworks();
       invalidateLanguageDependentData();
       showSuccess(language.enabled ? 'Язык включен' : 'Язык выключен');

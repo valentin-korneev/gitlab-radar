@@ -15,6 +15,7 @@ from gitlab_radar.schemas.programming_language import (
 )
 from gitlab_radar.services.analysis import analyzer_for
 from gitlab_radar.services.dashboard import invalidate_dashboard_cache
+from gitlab_radar.services.programming_languages import JAVASCRIPT_TYPESCRIPT_CODES
 from gitlab_radar.services.project import load_projects
 
 router = APIRouter()
@@ -72,8 +73,9 @@ async def set_programming_language_enabled(
     row = await ProgrammingLanguageModel.get_or_none(id=language_id)
     if row is None:
         raise HTTPException(status_code=404, detail='Язык программирования не найден')
+    language_codes = JAVASCRIPT_TYPESCRIPT_CODES if row.code in JAVASCRIPT_TYPESCRIPT_CODES else {row.code}
+    await ProgrammingLanguageModel.filter(code__in=language_codes).update(enabled=payload.enabled)
     row.enabled = payload.enabled
-    await row.save(update_fields=['enabled'])
     invalidate_project_cache()
     invalidate_dashboard_cache()
     return _serialize(row)
@@ -88,7 +90,10 @@ async def set_programming_language_version(
     if row is None:
         raise HTTPException(status_code=404, detail='Язык программирования не найден')
     row.oldest_current_version = payload.oldest_current_version or None
-    await row.save(update_fields=['oldest_current_version'])
+    language_codes = JAVASCRIPT_TYPESCRIPT_CODES if row.code in JAVASCRIPT_TYPESCRIPT_CODES else {row.code}
+    await ProgrammingLanguageModel.filter(code__in=language_codes).update(
+        oldest_current_version=row.oldest_current_version,
+    )
     invalidate_project_cache()
     invalidate_dashboard_cache()
     return _serialize(row)

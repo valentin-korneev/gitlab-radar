@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import StrEnum
 lazy from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from gitlab_radar.schemas.dependency import Dependency, DependencyGroup
 lazy from gitlab_radar.schemas.technology import PackageManager
@@ -75,6 +75,11 @@ class ContainerImage(BaseModel):
     version: str | None = None
     source: ContainerSource
     file_path: str
+
+    @field_validator('registry', 'image', 'version', mode='before')
+    @classmethod
+    def strip_reference_quotes(cls, value: object) -> object:
+        return value.strip().strip('"\'') if isinstance(value, str) else value
 
 
 class Project(BaseModel):

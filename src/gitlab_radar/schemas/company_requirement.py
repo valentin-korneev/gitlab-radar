@@ -16,6 +16,7 @@ class RequirementSource(StrEnum):
     WEBHOOK = 'webhook'
     PACKAGE_REGISTRY = 'package_registry'
     CONTAINER_REGISTRY = 'container_registry'
+    PROJECT_LANGUAGES = 'project_languages'
 
 
 class RequirementOperator(StrEnum):

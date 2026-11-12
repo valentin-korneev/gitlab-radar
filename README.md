@@ -218,6 +218,8 @@ RADAR_AUTH_PREFERRED_USERNAMES=user.one,user.two
 RADAR_AUTH_ISSUER=https://<oidc-provider>/<optional-path>
 RADAR_AUTH_INTERNAL_URL=https://<oidc-provider-internal-address>
 RADAR_AUTH_CLIENT_ID=<client-id>
+RADAR_AUTH_CLIENT_SECRET=<client-secret>
+RADAR_AUTH_SESSION_SECRET=<random-secret-at-least-32-characters>
 ```
 
 `RADAR_AUTH_ISSUER` должен точно совпадать с claim `iss` токена. Вместо него для Keycloak можно передать

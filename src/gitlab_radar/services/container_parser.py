@@ -62,7 +62,7 @@ def _collect_argument(line: str, arguments: dict[str, str]) -> bool:
     match = _ARG_PATTERN.match(line)
     if not match or not match.group(2):
         return False
-    arguments[match.group(1)] = match.group(2).strip()
+    arguments[match.group(1)] = match.group(2).strip().strip('"\'')
     return True
 
 
@@ -112,9 +112,10 @@ def _parse_compose(content: bytes, path: str) -> list[ContainerImage]:
 
 
 def _container_image(value: str, source: ContainerSource, path: str) -> ContainerImage | None:
+    value = value.strip().strip('"\'')
     if _has_unresolved_template(value):
         return None
-    reference, separator, digest = value.strip().partition('@')
+    reference, separator, digest = value.partition('@')
     version = digest if separator else None
     last_slash = reference.rfind('/')
     last_colon = reference.rfind(':')

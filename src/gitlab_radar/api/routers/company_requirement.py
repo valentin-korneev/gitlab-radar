@@ -24,6 +24,7 @@ from gitlab_radar.services.company_rules import (
     serialize_company_requirement,
 )
 from gitlab_radar.services.dashboard import invalidate_dashboard_cache
+from gitlab_radar.services.programming_languages import canonical_language_code, language_display_name
 
 router = APIRouter()
 MAX_REQUIREMENTS_PER_GROUP = 4
@@ -39,6 +40,7 @@ SOURCE_TITLES = {
     'webhook': 'Webhook URL',
     'package_registry': 'Registry Python-пакетов',
     'container_registry': 'Registry контейнеров',
+    'project_languages': 'Языки программирования проекта',
 }
 OPERATOR_TITLES = {
     'equals': 'Равно одному из значений',
@@ -60,10 +62,17 @@ async def get_requirement_catalog() -> RequirementCatalog:
     python_language = await ProgrammingLanguage.get_or_none(code='python')
     python_version = python_language.oldest_current_version if python_language is not None else None
     languages = await ProgrammingLanguage.all().order_by('name')
+    language_options: dict[str, RequirementOption] = {}
+    for language in languages:
+        code = canonical_language_code(language.code)
+        language_options.setdefault(
+            code,
+            RequirementOption(value=code, title=language_display_name(code, language.name)),
+        )
     return RequirementCatalog(
         languages=[
             RequirementOption(value='', title='Без привязки к языку'),
-            *(RequirementOption(value=item.code, title=item.name) for item in languages),
+            *language_options.values(),
         ],
         sources=[
             RequirementOption(

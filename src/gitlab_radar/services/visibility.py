@@ -11,6 +11,7 @@ from gitlab_radar.database.models import (
     UserVisibilityGroup,
     UserVisibilityRule,
 )
+from gitlab_radar.services.programming_languages import canonical_language_code
 lazy from gitlab_radar.schemas.project import Project
 lazy from gitlab_radar.schemas.visibility import VisibilityRulePayload
 
@@ -39,7 +40,8 @@ def _matches_rule(
     rule: VisibilityRulePayload | UserVisibilityRule | AdminVisibilityPolicyRule | AdminUserVisibilityRule,
 ) -> bool:
     if rule.target == 'language':
-        return any(_matches(language.code, rule.pattern) for language in project.languages)
+        pattern = canonical_language_code(rule.pattern)
+        return any(_matches(canonical_language_code(language.code), pattern) for language in project.languages)
     return _matches(project.path_with_namespace, rule.pattern)
 
 
