@@ -302,6 +302,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .project-list, .project-detail, .dependency-list, .dependency-detail { min-width: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
 .project-list, .dependency-list { overflow: hidden; }
 .project-list, .project-detail, .dependency-list, .dependency-detail { height: auto; min-height: 0; overflow-x: hidden; overflow-y: auto; }
+.project-list, .project-detail, .dependency-list, .dependency-detail { min-height: 0; }
 .project-tree:not(:last-child) { border-bottom: 1px solid var(--line); }
 .project-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; width: 100%; border: 0; padding: 17px 20px; background: transparent; text-align: left; cursor: pointer; }
 .project-row:hover, .project-row.active { background: var(--surface-high); }
@@ -322,7 +323,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .project-child::before { content: ''; position: absolute; top: 50%; left: -19px; width: 18px; border-top: 1px solid var(--tree-line); }
 .project-child > span:first-child { min-width: 0; overflow-wrap: anywhere; color: var(--muted); font-size: .76rem; }
 .project-child:hover, .project-child.active { border-color: var(--hover-line); background: var(--surface-high); }
-.project-detail, .dependency-detail { position: sticky; top: 24px; min-height: 270px; padding: 26px; }
+.project-detail, .dependency-detail { padding: 26px; }
 .empty-state { color: var(--muted); line-height: 1.6; }
 .project-list > .empty-state, .dependency-list > .empty-state { margin: 0; padding: 20px; }
 .detail-label { margin: 22px 0 6px; color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; }
