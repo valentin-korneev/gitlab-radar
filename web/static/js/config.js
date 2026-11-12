@@ -48,8 +48,7 @@ const PHASE_TITLES = {
 const state = {
   projects: [], dependencies: [], dependencyCache: {}, dependencySource: 'python', selectedId: null, selectedSubprojectKey: null,
   projectFilters: { query: '', rules: new Set(), language: null, version: null },
-  selectedDependency: null, dependencyQuery: '', dependencyLanguages: new Set(), dependencyLanguagesInitialized: false, dependencyTreeExpanded: new Set(),
-  showTransitive: false, scanState: null, scanStatus: null,
+  selectedDependency: null, dependencyQuery: '', dependencyLanguages: new Set(), dependencyLanguagesInitialized: false, dependencyTreeExpanded: new Set(), showTransitive: false, scanState: null, scanStatus: null,
   scanSocket: null, scanReconnectTimer: null,
   scanStreamId: null, streamedProjectIds: new Set(),
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
