@@ -38,7 +38,7 @@ class Migration(migrations.Migration):
                 " ELSE description END "
                 "WHERE code = 'javascript-version-current'; "
                 'DELETE FROM company_requirement_language '
-                "WHERE requirement_id IN (SELECT id FROM companyrequirement "
+                'WHERE requirement_id IN (SELECT id FROM companyrequirement '
                 "WHERE code = 'typescript-version-current'); "
                 "DELETE FROM companyrequirement WHERE code = 'typescript-version-current'; "
                 'WITH inserted AS ( '
