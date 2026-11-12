@@ -406,7 +406,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .dependency-row strong { margin-bottom: 5px; }
 .dependency-row small { color: var(--muted); font-size: .7rem; }
 .dependency-row > b { display: grid; place-items: center; min-width: 30px; height: 30px; border-radius: 50%; background: var(--surface-high); font-size: .72rem; }
-.dependency-tree-node { border-bottom: 1px solid var(--line); font-size: .72rem; }
+.dependency-tree-node { border-bottom: 1px solid var(--line); }
 .dependency-tree-node:last-child { border-bottom: 0; }
 .dependency-tree-row { display: flex; align-items: center; gap: 6px; min-width: 0; border-left: 2px solid transparent; padding: 3px 8px; }
 .dependency-tree-toggle, .dependency-tree-spacer { display: grid; flex: 0 0 22px; place-items: center; width: 22px; height: 22px; }
