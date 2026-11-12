@@ -244,7 +244,7 @@ def _dependency_count_statistics(
         names[DependencyLevel.TRANSITIVE] -= names[DependencyLevel.DIRECT] | names[DependencyLevel.OPTIONAL]
         by_language[language.code] = names
     return DependencyCountStatistics(
-        languages=language_options,
+        languages=[LanguageOption(code=language.code, name=language.name) for language in language_options],
         levels=[
             DependencyLevelStatistics(
                 level=level.value,
