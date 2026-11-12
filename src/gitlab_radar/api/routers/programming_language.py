@@ -76,7 +76,6 @@ async def set_programming_language_enabled(
     language_codes = JAVASCRIPT_TYPESCRIPT_CODES if row.code in JAVASCRIPT_TYPESCRIPT_CODES else {row.code}
     await ProgrammingLanguageModel.filter(code__in=language_codes).update(enabled=payload.enabled)
     row.enabled = payload.enabled
-    await row.save(update_fields=['enabled'])
     invalidate_project_cache()
     invalidate_dashboard_cache()
     return _serialize(row)
