@@ -402,6 +402,19 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .dependency-row strong { margin-bottom: 5px; }
 .dependency-row small { color: var(--muted); font-size: .7rem; }
 .dependency-row > b { display: grid; place-items: center; min-width: 30px; height: 30px; border-radius: 50%; background: var(--surface-high); font-size: .72rem; }
+.dependency-tree-node { border-bottom: 1px solid var(--line); }
+.dependency-tree-node:last-child { border-bottom: 0; }
+.dependency-tree-row { display: flex; align-items: center; gap: 6px; min-width: 0; border-left: 2px solid transparent; padding: 3px 8px; }
+.dependency-tree-toggle, .dependency-tree-spacer { display: grid; flex: 0 0 22px; place-items: center; width: 22px; height: 22px; }
+.dependency-tree-toggle { border: 1px solid var(--line); border-radius: 7px; background: var(--surface-low); color: var(--muted); font-size: .85rem; cursor: pointer; }
+.dependency-tree-toggle:hover { border-color: var(--accent); color: var(--text); }
+.dependency-tree-select { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; flex: 1; min-width: 0; border: 0; border-radius: 7px; padding: 5px 8px; background: transparent; text-align: left; cursor: pointer; }
+.dependency-tree-select:hover, .dependency-tree-select.active { background: var(--surface-high); }
+.dependency-tree-select > span { min-width: 0; overflow-wrap: anywhere; font-size: .75rem; }
+.dependency-tree-select > b { display: grid; place-items: center; min-width: 24px; height: 24px; border-radius: 50%; background: var(--surface-high); font-size: .66rem; }
+.dependency-tree-node.in-selection-path > .dependency-tree-row { border-left-color: var(--accent); }
+.dependency-tree-select.in-selection-path, .dependency-tree-node.in-selection-path > .dependency-tree-row > .dependency-tree-toggle { color: var(--accent); }
+.dependency-tree-children { margin-left: 14px; border-left: 1px solid var(--tree-line); }
 .dependency-versions { display: grid; gap: 12px; margin-top: 24px; }
 .dependency-detail h3 { overflow-wrap: break-word; overflow-wrap: anywhere; }
 .dependency-version { min-width: 0; border: 1px solid var(--line); border-radius: 12px; padding: 15px; background: var(--surface-low); }
@@ -571,16 +584,21 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .brand { margin: 0 auto 0 0; }
   .brand-name, .sidebar-note, .theme-switch { display: none; }
   .sidebar-footer { display: none; }
-  .nav { display: flex; overflow-x: auto; overflow-y: hidden; padding-right: 0; }
+  .nav { display: flex; flex: 1 1 0; min-width: 0; overflow-x: auto; overflow-y: hidden; padding-right: 0; }
   .nav-divider { flex: 0 0 auto; width: 0; height: 30px; margin: 0 2px; border-top: 0; border-left: 1px solid var(--line); }
   .nav-item { flex: 0 0 auto; width: max-content; padding: 9px 11px; white-space: nowrap; }
   .content { height: auto; min-height: 0; padding: 0 20px 40px; }
   .topbar { min-height: 100px; }
+  #projects.page.active, #dependencies.page.active, #requirements.page.active, #languages.page.active { flex: initial; }
+  .projects-layout, .dependencies-layout, .requirements-layout, .programming-language-settings-grid { flex: initial; min-height: 0; }
   .cards, .dashboard-dynamic-cards, .language-technology-group, .projects-layout, .dependencies-layout, .admin-grid, .requirements-layout { grid-template-columns: 1fr; }
   .language-statistics { grid-template-columns: 1fr; }
+  .language-statistics::after, .dependency-top::after { display: none; }
   .programming-language-settings-grid { grid-template-columns: 1fr; }
-  .project-detail, .dependency-detail { position: static; }
+  .programming-languages-card, .programming-frameworks-card { max-height: min(65vh, 720px); }
   .project-list, .project-detail { height: auto; min-height: 0; max-height: none; overflow-y: visible; }
+  .project-detail, .dependency-detail { position: static; }
+  .dependency-list, .dependency-detail { height: auto; min-height: 0; max-height: none; overflow-y: visible; }
   .technology-target { min-height: auto; padding: 0; }
   .group-form { grid-template-columns: 1fr; }
   .group-form .requirement-form-actions { grid-column: 1; }
@@ -595,6 +613,8 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .project-heading-actions { align-items: stretch; flex-direction: column; margin-bottom: 36px; }
   .project-controls, .dependency-controls { justify-content: stretch; }
   .project-controls > *, .dependency-controls > * { width: 100%; }
+  .dependency-top::after { display: none; }
+  .rule-switches, .rule-switches.six-columns { grid-template-columns: 1fr; }
   .scan-card { align-items: flex-start; flex-direction: column; }
   .dependency-top { grid-template-columns: 1fr; }
   .rule-switches, .rule-switches.six-columns { grid-template-columns: 1fr; }
