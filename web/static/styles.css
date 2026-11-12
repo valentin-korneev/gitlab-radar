@@ -601,7 +601,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .language-statistics::after { display: none; }
   .programming-language-settings-grid { grid-template-columns: 1fr; }
   .programming-languages-card, .programming-frameworks-card { max-height: min(65vh, 720px); }
-  .project-list, .project-detail { height: auto; min-height: 0; max-height: none; overflow: visible; }
+  .project-list, .project-detail { height: auto; min-height: 0; max-height: none; overflow-y: visible; }
   .project-detail, .dependency-detail { position: static; }
   .dependency-list, .dependency-detail { height: min(65vh, 720px); min-height: 480px; overflow-y: auto; }
   .technology-target { min-height: auto; padding: 0; }
