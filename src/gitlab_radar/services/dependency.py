@@ -1,5 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
+from hashlib import sha256
+from urllib.parse import unquote_plus, urlsplit, urlunsplit
 lazy from collections.abc import Iterable
 
 from packaging.version import InvalidVersion, Version
@@ -14,6 +16,7 @@ from gitlab_radar.schemas.dependency import (
     DependencyVersionUsage,
 )
 from gitlab_radar.schemas.project import Project, ProjectSubproject
+from gitlab_radar.services.programming_languages import canonical_language_code
 from gitlab_radar.services.project import load_projects
 
 UsageEntry = tuple[Project, str, Dependency, DependencyLevel, str | None]
@@ -63,7 +66,7 @@ def _python_entries(projects: list[Project]) -> Iterable[UsageEntry]:
     for project in projects:
         for subproject in project.subprojects:
             for dependency, level in subproject_dependency_entries(subproject):
-                yield project, subproject.path, dependency, level, subproject.language
+                yield project, subproject.path, dependency, level, canonical_language_code(subproject.language)
 
 
 def _docker_entries(projects: list[Project]) -> Iterable[UsageEntry]:
@@ -83,7 +86,44 @@ def _ci_entries(projects: list[Project]) -> Iterable[UsageEntry]:
 def _webhook_entries(projects: list[Project]) -> Iterable[UsageEntry]:
     for project in projects:
         for hook in project.webhooks:
-            yield project, '.', Dependency(name=hook.url), DependencyLevel.DIRECT, None
+            domain, path = _safe_webhook_reference(hook.url)
+            yield project, '.', Dependency(name=domain, version=path), DependencyLevel.DIRECT, None
+
+
+def _safe_webhook_reference(value: str) -> tuple[str, str]:
+    parsed = urlsplit(value if '://' in value else f'https://{value}')
+    domain = parsed.hostname or 'unknown-domain'
+    if parsed.port:
+        domain = f'{domain}:{parsed.port}'
+    path_segments = parsed.path.split('/')
+    hooks_index = next(
+        (index for index, segment in enumerate(path_segments) if segment.casefold() == 'hooks'),
+        None,
+    )
+    if hooks_index is not None:
+        path_segments[hooks_index + 1:] = [
+            _mask_webhook_value(unquote_plus(segment)) if segment else ''
+            for segment in path_segments[hooks_index + 1:]
+        ]
+    path = '/'.join(path_segments) or '/'
+    query = '&'.join(_mask_webhook_query_parameter(parameter) for parameter in parsed.query.split('&'))
+    return domain.lower(), urlunsplit(('', '', path, query, parsed.fragment))
+
+
+def _mask_webhook_query_parameter(parameter: str) -> str:
+    key, separator, value = parameter.partition('=')
+    if separator and _is_sensitive_key(unquote_plus(key)):
+        return f'{key}{separator}{_mask_webhook_value(unquote_plus(value))}'
+    return parameter
+
+
+def _is_sensitive_key(value: str) -> bool:
+    return 'token' in value.casefold() or 'secret' in value.casefold()
+
+
+def _mask_webhook_value(value: str) -> str:
+    digest = sha256(value.encode()).hexdigest()[:10]
+    return f'[masked-{digest}]'
 
 
 def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
