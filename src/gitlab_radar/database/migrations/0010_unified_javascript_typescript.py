@@ -48,7 +48,7 @@ class Migration(migrations.Migration):
                 'requirement_group.id, '
                 "'Если в проекте есть JavaScript или TypeScript, используются только файлы TypeScript, "
                 "а не оба языка.', "
-                "'{\"logic\":\"and\",\"items\":[{\"source\":\"project_languages\","
+                "'{\"logic\":\"and\",\"items\":[{\"source\":\"project_languages\", "
                 "\"operator\":\"equals\",\"values\":[\"javascript\",\"typescript\"]}]}'::jsonb, "
                 'TRUE, COALESCE(MAX(requirement.sort_order), 0) + 1 '
                 'FROM companyrequirementgroup requirement_group '
