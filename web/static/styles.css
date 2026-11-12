@@ -578,7 +578,7 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 [hidden] { display: none !important; }
 
 @media (max-width: 850px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar { position: static; min-width: 0; flex-direction: row; align-items: center; height: auto; padding: 14px 20px; }
   body:has(#dashboard.page.active) .sidebar { position: sticky; z-index: 30; top: 0; align-self: start; }
   .brand { margin: 0 auto 0 0; }
@@ -591,7 +591,6 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .topbar { min-height: 100px; }
   #projects.page.active, #dependencies.page.active, #requirements.page.active, #languages.page.active { flex: initial; }
   .projects-layout, .dependencies-layout, .requirements-layout, .programming-language-settings-grid { flex: initial; min-height: 0; }
-  .cards, .dashboard-dynamic-cards, .language-technology-group, .projects-layout, .dependencies-layout, .admin-grid, .requirements-layout { grid-template-columns: 1fr; }
   .language-statistics { grid-template-columns: 1fr; }
   .language-statistics::after { display: none; }
   .programming-language-settings-grid { grid-template-columns: 1fr; }
