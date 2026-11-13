@@ -50,18 +50,28 @@ def _pyproject_dependency_groups(
     groups: dict[str, list[Dependency]] = {}
     for name, values in table(project, 'optional-dependencies').items():
         groups.setdefault(name, []).extend(requirement_list(values))
-    for name, values in table(document, 'dependency-groups').items():
-        groups.setdefault(name, []).extend(requirement_list(values))
+    definitions = table(document, 'dependency-groups')
+
+    def resolve(name: str, seen: frozenset[str]) -> list[Dependency]:
+        if name in seen or name not in definitions:
+            msg = 'Циклическая или отсутствующая группа зависимостей'
+            raise ValueError(msg)
+        result = []
+        for value in definitions[name]:
+            if isinstance(value, dict):
+                result.extend(resolve(value['include-group'], seen | {name}))
+            else:
+                result.extend(requirement_list([value]))
+        return result
+
+    for name in definitions:
+        groups.setdefault(name, []).extend(resolve(name, frozenset()))
     groups.setdefault('dev', []).extend(requirement_list(table(tool, 'uv').get('dev-dependencies')))
     return groups
 
 
 def parse_requirements(content: bytes) -> list[Dependency]:
-    try:
-        text = content.decode('utf-8')
-    except UnicodeDecodeError:
-        logger.warning('Не удалось разобрать requirements.txt')
-        return []
+    text = content.decode('utf-8-sig').replace('\\\n', '')
     dependencies: list[Dependency] = []
     for raw_line in text.splitlines():
         line = raw_line.strip()
@@ -80,11 +90,8 @@ def parse_requirements(content: bytes) -> list[Dependency]:
 
 
 def parse_toml(content: bytes, filename: str) -> dict[str, Any]:
-    try:
-        return tomllib.loads(content.decode('utf-8'))
-    except UnicodeDecodeError, tomllib.TOMLDecodeError:
-        logger.warning('Не удалось разобрать %s', filename)
-        return {}
+    del filename
+    return tomllib.loads(content.decode('utf-8-sig'))
 
 
 def parse_requirement(value: str) -> Dependency | None:
@@ -141,5 +148,3 @@ def table(value: object, name: str) -> dict[str, Any]:
         return {}
     result = value.get(name)
     return result if isinstance(result, dict) else {}
-
-

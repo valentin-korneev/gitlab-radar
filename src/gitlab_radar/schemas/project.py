@@ -9,11 +9,40 @@ from gitlab_radar.schemas.dependency import Dependency, DependencyGroup
 lazy from gitlab_radar.schemas.technology import PackageManager
 
 
+class LanguageAnalysisStatus(StrEnum):
+    PENDING = 'pending'
+    DISABLED = 'disabled'
+    UNSUPPORTED = 'unsupported'
+    ANALYZED = 'analyzed'
+    PARTIAL = 'partial'
+    FAILED = 'failed'
+
+
+class ProjectAnalysisStatus(StrEnum):
+    PENDING = 'pending'
+    SUCCESS = 'success'
+    PARTIAL = 'partial'
+    FAILED = 'failed'
+
+
+class DiagnosticStatus(StrEnum):
+    INVALID = 'invalid'
+    UNSUPPORTED = 'unsupported'
+    PARTIAL = 'partial'
+
+
+class AnalysisDiagnostic(BaseModel):
+    file_path: str
+    status: DiagnosticStatus = DiagnosticStatus.INVALID
+    message: str
+    language: str | None = None
+
+
 class ProjectLanguage(BaseModel):
     code: str
     name: str
     percentage: float
-    analysis_status: str = 'pending'
+    analysis_status: LanguageAnalysisStatus = LanguageAnalysisStatus.PENDING
     analyzer_version: str | None = None
     error: str | None = None
 
@@ -111,3 +140,5 @@ class Project(BaseModel):
     company_rule_results: dict[str, bool] = Field(default_factory=dict)
     revision: str | None = None
     scan_error: str | None = None
+    analysis_status: ProjectAnalysisStatus = ProjectAnalysisStatus.PENDING
+    analysis_diagnostics: list[AnalysisDiagnostic] = Field(default_factory=list)

@@ -6,6 +6,7 @@ lazy from collections.abc import Mapping
 import yaml
 
 from gitlab_radar.schemas.project import GitLabComponent
+from gitlab_radar.services.analysis.diagnostics import parse_yaml
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ def parse_gitlab_components(files: Mapping[str, bytes], gitlab_url: str) -> list
     predefined_variables = _predefined_variables(gitlab_url)
     for path, content in files.items():
         try:
-            document = yaml.safe_load(content.decode('utf-8'))
+            document = parse_yaml(content.decode('utf-8'))
         except UnicodeDecodeError, yaml.YAMLError:
             logger.warning('Не удалось разобрать конфигурацию GitLab CI: %s', path)
             continue

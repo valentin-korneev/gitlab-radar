@@ -29,7 +29,7 @@ LANGUAGE_ANALYZERS: dict[str, LanguageAnalyzer] = {
         TypeScriptAnalyzer(),
     )
 }
-PROJECT_ANALYZER_VERSION = '1'
+PROJECT_ANALYZER_VERSION = '2'
 
 
 def language_code(name: str) -> str:

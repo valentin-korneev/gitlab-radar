@@ -4,47 +4,43 @@ from collections import defaultdict
 from pathlib import PurePosixPath
 
 from gitlab_radar.schemas.dependency import Dependency, DependencyGroup
-from gitlab_radar.schemas.project import Project, ProjectSubproject
+from gitlab_radar.schemas.project import DiagnosticStatus, Project, ProjectSubproject
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.analysis.base import FileSelection
+from gitlab_radar.services.analysis.diagnostics import XmlElement, analyze_module, parse_xml, report
 from gitlab_radar.services.container_parser import parse_container_images
 from gitlab_radar.services.package_manager import is_container_filename
 
 MAVEN_FILENAME = 'pom.xml'
 GRADLE_BUILD_FILENAMES = frozenset({'build.gradle', 'build.gradle.kts'})
-GRADLE_CONFIG_FILENAMES = frozenset({
-    'settings.gradle',
-    'settings.gradle.kts',
-    'gradle.properties',
-    'gradle.lockfile',
-    'libs.versions.toml',
-})
-JAVA_FILENAMES = frozenset({MAVEN_FILENAME, *GRADLE_BUILD_FILENAMES, *GRADLE_CONFIG_FILENAMES})
-MAVEN_DEPENDENCY_MANAGEMENT_PATTERN = re.compile(
-    r'<dependencyManagement\b[^>]*>.*?</dependencyManagement>',
-    re.DOTALL,
+GRADLE_CONFIG_FILENAMES = frozenset(
+    {
+        'settings.gradle',
+        'settings.gradle.kts',
+        'gradle.properties',
+        'gradle.lockfile',
+        'libs.versions.toml',
+    }
 )
-MAVEN_BUILD_PATTERN = re.compile(r'<build\b[^>]*>.*?</build>', re.DOTALL)
-MAVEN_PARENT_PATTERN = re.compile(r'<parent\b[^>]*>(.*?)</parent>', re.DOTALL)
-MAVEN_PLUGIN_PATTERN = re.compile(r'<plugin\b[^>]*>(.*?)</plugin>', re.DOTALL)
-MAVEN_DEPENDENCY_PATTERN = re.compile(r'<dependency\b[^>]*>(.*?)</dependency>', re.DOTALL)
-MAVEN_PROPERTIES_PATTERN = re.compile(r'<properties\b[^>]*>(.*?)</properties>', re.DOTALL)
-MAVEN_PROPERTY_PATTERN = re.compile(r'<([A-Za-z0-9_.-]+)\b[^>]*>\s*([^<]+?)\s*</\1>')
-MAVEN_REPOSITORY_PATTERN = re.compile(r'<repository\b[^>]*>(.*?)</repository>', re.DOTALL)
-GRADLE_DIRECT_CONFIGURATIONS = frozenset({
-    'api',
-    'implementation',
-    'compileOnly',
-    'runtimeOnly',
-    'annotationProcessor',
-    'kapt',
-})
-GRADLE_OPTIONAL_CONFIGURATIONS = frozenset({
-    'testImplementation',
-    'testCompileOnly',
-    'testRuntimeOnly',
-    'testAnnotationProcessor',
-})
+JAVA_FILENAMES = frozenset({MAVEN_FILENAME, *GRADLE_BUILD_FILENAMES, *GRADLE_CONFIG_FILENAMES})
+GRADLE_DIRECT_CONFIGURATIONS = frozenset(
+    {
+        'api',
+        'implementation',
+        'compileOnly',
+        'runtimeOnly',
+        'annotationProcessor',
+        'kapt',
+    }
+)
+GRADLE_OPTIONAL_CONFIGURATIONS = frozenset(
+    {
+        'testImplementation',
+        'testCompileOnly',
+        'testRuntimeOnly',
+        'testAnnotationProcessor',
+    }
+)
 GRADLE_CONFIGURATIONS = GRADLE_DIRECT_CONFIGURATIONS | GRADLE_OPTIONAL_CONFIGURATIONS
 GRADLE_COORDINATE_PATTERN = re.compile(
     r'^\s*(?P<configuration>[A-Za-z][A-Za-z0-9]*)\s*'
@@ -82,7 +78,7 @@ GRADLE_VERSION_PATTERNS = (
 class JavaAnalyzer:
     key = 'java'
     language_code = 'java'
-    version = '2'
+    version = '3'
     package_manager_codes = ('maven', 'gradle')
 
     def select_files(self, repository_paths: list[str]) -> list[FileSelection]:
@@ -98,15 +94,47 @@ class JavaAnalyzer:
         ]
 
     def analyze(self, project: Project, files: dict[str, bytes]) -> list[ProjectSubproject]:
-        del project
-        manifests = _module_manifests(files)
-        version_catalog = _gradle_version_catalog(files)
-        return [
-            _build_maven_subproject(path, files[manifest], _module_files(path, files))
-            if PurePosixPath(manifest).name == MAVEN_FILENAME
-            else _build_gradle_subproject(path, files[manifest], _module_files(path, files), version_catalog)
-            for path, manifest in manifests
-        ]
+        modules = []
+        for path, manifest in _module_manifests(files):
+            file_set = _module_files(path, files)
+
+            def build(
+                path: str = path, manifest: str = manifest, file_set: dict[str, bytes] = file_set
+            ) -> ProjectSubproject:
+                if PurePosixPath(manifest).name == MAVEN_FILENAME:
+                    return _build_maven_subproject(path, files[manifest], file_set)
+                return _build_gradle_subproject(path, files[manifest], file_set, _gradle_version_catalog(file_set))
+
+            module = analyze_module(project, self.language_code, manifest, build)
+            if module is not None:
+                modules.append(module)
+            if PurePosixPath(manifest).name in GRADLE_BUILD_FILENAMES:
+                for line in _decode(files[manifest]).splitlines():
+                    configuration = re.match(r'\s*([A-Za-z]+)(?:\s+|\s*\()', line)
+                    if (
+                        configuration
+                        and configuration[1] in GRADLE_CONFIGURATIONS
+                        and not any(
+                            pattern.match(line)
+                            for pattern in (GRADLE_COORDINATE_PATTERN, GRADLE_MAP_PATTERN, GRADLE_ALIAS_PATTERN)
+                        )
+                    ):
+                        report(
+                            project,
+                            manifest,
+                            'Вычисляемая зависимость Gradle не разрешена',
+                            language=self.language_code,
+                            status=DiagnosticStatus.PARTIAL,
+                        )
+            elif module is not None and any(dependency.version is None for dependency in module.dependencies):
+                report(
+                    project,
+                    manifest,
+                    'Часть версий Maven не разрешена; parent/BOM извне не загружаются',
+                    language=self.language_code,
+                    status=DiagnosticStatus.PARTIAL,
+                )
+        return modules
 
 
 def _module_manifests(files: dict[str, bytes]) -> list[tuple[str, str]]:
@@ -140,91 +168,101 @@ def _build_maven_subproject(
     manifest: bytes,
     files: dict[str, bytes],
 ) -> ProjectSubproject:
-    text = _decode(manifest)
-    properties = _maven_properties(text)
-    dependencies: list[Dependency] = []
-    optional: dict[str, list[Dependency]] = defaultdict(list)
-    project_dependencies = MAVEN_BUILD_PATTERN.sub(
-        '',
-        MAVEN_DEPENDENCY_MANAGEMENT_PATTERN.sub('', text),
-    )
-    for node in MAVEN_DEPENDENCY_PATTERN.findall(project_dependencies):
-        group = _resolved_maven_tag(node, 'groupId', properties)
-        artifact = _resolved_maven_tag(node, 'artifactId', properties)
-        if not group or not artifact:
-            continue
-        dependency = Dependency(
-            name=f'{group}:{artifact}',
-            version=_resolved_maven_tag(node, 'version', properties),
-        )
-        scope = _resolved_maven_tag(node, 'scope', properties) or 'compile'
-        is_optional = _resolved_maven_tag(node, 'optional', properties) == 'true'
-        if scope in {'test', 'provided'} or is_optional:
-            optional['optional' if is_optional else scope].append(dependency)
-        else:
-            dependencies.append(dependency)
-    runtime_version = _maven_java_version(text, properties)
+    document = parse_xml(manifest)
+    for node in document.iter():
+        node.tag = node.tag.rsplit('}', maxsplit=1)[-1]
+    properties = _maven_properties(document)
+    dependencies, optional = _maven_dependencies(document, properties)
+    tools = {
+        f'{group}:{artifact}'
+        for node in [*document.findall('./parent'), *document.findall('./build/plugins/plugin')]
+        if (artifact := _xml_value(node, 'artifactId', properties))
+        and (group := _xml_value(node, 'groupId', properties) or 'org.apache.maven.plugins')
+    }
     return ProjectSubproject(
         path=path,
         language='java',
         package_manager=PackageManager.MAVEN,
-        runtime_version=runtime_version,
-        configured_tools=_maven_build_tools(text, properties),
+        runtime_version=_maven_runtime(document, properties),
+        configured_tools=sorted(tools),
         dependencies=_unique_dependencies(dependencies),
         optional_dependencies=[
             DependencyGroup(name=name, dependencies=_unique_dependencies(items))
             for name, items in sorted(optional.items())
         ],
-        package_registries=_maven_repositories(text, properties),
+        package_registries=sorted(
+            {
+                value
+                for node in document.findall('./repositories/repository')
+                if (value := _xml_value(node, 'url', properties))
+            }
+        ),
         container_images=parse_container_images(files),
         has_docker=any(is_container_filename(PurePosixPath(file_path).name) for file_path in files),
     )
 
 
-def _maven_properties(text: str) -> dict[str, str]:
-    match = MAVEN_PROPERTIES_PATTERN.search(text)
-    properties = dict(MAVEN_PROPERTY_PATTERN.findall(match.group(1))) if match else {}
-    project_header = re.sub(
-        r'<parent\b[^>]*>.*?</parent>',
-        '',
-        text.partition('<dependencies')[0],
-        flags=re.DOTALL,
-    )
+def _maven_properties(document: XmlElement) -> dict[str, str]:
+    properties = {node.tag: node.text.strip() for node in document.findall('./properties/*') if node.text}
     for name in ('groupId', 'artifactId', 'version'):
-        if value := _maven_tag(project_header, name):
-            properties[f'project.{name}'] = value
-            properties[f'pom.{name}'] = value
+        value = document.findtext(name) or document.findtext(f'parent/{name}')
+        if value:
+            properties[f'project.{name}'] = value.strip()
+            properties[f'pom.{name}'] = value.strip()
     return properties
 
 
-def _maven_java_version(text: str, properties: dict[str, str]) -> str | None:
-    for name in ('maven.compiler.release', 'maven.compiler.source', 'java.version', 'jdk.version'):
-        if value := _resolve(properties.get(name), properties):
-            return value
-    for name in ('release', 'source', 'target'):
-        value = _resolve(_maven_tag(text, name), properties)
-        if value and re.fullmatch(r'\d+(?:\.\d+)*', value):
-            return value
-    return None
+def _maven_dependencies(document: XmlElement, properties: dict[str, str]) -> tuple[list[Dependency], dict]:
+    managed = {}
+    for node in document.findall('./dependencyManagement/dependencies/dependency'):
+        identity = (_xml_value(node, 'groupId', properties), _xml_value(node, 'artifactId', properties))
+        managed[identity] = _xml_value(node, 'version', properties)
+    dependencies = []
+    optional = defaultdict(list)
+    for node in document.findall('./dependencies/dependency'):
+        group = _xml_value(node, 'groupId', properties)
+        artifact = _xml_value(node, 'artifactId', properties)
+        if not group or not artifact:
+            continue
+        dependency = Dependency(
+            name=f'{group}:{artifact}',
+            version=_xml_value(node, 'version', properties) or managed.get((group, artifact)),
+        )
+        scope = _xml_value(node, 'scope', properties) or 'compile'
+        if _xml_value(node, 'optional', properties) == 'true':
+            optional['optional'].append(dependency)
+        elif scope in {'test', 'provided'}:
+            optional[scope].append(dependency)
+        else:
+            dependencies.append(dependency)
+    return dependencies, optional
 
 
-def _maven_repositories(text: str, properties: dict[str, str]) -> list[str]:
-    return sorted({
-        url
-        for node in MAVEN_REPOSITORY_PATTERN.findall(text)
-        if (url := _resolved_maven_tag(node, 'url', properties))
-    })
+def _maven_runtime(document: XmlElement, properties: dict[str, str]) -> str | None:
+    runtime_version = next(
+        (
+            _resolve(properties.get(name), properties)
+            for name in ('maven.compiler.release', 'maven.compiler.source', 'java.version', 'jdk.version')
+            if _resolve(properties.get(name), properties)
+        ),
+        None,
+    )
+    if runtime_version is None:
+        runtime_version = next(
+            (
+                _xml_value(node, name, properties)
+                for node in document.findall('./build/plugins/plugin')
+                if node.findtext('artifactId') == 'maven-compiler-plugin'
+                for name in ('configuration/release', 'configuration/source', 'configuration/target')
+                if _xml_value(node, name, properties)
+            ),
+            None,
+        )
+    return runtime_version
 
 
-def _maven_build_tools(text: str, properties: dict[str, str]) -> list[str]:
-    nodes = [*MAVEN_PARENT_PATTERN.findall(text), *MAVEN_PLUGIN_PATTERN.findall(text)]
-    tools = {
-        f'{group}:{artifact}'
-        for node in nodes
-        if (group := _resolved_maven_tag(node, 'groupId', properties))
-        and (artifact := _resolved_maven_tag(node, 'artifactId', properties))
-    }
-    return sorted(tools)
+def _xml_value(node: XmlElement, path: str, properties: dict[str, str]) -> str | None:
+    return _resolve(node.findtext(path), properties)
 
 
 def _build_gradle_subproject(
@@ -241,7 +279,7 @@ def _build_gradle_subproject(
         _append_gradle_dependency(match.group('configuration'), dependency, dependencies, optional)
     for match in GRADLE_MAP_PATTERN.finditer(text):
         dependency = Dependency(
-            name=f"{match.group('group')}:{match.group('name')}",
+            name=f'{match.group("group")}:{match.group("name")}',
             version=match.group('version'),
         )
         _append_gradle_dependency(match.group('configuration'), dependency, dependencies, optional)
@@ -250,9 +288,7 @@ def _build_gradle_subproject(
         _append_gradle_dependency(match.group('configuration'), dependency, dependencies, optional)
     direct_names = {dependency.name for dependency in dependencies + optional}
     transitive = [
-        dependency
-        for dependency in _gradle_locked_dependencies(files)
-        if dependency.name not in direct_names
+        dependency for dependency in _gradle_locked_dependencies(files) if dependency.name not in direct_names
     ]
     all_text = '\n'.join(_decode(content) for content in files.values())
     runtime_version = next(
@@ -267,9 +303,7 @@ def _build_gradle_subproject(
         configured_tools=sorted(set(GRADLE_PLUGIN_PATTERN.findall(text))),
         dependencies=_unique_dependencies(dependencies),
         optional_dependencies=(
-            [DependencyGroup(name='test', dependencies=_unique_dependencies(optional))]
-            if optional
-            else []
+            [DependencyGroup(name='test', dependencies=_unique_dependencies(optional))] if optional else []
         ),
         transitive_dependencies=_unique_dependencies(transitive),
         package_registries=sorted(set(GRADLE_REPOSITORY_PATTERN.findall(all_text))),
@@ -306,7 +340,7 @@ def _gradle_locked_dependencies(files: dict[str, bytes]) -> list[Dependency]:
             continue
         result.extend(
             Dependency(
-                name=f"{match.group('group')}:{match.group('name')}",
+                name=f'{match.group("group")}:{match.group("name")}',
                 version=match.group('version'),
             )
             for match in GRADLE_LOCK_PATTERN.finditer(_decode(content))
@@ -376,15 +410,6 @@ def _resolve(value: str | None, properties: dict[str, str]) -> str | None:
             break
         result = updated
     return result if '${' not in result else None
-
-
-def _resolved_maven_tag(text: str, name: str, properties: dict[str, str]) -> str | None:
-    return _resolve(_maven_tag(text, name), properties)
-
-
-def _maven_tag(text: str, name: str) -> str | None:
-    match = re.search(rf'<{name}\b[^>]*>\s*([^<]+?)\s*</{name}>', text)
-    return match.group(1).strip() if match else None
 
 
 def _normalize_gradle_alias(value: str) -> str:

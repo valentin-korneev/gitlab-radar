@@ -19,6 +19,7 @@ from gitlab_radar.database.models import (
 )
 from gitlab_radar.schemas.project import (
     Project,
+    ProjectAnalysisStatus,
     ProjectDataStatus,
     ProjectFramework,
     ProjectLanguage,
@@ -178,6 +179,7 @@ async def find_reusable_project(
             revision=revision,
             analysis_fingerprint=analysis_fingerprint,
             analyzed=True,
+            error__isnull=True,
             scan__published=True,
         )
         .order_by('-scan_id')
@@ -244,6 +246,7 @@ async def carry_forward_missing_projects(
             collected=True,
             analyzed=True,
             reused=True,
+            error=source.error or payload.get('scan_error'),
         )
         await _clone_language_analysis(source.id, target.id)
         carried_ids.add(project_id)
@@ -325,8 +328,8 @@ async def save_analysis(snapshot_id: int, project: Project, error: str | None = 
     payload = _project_payload(project)
     await ProjectSnapshot.filter(id=snapshot_id).update(
         payload=payload,
-        analyzed=error is None,
-        error=error,
+        analyzed=project.analysis_status in {ProjectAnalysisStatus.SUCCESS, ProjectAnalysisStatus.PARTIAL},
+        error=error or project.scan_error,
     )
     invalidate_project_cache()
 
@@ -339,15 +342,15 @@ async def set_project_scanned_at(snapshot_id: int, scanned_at: datetime) -> None
 
 
 async def restore_previous_analysis(snapshot_id: int, project: Project, error: str) -> bool:
-    source = (
-        await ProjectSnapshot.filter(
-            gitlab_id=project.id,
-            analyzed=True,
-            scan__published=True,
-        )
-        .order_by('-scan_id')
-        .first()
-    )
+    source = None
+    candidates = ProjectSnapshot.filter(
+        gitlab_id=project.id, analyzed=True, error__isnull=True, scan__published=True,
+    ).order_by('-scan_id')
+    async for candidate in candidates:
+        # Older analyzers could store a language failure with analyzed=True and error=NULL.
+        if not candidate.payload.get('scan_error'):
+            source = candidate
+            break
     if source is None:
         return False
     payload = dict(source.payload)
@@ -358,6 +361,8 @@ async def restore_previous_analysis(snapshot_id: int, project: Project, error: s
         ),
     )
     payload['revision'] = source.revision
+    payload['analysis_status'] = project.analysis_status
+    payload['analysis_diagnostics'] = [item.model_dump(mode='json') for item in project.analysis_diagnostics]
     await ProjectSnapshot.filter(id=snapshot_id).update(
         payload=payload,
         analyzed=False,

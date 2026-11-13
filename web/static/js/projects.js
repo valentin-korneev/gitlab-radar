@@ -395,6 +395,17 @@ function appendEmptyProjectStatus(container, project) {
   appendDetail(container, 'Статус', element('span', 'empty-project-badge', 'Пустой'));
 }
 function appendProjectDataStatus(container, project) {
+  const analysisTitles = { success: 'Полный', partial: 'Частичный', failed: 'Ошибка' };
+  if (analysisTitles[project.analysis_status]) {
+    appendDetail(container, 'Результат анализа', analysisTitles[project.analysis_status]);
+  }
+  if (project.analysis_diagnostics?.length) {
+    const diagnostics = element('div');
+    project.analysis_diagnostics.forEach((item) => {
+      diagnostics.append(element('p', '', `${item.file_path}: ${item.message}`));
+    });
+    appendDetail(container, 'Диагностика файлов', diagnostics);
+  }
   const title = PROJECT_DATA_STATUS_TITLES[project.data_status];
   if (!title) return;
   appendDetail(container, 'Состояние данных', element(

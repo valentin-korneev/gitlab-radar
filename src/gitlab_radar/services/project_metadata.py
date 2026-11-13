@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
-class ProjectMetadata:  # pylint: disable=too-many-instance-attributes
+class ProjectMetadata:
     python_version: str | None
     python_constraint: str | None
     python_version_source: str | None

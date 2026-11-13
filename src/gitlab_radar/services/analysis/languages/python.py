@@ -1,7 +1,9 @@
+from functools import partial
 from pathlib import PurePosixPath
 
 from gitlab_radar.schemas.project import Project, ProjectSubproject
 from gitlab_radar.services.analysis.base import FileSelection
+from gitlab_radar.services.analysis.diagnostics import analyze_module
 from gitlab_radar.services.container_parser import parse_container_images
 from gitlab_radar.services.dependency_parser import parse_pyproject_document
 from gitlab_radar.services.package_manager import (
@@ -16,7 +18,7 @@ from gitlab_radar.services.project_metadata import parse_project_metadata
 class PythonAnalyzer:
     key = 'python'
     language_code = 'python'
-    version = '1'
+    version = '2'
     package_manager_codes = ('pip', 'uv')
 
     def select_files(self, repository_paths: list[str]) -> list[FileSelection]:
@@ -32,8 +34,12 @@ class PythonAnalyzer:
         ]
 
     def analyze(self, project: Project, files: dict[str, bytes]) -> list[ProjectSubproject]:
-        del project
-        return [_build_subproject(path, file_set) for path, file_set in _build_file_sets(files)]
+        return [
+            module
+            for path, file_set in _build_file_sets(files)
+            if (module := analyze_module(project, self.language_code, path, partial(_build_subproject, path, file_set)))
+            is not None
+        ]
 
 
 def _build_file_sets(files: dict[str, bytes]) -> list[tuple[str, dict[str, bytes]]]:
@@ -44,7 +50,7 @@ def _build_file_sets(files: dict[str, bytes]) -> list[tuple[str, dict[str, bytes
         _parent_directory(path) for path in subproject_files if is_package_discovery_filename(PurePosixPath(path).name)
     }
     if not directories:
-        return [('.', subproject_files)]
+        return [('.', subproject_files)] if subproject_files else []
     return [
         (
             directory or '.',

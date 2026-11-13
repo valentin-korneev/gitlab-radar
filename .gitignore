@@ -4,5 +4,4 @@
 .venv
 __pycache__
 *.py[cod]
-data
-!data/.gitkeep
+/docs/development-plan.md
