@@ -50,6 +50,8 @@ Frontend — нативные ES-модули с точкой входа `app.js
 
 ```mermaid
 erDiagram
+    ScanTarget ||--o{ PackagePeriod : package_versions
+    ScanTarget ||--o{ PackageHistoryHead : observed_languages
     ScanSchedule o|--o{ ScanRun : launches
     ScanRun ||--o{ ScanItem : observations
     ScanTarget ||--o{ ScanItem : attempts
@@ -89,6 +91,11 @@ erDiagram
 Справочники языков, фреймворков, требований и параметры независимы от результатов.
 Сессии, WebSocket-билеты, пользователи и правила видимости — отдельные сущности.
 `ApplicationSecret` хранит ключ маскирования webhook; `DataFixture` отмечает применение fixtures.
+
+Журнал исполнения сохраняется отдельно от тяжелых результатов. `PackagePeriod` сжимает неизменные версии
+границами `scan_from`–`scan_to`; `PackageHistoryHead` хранит исходные точки наблюдений языков.
+Изменения фиксируются транзакционно вместе с результатом; заполнение старой истории и очистка идут порциями
+в worker. Подробности: [история пакетов и хранение](history.md).
 
 Актуальность, fallback и очистка истории: [сканирование](scanning.md).
 

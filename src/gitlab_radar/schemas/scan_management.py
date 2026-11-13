@@ -54,6 +54,7 @@ class ScanItemSummary(BaseModel):
 
 
 class ScanItemDetail(ScanItemSummary):
+    results_archived: bool = False
     revision: str | None = None
     analysis_fingerprint: str
     diagnostics: list[AnalysisDiagnostic] = Field(default_factory=list)

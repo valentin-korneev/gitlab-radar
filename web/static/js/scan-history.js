@@ -1,5 +1,6 @@
+import { initializeCharts } from './scan-charts.js';
 import { api } from './api.js';
-import { API } from './config.js';
+import { API, ITEM_TITLES } from './config.js';
 import { bindEditorAction } from './editors.js';
 import { readLatest } from './requests.js';
 import { scanOptionsText } from './scan-options.js';
@@ -8,10 +9,6 @@ import { element, formatDate, formatDuration, iconButton } from './shared.js';
 import { scanState } from './state.js';
 import { showError, showSuccess } from './toasts.js';
 
-const ITEM_TITLES = {
-  pending: 'Ожидает обработки', collected: 'Файлы собраны', success: 'Готово', partial: 'Частичный анализ',
-  failed: 'Ошибка', reused: 'Анализ использован повторно', missing: 'Не найден', skipped: 'Пропущен',
-};
 const historyState = { rows: [], cursor: null, selectedId: null, run: null, items: [], itemsCursor: 0, scheduleId: null };
 function terminal(run) { return ['completed', 'failed', 'cancelled'].includes(run.state); }
 function busy() { return ['queued', 'running', 'stopping'].includes(scanState.scanStatus?.state); }
@@ -87,6 +84,7 @@ function renderRun() {
   });
   skipped.append(element('span', '', 'Пропущено проектов'), element('b', '', String(run.skipped_projects)));
   header.append(skipped);
+  if (run.results_archived) header.append(element('p', 'scan-item-description scan-archive-note', 'Тяжелые результаты удалены по сроку хранения. Журнал запуска и история пакетов сохранены.'));
   if (run.error) {
     const error = element('section', 'scan-item-error scan-run-error');
     error.append(element('strong', '', 'Причина завершения'), element('p', 'error-text', run.error));
@@ -202,7 +200,7 @@ async function openItem(scanId, itemId) {
   detail.append(diagnostics);
   const technical = element('details', 'scan-item-technical');
   technical.append(element('summary', '', 'Технические данные'), itemProperties([
-    ['Пункт запуска', `№${item.id}`], ['Результат анализа', item.result_id ? `№${item.result_id}` : 'Не создан'],
+    ['Пункт запуска', `№${item.id}`], ['Результат анализа', item.result_id ? `№${item.result_id}` : item.results_archived ? 'Удален по сроку хранения' : 'Не создан'],
     ['Git revision', item.revision || 'Не определена'], ['Fingerprint анализа', item.analysis_fingerprint || 'Не определен'],
   ]));
   detail.append(technical);
@@ -222,7 +220,17 @@ function filterSchedule(id = null, name = '') {
   document.querySelector('#scan-history-clear-schedule').hidden = !id;
   if (id) document.querySelector('#scan-history-source').value = 'schedule';
 }
+function historyChartFilters() {
+  const query = new URLSearchParams();
+  const state = document.querySelector('#scan-history-state').value;
+  const source = document.querySelector('#scan-history-source').value;
+  if (state) query.set('state', state);
+  if (source) query.set('source', source);
+  if (historyState.scheduleId) query.set('schedule_id', historyState.scheduleId);
+  return query;
+}
 function initializeHistory() {
+  initializeCharts(historyChartFilters, selectRun);
   document.querySelector('#scan-history-clear-schedule').addEventListener('click', () => {
     filterSchedule(); loadHistory().catch(showError);
   });

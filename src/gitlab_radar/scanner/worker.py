@@ -1,18 +1,22 @@
 import asyncio
 import logging
+from time import monotonic
 
 lazy from asyncpg import Connection
 
 from gitlab_radar.clients.gitlab import ScanGitLab
 from gitlab_radar.database.models import ScanRun
+from gitlab_radar.database.package_history import backfill_package_history
 from gitlab_radar.database.scan_authority import ScanAuthority, scan_authority
 from gitlab_radar.database.scan_jobs import claim_next, finish_scan, heartbeat, recover_expired_scans
 from gitlab_radar.database.scan_lock import acquire_scan_lock, release_scan_lock
+from gitlab_radar.database.scan_retention import archive_old_results
 from gitlab_radar.database.scan_schedules import enqueue_due_schedule
 from gitlab_radar.domain.scanning import ScanInterruptedError, StopSignal
 from gitlab_radar.scanner.pipeline import SCAN_ERRORS, ScanPipeline
 from gitlab_radar.scanner.request_guard import request_guard
 from gitlab_radar.schemas.scan import ScanState
+from gitlab_radar.services.application_parameters import application_parameter_values
 
 logger = logging.getLogger(__name__)
 POLL_SECONDS = 1
@@ -30,6 +34,7 @@ class ScannerWorker:
         self._signal: StopSignal | None = None
         self._lock_connection: Connection | None = None
         self._task: asyncio.Task[None] | None = None
+        self._next_maintenance = 0.0
 
     async def start(self) -> None:
         if self._task is None:
@@ -72,10 +77,15 @@ class ScannerWorker:
             await recover_expired_scans()
             await enqueue_due_schedule()
             scan = await claim_next()
+            if scan is not None and not await self._execute(scan, connection):
+                return
+            if scan is not None or monotonic() >= self._next_maintenance:
+                history_work = await backfill_package_history()
+                parameters = await application_parameter_values()
+                archive_work = await archive_old_results(int(parameters['retained_scan_count']))
+                self._next_maintenance = monotonic() + (POLL_SECONDS if history_work or archive_work else 30)
             if scan is None:
                 await self._wait()
-            elif not await self._execute(scan, connection):
-                return
 
     def _connection_lost(self, _connection: Connection) -> None:
         if _connection is self._lock_connection and self._signal is not None:

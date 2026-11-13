@@ -402,6 +402,7 @@
           <div class="scan-management-actions">
             <label class="visibility-field">Статус<select id="scan-history-state"><option value="">Все</option><option value="queued">Ожидает</option><option value="running">Выполняется</option><option value="stopping">Останавливается</option><option value="completed">Завершено</option><option value="failed">Ошибка</option><option value="cancelled">Остановлено</option></select></label>
             <label class="visibility-field">Источник<select id="scan-history-source"><option value="">Все</option><option value="manual">Вручную</option><option value="schedule">По расписанию</option></select></label>
+            <button id="scan-statistics-open" type="button" class="secondary-button icon-button" title="Статистика запусков" aria-label="Статистика запусков" data-icon="chart"></button>
             <button id="scan-history-refresh" type="button" class="secondary-button icon-button" title="Обновить историю" aria-label="Обновить историю" data-icon="refresh"></button>
           </div>
           <div id="scan-history-schedule-filter" class="scan-schedule-filter" hidden><span id="scan-history-schedule"></span><button id="scan-history-clear-schedule" class="secondary-button icon-button" type="button" title="Показать все расписания" aria-label="Показать все расписания" data-icon="close" hidden></button></div>
@@ -422,6 +423,46 @@
           </article>
         </dialog>
       </section>
+
+      <dialog id="project-history-dialog" class="editor-dialog requirement-editor-dialog">
+        <article class="dashboard-card project-history-card">
+          <div class="card-heading"><div><p>История проекта и пакетов</p><small id="project-history-title" class="scan-item-description"></small></div>
+            <div class="visibility-editor-actions">
+              <button id="project-history-refresh" type="button" class="secondary-button icon-button" title="Обновить историю" aria-label="Обновить историю" data-icon="refresh"></button>
+              <button id="project-history-close" type="button" class="secondary-button icon-button" title="Закрыть" aria-label="Закрыть" data-icon="close"></button>
+            </div>
+          </div>
+          <div class="project-history-controls">
+            <label class="visibility-field">Цель<select id="project-history-target"></select></label>
+            <label class="visibility-field">Путь модуля<input id="project-history-module" maxlength="1000" placeholder="Все модули · например: . или backend"></label>
+            <label class="visibility-field">Пакет<input id="project-history-name" type="search" maxlength="1000" placeholder="Все пакеты"></label>
+          </div>
+          <div class="project-history-layout">
+            <div class="project-history-list-wrapper"><div id="project-observation-list" class="project-list"></div>
+              <button id="project-history-more" type="button" class="secondary-button" hidden>Показать еще</button>
+            </div>
+            <div class="dependency-detail project-package-detail">
+              <section id="package-changes-panel"><div class="language-technology-tabs package-history-tabs" role="tablist" aria-label="Данные пакетов">
+                <button id="package-view-changes" type="button" class="language-technology-tab" role="tab" aria-selected="true">Изменения</button>
+                <button id="package-view-inventory" type="button" class="language-technology-tab" role="tab" aria-selected="false">Известные пакеты</button>
+              </div><div id="project-changes-content"></div><button id="package-changes-more" type="button" class="secondary-button" hidden>Показать еще изменения</button></section>
+              <section id="package-periods-panel" hidden>
+                <div class="card-heading"><p id="package-period-title"></p><button id="package-periods-close" type="button" class="secondary-button icon-button" title="Вернуться к изменениям" aria-label="Вернуться к изменениям" data-icon="close"></button></div>
+                <p class="scan-item-description">Диапазон охватывает успешные наблюдения этой версии; ошибки и пропуски не подтверждают состояние пакетов.</p>
+                <div id="package-period-list"></div><button id="package-periods-more" type="button" class="secondary-button" hidden>Показать еще версии</button>
+              </section>
+            </div>
+          </div>
+        </article>
+      </dialog>
+      <dialog id="scan-statistics-dialog" class="editor-dialog requirement-editor-dialog">
+        <article class="dashboard-card">
+          <div class="card-heading"><p>Статистика запусков</p><div class="visibility-editor-actions">
+            <button id="scan-statistics-refresh" type="button" class="secondary-button icon-button" title="Обновить статистику" aria-label="Обновить статистику" data-icon="refresh"></button>
+            <button id="scan-statistics-close" type="button" class="secondary-button icon-button" title="Закрыть" aria-label="Закрыть" data-icon="close"></button>
+          </div></div><div id="scan-charts"></div>
+        </article>
+      </dialog>
 
       <dialog id="confirm-dialog" class="editor-dialog confirm-dialog">
         <article class="dashboard-card">

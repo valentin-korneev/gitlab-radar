@@ -12,6 +12,7 @@ from gitlab_radar.database.models.catalogs import (
     ProgrammingFramework,
     ProgrammingLanguage,
 )
+from gitlab_radar.database.models.history import PackageHistoryHead, PackagePeriod
 from gitlab_radar.database.models.requirements import (
     CompanyRequirement,
     CompanyRequirementGroup,
@@ -47,7 +48,9 @@ __all__ = [
     'CompanyRequirementLanguage',
     'DataFixture',
     'LanguagePackageManager',
+    'PackageHistoryHead',
     'PackageManagerCatalog',
+    'PackagePeriod',
     'ProgrammingFramework',
     'ProgrammingLanguage',
     'ProjectBlacklistRule',
@@ -68,6 +71,8 @@ __all__ = [
 ]
 
 __models__ = [
+    PackageHistoryHead,
+    PackagePeriod,
     ScanRun,
     ScanSchedule,
     ScanTarget,

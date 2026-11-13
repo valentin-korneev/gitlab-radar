@@ -4,9 +4,11 @@ from tortoise.transactions import in_transaction
 lazy from tortoise.backends.base.client import BaseDBAsyncClient
 
 from gitlab_radar.database.models import AnalysisResult, ScanFile, ScanFileUsage, ScanItem, ScanRun, ScanTarget
+from gitlab_radar.database.package_history import record_item_history
 from gitlab_radar.database.result_payload import input_digest, project_metadata, result_cache_key
 from gitlab_radar.database.results import create_result
 from gitlab_radar.database.scan_authority import assert_scan_owner
+from gitlab_radar.database.scan_retention import archive_old_results
 from gitlab_radar.schemas.project import Project, ProjectAnalysisStatus
 from gitlab_radar.schemas.scan import ScanItemState, ScanTargetKind
 from gitlab_radar.services.analysis import FileSelection
@@ -128,6 +130,7 @@ async def clone_project(source: AnalysisResult, scan: ScanRun, project: Project,
                 successful_metadata=project_metadata(project),
             )
         )
+        await record_item_history(item.id, connection)
     return item
 
 
@@ -207,6 +210,7 @@ async def save_analysis(item_id: int, project: Project, error: str | None = None
             values['last_successful_result_id'] = result.id
             values['successful_metadata'] = project_metadata(project)
         await ScanTarget.filter(id=item.target_id).using_db(connection).update(**values)
+        await record_item_history(item_id, connection)
         await ScanFile.filter(item_id=item_id).using_db(connection).delete()
 
 
@@ -266,6 +270,7 @@ async def carry_forward_missing_projects(
             item = await ScanItem.create(
                 scan=scan,
                 target=target,
+                carried_forward=project_ids is not None and target.gitlab_id not in project_ids,
                 **values,
                 revision=previous.revision,
                 analysis_fingerprint=previous.analysis_fingerprint,
@@ -278,14 +283,7 @@ async def carry_forward_missing_projects(
 
 
 async def trim_old_scans(keep: int) -> None:
-    retained = await ScanRun.filter(published=True).order_by('-id').limit(keep).values_list('id', flat=True)
-    if retained:
-        await ScanRun.filter(published=True).exclude(id__in=retained).delete()
-    used = set(await ScanTarget.all().values_list('last_successful_result_id', flat=True))
-    used.update(await ScanItem.all().values_list('result_id', flat=True))
-    used.update(await ScanItem.all().values_list('fallback_result_id', flat=True))
-    used.discard(None)
-    await AnalysisResult.all().exclude(id__in=list(used)).delete()
+    await archive_old_results(keep)
 
 
 async def fail_pending_items(scan_id: int, error: str) -> None:

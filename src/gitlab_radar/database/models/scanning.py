@@ -33,10 +33,12 @@ class ScanRun(RadarModel):
     current_project = fields.CharField(max_length=500, null=True)
     error = fields.TextField(null=True)
     errors = fields.JSONField(default=list)
+    results_archived = fields.BooleanField(default=False)
     published = fields.BooleanField(default=False, index=True)
 
     class Meta:
         table = 'scan_run'
+        indexes = (('results_archived', 'id'),)
 
 
 class ScanTarget(RadarModel):
@@ -77,11 +79,25 @@ class ScanItem(RadarModel):
     state = fields.CharEnumField(ScanItemState, max_length=20, default=ScanItemState.PENDING, index=True)
     error = fields.TextField(null=True)
     scanned_at = fields.DatetimeField(null=True)
+    carried_forward = fields.BooleanField(default=False)
+    results_archived = fields.BooleanField(default=False)
+    history_recorded = fields.BooleanField(default=False)
+    observed_languages = fields.JSONField(default=list)
+    baseline_languages = fields.JSONField(default=list)
+    added_packages = fields.IntField(default=0)
+    removed_packages = fields.IntField(default=0)
+    updated_packages = fields.IntField(default=0)
+    diagnostic_summary = fields.JSONField(default=list)
 
     class Meta:
         table = 'scan_item'
         unique_together = (('scan', 'target'),)
-        indexes = (('target_id', 'revision', 'analysis_fingerprint'),)
+        indexes = (
+            ('target_id', 'revision', 'analysis_fingerprint'),
+            ('target_id', 'history_recorded', 'scan_id'),
+            ('history_recorded', 'scan_id', 'id'),
+            ('results_archived', 'scan_id', 'id'),
+        )
 
 
 class ScanFile(RadarModel):

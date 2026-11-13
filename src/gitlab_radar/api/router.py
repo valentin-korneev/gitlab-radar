@@ -10,6 +10,7 @@ from gitlab_radar.api.routers.dependency import router as dependency_router
 from gitlab_radar.api.routers.programming_language import router as programming_language_router
 from gitlab_radar.api.routers.project import router as project_router
 from gitlab_radar.api.routers.project_blacklist import router as project_blacklist_router
+from gitlab_radar.api.routers.project_history import router as project_history_router
 from gitlab_radar.api.routers.scan import router as scan_router
 from gitlab_radar.api.routers.scan_management import router as scan_management_router
 from gitlab_radar.api.routers.visibility import admin_router as admin_visibility_router
@@ -25,6 +26,7 @@ router.include_router(dashboard_router, prefix='/dashboard')
 router.include_router(dependency_router, prefix='/dependency')
 router.include_router(scan_management_router, prefix='/scan')
 router.include_router(scan_router, prefix='/scan')
+router.include_router(project_history_router, prefix='/project')
 router.include_router(project_router, prefix='/project')
 router.include_router(project_blacklist_router, prefix='/project-blacklist')
 router.include_router(programming_language_router, prefix='/programming-language')

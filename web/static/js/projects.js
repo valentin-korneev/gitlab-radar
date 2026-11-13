@@ -1,3 +1,5 @@
+import { showError } from './toasts.js';
+import { openProjectHistory } from './project-history.js';
 import { api } from './api.js';
 import { API, HOOK_EVENT_TITLES } from './config.js';
 import { openDependency } from './navigation.js';
@@ -5,7 +7,7 @@ import { complianceTone, ensureParameters } from './parameters.js';
 import { readLatest } from './requests.js';
 import { activeRequirements, ensureRequirements } from './requirements.js';
 import { connectScanStatusSocket } from './navigation.js';
-import { canonicalLanguageCode, element, formatDate, languageDisplayName, maskWebhookUrl, projectPathParts, registryName, webhookDomain } from './shared.js';
+import { canonicalLanguageCode, element, formatDate, iconButton, languageDisplayName, maskWebhookUrl, projectPathParts, registryName, webhookDomain } from './shared.js';
 import { projectState, state } from './state.js';
 import { downloadXlsx } from './xlsx.js';
 
@@ -594,7 +596,7 @@ function renderProjectDetail(view, subproject) {
     const message = project.is_empty
       ? 'Языки программирования не обнаружены.'
       : 'Для обнаруженных языков анализаторы не сформировали модули.';
-    detail.append(element('h3', '', project.name), element('p', 'empty-state', message));
+    detail.append(projectHistoryHeading(project, project.name), element('p', 'empty-state', message));
     appendProjectPath(detail, project.path_with_namespace);
     appendDetail(detail, 'Основная ветка', project.default_branch);
     appendEmptyProjectStatus(detail, project);
@@ -613,7 +615,7 @@ function renderProjectDetail(view, subproject) {
     appendProjectHooks(detail, project);
     return;
   }
-  detail.append(element('h3', '', subproject.title));
+  detail.append(projectHistoryHeading(project, subproject.title, subproject.path));
   appendDetail(detail, 'ID', String(project.id));
   appendProjectPath(detail, subproject.fullPath);
   appendDetail(detail, 'Основная ветка', project.default_branch);
@@ -693,3 +695,11 @@ async function upsertScannedProjects(projectIds, scanId) {
 }
 
 export { appendDetail, exportFilteredProjects, loadProjects, renderProjects, resetProjectFilters, syncProjectFilterControls, upsertScannedProjects };
+
+function projectHistoryHeading(project, title, modulePath = '') {
+  const heading = element('div', 'card-heading project-history-heading');
+  const history = iconButton('history', 'secondary-button', 'История проекта и пакетов');
+  history.addEventListener('click', () => openProjectHistory(project, modulePath).catch(showError));
+  heading.append(element('h3', '', title), history);
+  return heading;
+}

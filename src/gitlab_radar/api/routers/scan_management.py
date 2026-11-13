@@ -3,12 +3,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from tortoise.transactions import in_transaction
 
-from gitlab_radar.application.scan_management import scan_history, scan_item_detail, scan_items
+from gitlab_radar.application.scan_management import scan_history, scan_item_detail, scan_items, scan_statistics
 from gitlab_radar.application.scans import scan_status
 from gitlab_radar.auth import management_access_dependency
 from gitlab_radar.database.models import ScanItem, ScanRun, ScanSchedule
 from gitlab_radar.database.scan_jobs import enqueue_scan
 from gitlab_radar.database.scan_schedules import save_schedule, set_enabled
+from gitlab_radar.schemas.history import ScanChartPoint
 from gitlab_radar.schemas.scan import ScanItemState, ScanState, ScanStatus
 from gitlab_radar.schemas.scan_management import (
     ScanHistoryPage,
@@ -29,6 +30,12 @@ Claims = Annotated[dict[str, Any], Depends(management_access_dependency)]
 async def history(response: Response, filters: Annotated[ScanHistoryQuery, Query()]) -> ScanHistoryPage:
     response.headers['Cache-Control'] = 'no-store'
     return await scan_history(filters.before, filters.limit, filters.state, filters.source, filters.schedule_id)
+
+
+@router.get('/statistics', response_model=list[ScanChartPoint])
+async def statistics(response: Response, filters: Annotated[ScanHistoryQuery, Query()]) -> list[ScanChartPoint]:
+    response.headers['Cache-Control'] = 'no-store'
+    return await scan_statistics(filters)
 
 
 @router.get('/schedules', response_model=list[ScheduleStatus])

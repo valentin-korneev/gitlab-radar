@@ -1,6 +1,15 @@
+from tortoise.functions import Count
+
 from gitlab_radar.database.models import ScanItem, ScanRun
+from gitlab_radar.schemas.history import ScanChartPoint
 from gitlab_radar.schemas.scan import ScanItemState, ScanSource, ScanState, ScanStatus
-from gitlab_radar.schemas.scan_management import ScanHistoryPage, ScanItemDetail, ScanItemsPage, ScanItemSummary
+from gitlab_radar.schemas.scan_management import (
+    ScanHistoryPage,
+    ScanHistoryQuery,
+    ScanItemDetail,
+    ScanItemsPage,
+    ScanItemSummary,
+)
 
 SUMMARY_FIELDS = (
     'id',
@@ -25,6 +34,7 @@ SUMMARY_FIELDS = (
     'gitlab_requests',
     'current_project',
     'error',
+    'results_archived',
 )
 
 
@@ -83,7 +93,38 @@ async def scan_item_detail(scan_id: int, item_id: int) -> ScanItemDetail | None:
         return None
     return ScanItemDetail(
         **item_summary(item).model_dump(),
+        results_archived=item.results_archived,
         revision=item.revision,
         analysis_fingerprint=item.analysis_fingerprint,
-        diagnostics=item.result.payload.get('analysis_diagnostics', []) if item.result else [],
+        diagnostics=item.result.payload.get('analysis_diagnostics', []) if item.result else item.diagnostic_summary,
     )
+
+
+async def scan_statistics(filters: ScanHistoryQuery) -> list[ScanChartPoint]:
+    page = await scan_history(filters.before, filters.limit, filters.state, filters.source, filters.schedule_id)
+    ids = [run.id for run in page.items]
+    counts = await (
+        ScanItem.filter(scan_id__in=ids, carried_forward=False)
+        .group_by('scan_id', 'state')
+        .annotate(total=Count('id'))
+        .values('scan_id', 'state', 'total')
+    )
+    categories = {
+        ScanItemState.SUCCESS: 'successful',
+        ScanItemState.REUSED: 'successful',
+        ScanItemState.PARTIAL: 'partial',
+        ScanItemState.FAILED: 'failed',
+        ScanItemState.SKIPPED: 'skipped',
+    }
+    points = {
+        run.id: ScanChartPoint(
+            id=run.id, created_at=run.created_at, duration_seconds=run.duration_seconds, state=run.state
+        )
+        for run in page.items
+    }
+    for count in counts:
+        category = categories.get(count['state'])
+        if category is not None:
+            point = points[count['scan_id']]
+            setattr(point, category, getattr(point, category) + count['total'])
+    return [points[run.id] for run in reversed(page.items)]

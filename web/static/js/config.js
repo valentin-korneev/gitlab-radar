@@ -50,4 +50,9 @@ const PHASE_TITLES = {
 const STATE_CHANNEL = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('gitlab-radar-state');
 
 
-export { ADMINISTRATOR_ROUTES, API, AUTHENTICATED_ROUTES, HOOK_EVENT_TITLES, LEVEL_TITLES, PAGE_ROUTES, PHASE_TITLES, SOURCE_ROUTES, STATE_CHANNEL };
+const ITEM_TITLES = {
+  pending: 'Ожидает обработки', collected: 'Файлы собраны', success: 'Готово', partial: 'Частичный анализ',
+  failed: 'Ошибка', reused: 'Анализ использован повторно', missing: 'Не найден', skipped: 'Пропущен',
+};
+
+export { ADMINISTRATOR_ROUTES, API, ITEM_TITLES, AUTHENTICATED_ROUTES, HOOK_EVENT_TITLES, LEVEL_TITLES, PAGE_ROUTES, PHASE_TITLES, SOURCE_ROUTES, STATE_CHANNEL };

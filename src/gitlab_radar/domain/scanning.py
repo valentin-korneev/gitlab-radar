@@ -34,3 +34,8 @@ class StopSignal:
     def wait(self, seconds: float) -> None:
         self.event.wait(seconds)
         self.check()
+
+
+class ScanResultsArchivedError(Exception):
+    def __init__(self) -> None:
+        super().__init__('Данные этого снимка удалены по сроку хранения. История запуска и изменений сохранена.')

@@ -69,6 +69,7 @@ class ScanStatus(BaseModel):
     schedule_name: str | None = None
     retry_of_id: int | None = None
     queue_count: int = 0
+    results_archived: bool = False
     completed_at: datetime | None = None
     projects_count: int = 0
     total_steps: int = 0

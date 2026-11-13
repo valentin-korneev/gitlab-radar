@@ -18,6 +18,7 @@ from gitlab_radar.database.scan_repository import (
     skip_project,
     trim_old_scans,
 )
+from gitlab_radar.domain.scanning import ScanResultsArchivedError
 from gitlab_radar.schemas.project import (
     Project,
     ProjectAnalysisStatus,
@@ -108,7 +109,14 @@ async def load_projects(scan_id: int | None = None, *, project_ids: list[int] | 
         return []
     if scan_id is not None or project_ids is not None:
         scan = await latest_data_scan() if scan_id is None else await ScanRun.get_or_none(id=scan_id)
-        return await _load_projects(scan, current=scan_id is None, project_ids=project_ids) if scan else []
+        if scan is None:
+            return []
+        if scan_id is not None and scan.results_archived:
+            raise ScanResultsArchivedError
+        projects = await _load_projects(scan, current=scan_id is None, project_ids=project_ids)
+        if scan_id is not None and await ScanRun.filter(id=scan_id, results_archived=True).exists():
+            raise ScanResultsArchivedError
+        return projects
     async with PROJECT_CACHE.lock:
         scan = await latest_data_scan()
         version = _cache_version(scan)

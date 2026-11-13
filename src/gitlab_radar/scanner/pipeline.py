@@ -26,7 +26,6 @@ from gitlab_radar.database.scan_repository import (
     save_analysis,
     save_collected_project,
     skip_project,
-    trim_old_scans,
 )
 from gitlab_radar.database.webhook_privacy import webhook_masking_key
 from gitlab_radar.domain.scanning import StopSignal
@@ -39,7 +38,6 @@ from gitlab_radar.schemas.scan_options import ScanOptions
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.analysis import analysis_fingerprint, language_code, select_project_files
 from gitlab_radar.services.analysis.diagnostics import PARSE_ERRORS
-from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.project_analysis import analyze_project
 from gitlab_radar.services.project_blacklist import blacklist_patterns
 
@@ -313,11 +311,6 @@ class ScanPipeline:
                 published=True,
                 gitlab_requests=gitlab_requests,
             )
-        try:
-            parameter_values = await application_parameter_values()
-            await trim_old_scans(int(parameter_values['retained_scan_count']))
-        except SCAN_ERRORS:
-            logger.exception('Не удалось удалить старые снимки сканирования')
         logger.info(
             'Сканирование завершено: проектов %d, обращений к GitLab %d, ошибок %d, длительность %.2f секунды',
             projects_count,
