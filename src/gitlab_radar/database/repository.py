@@ -54,6 +54,7 @@ __all__ = [
     'trim_old_scans',
 ]
 
+
 class ProjectCache:
     def __init__(self) -> None:
         self.scan_id: int | None = None
@@ -82,7 +83,7 @@ async def latest_scan() -> ScanRun | None:
 async def latest_data_scan() -> ScanRun | None:
     return (
         await ScanRun.filter(started_at__isnull=False)
-        .only('id', 'analyzed_projects', 'state', 'published')
+        .only('id', 'analyzed_projects', 'state', 'published', 'options')
         .order_by('-id')
         .first()
     )
@@ -175,7 +176,9 @@ async def _projects_for_scan(scan: ScanRun, *, current: bool, project_ids: list[
                     _result_payload(target.successful_metadata, target.last_successful_result)
                 )
             if project is not None:
-                project.data_status = ProjectDataStatus.MISSING if scan.published else ProjectDataStatus.STALE
+                selected_ids = scan.options.get('project_ids')
+                if selected_ids is None or target.gitlab_id in selected_ids:
+                    project.data_status = ProjectDataStatus.MISSING if scan.published else ProjectDataStatus.STALE
                 projects.append(project)
     return projects
 

@@ -83,6 +83,7 @@ async function applyScanStatus(scan) {
   scanState.scanState = scan.state;
   scanState.scanStatus = scan;
   renderScanStatus(scan);
+  window.dispatchEvent(new CustomEvent('radar-scan-status', { detail: scan }));
   const began = previousState === 'queued' && ['running', 'stopping'].includes(scan.state);
   if (streamChanged || began) {
     scanState.scanStreamId = scan.id;

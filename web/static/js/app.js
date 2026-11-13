@@ -1,3 +1,4 @@
+import { readScanOptions } from './scan-options.js';
 import { api } from './api.js';
 import { initializeAuth, logout, startLogin } from './auth.js';
 import { addProjectBlacklistRule } from './blacklist.js';
@@ -96,7 +97,12 @@ document.querySelector('#scan-button').addEventListener('click', async () => {
   scanState.scanSubmitting = true;
   document.querySelector('#scan-button').disabled = true;
   try {
-    const scan = await api(url, { method: 'POST' });
+    const request = { method: 'POST' };
+    if (!stopping) {
+      request.headers = { 'Content-Type': 'application/json' };
+      request.body = JSON.stringify(readScanOptions(document.querySelector('#manual-scan-options')));
+    }
+    const scan = await api(url, request);
     await handleScanStatus(scan);
     if (!stopping) showSuccess(`Запуск №${scan.id} принят`);
   } catch (error) { showError(error); }

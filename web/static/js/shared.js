@@ -40,6 +40,8 @@ function element(tag, className, text) {
   return node;
 }
 const ICON_PATHS = {
+  refresh: '<path d="M3 12a9 9 0 0 1 15.36-6.36L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.36 6.36L3 16M8 16H3v5"/>',
+  history: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   close: '<path d="M6 6l12 12M18 6 6 18"/>',
@@ -65,6 +67,7 @@ function iconButton(icon, className, title) {
   return button;
 }
 function initializeIcons() {
+  initializeIconTooltips();
   document.querySelectorAll('[data-icon]').forEach((button) => button.append(iconElement(button.dataset.icon)));
 }
 function confirmAction(title, message, confirmLabel = 'Подтвердить действие') {
@@ -82,3 +85,65 @@ function confirmAction(title, message, confirmLabel = 'Подтвердить д
 }
 
 export { canonicalLanguageCode, confirmAction, element, formatDate, formatDuration, iconButton, iconElement, initializeIcons, languageDisplayName, maskWebhookText, maskWebhookUrl, projectPathParts, registryName, webhookDomain };
+
+function initializeIconTooltips() {
+  if (document.documentElement.dataset.iconTooltips) return;
+  document.documentElement.dataset.iconTooltips = 'true';
+  const tooltip = element('div', 'icon-tooltip');
+  tooltip.id = 'icon-tooltip';
+  tooltip.setAttribute('role', 'tooltip');
+  tooltip.hidden = true;
+  const hasPopover = typeof tooltip.showPopover === 'function';
+  if (hasPopover) tooltip.setAttribute('popover', 'manual');
+  document.body.append(tooltip);
+  let active = null;
+  let previousDescription = null;
+  let previousTitle = null;
+  function hide() {
+    if (hasPopover && tooltip.matches(':popover-open')) tooltip.hidePopover();
+    tooltip.hidden = true;
+    if (active) {
+      if (previousDescription === null) active.removeAttribute('aria-describedby');
+      else active.setAttribute('aria-describedby', previousDescription);
+      if (previousTitle !== null) active.setAttribute('title', previousTitle);
+    }
+    active = null;
+  }
+  function show(target) {
+    if (active === target) return;
+    hide();
+    const text = target.getAttribute('aria-label');
+    if (!text) return;
+    active = target;
+    previousDescription = target.getAttribute('aria-describedby');
+    previousTitle = target.getAttribute('title');
+    target.removeAttribute('title');
+    target.setAttribute('aria-describedby', [previousDescription, tooltip.id].filter(Boolean).join(' '));
+    tooltip.textContent = text;
+    // Popovers escape scrolling containers and modal clipping without changing layout.
+    if (!hasPopover) (target.closest('dialog') || document.body).append(tooltip);
+    tooltip.hidden = false;
+    if (hasPopover) tooltip.showPopover();
+    const anchor = target.getBoundingClientRect();
+    const bounds = tooltip.getBoundingClientRect();
+    tooltip.style.left = `${Math.max(8, Math.min(anchor.left, window.innerWidth - bounds.width - 8))}px`;
+    const above = anchor.top - bounds.height - 8;
+    const top = above >= 8 ? above : anchor.bottom + 8;
+    tooltip.style.top = `${Math.max(8, Math.min(top, window.innerHeight - bounds.height - 8))}px`;
+  }
+  function enter(event) {
+    const target = event.target.closest?.('.icon-button[aria-label], .condition-remove[aria-label]');
+    if (target) show(target);
+  }
+  function leave(event) {
+    if (active && !active.contains(event.relatedTarget)) hide();
+  }
+  document.addEventListener('pointerover', enter);
+  document.addEventListener('focusin', enter);
+  document.addEventListener('pointerout', leave);
+  document.addEventListener('focusout', leave);
+  document.addEventListener('scroll', hide, true);
+  document.addEventListener('click', hide, true);
+  window.addEventListener('resize', hide);
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') hide(); });
+}

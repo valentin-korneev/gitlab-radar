@@ -35,6 +35,7 @@ from gitlab_radar.scanner.control import thread_call
 from gitlab_radar.scanner.project_collection import ProjectCollector, ProjectNotScannableError
 from gitlab_radar.schemas.project import LanguageAnalysisStatus, Project, ProjectAnalysisStatus, ProjectLanguage
 from gitlab_radar.schemas.scan import ScanPhase, ScanState
+from gitlab_radar.schemas.scan_options import ScanOptions
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.analysis import analysis_fingerprint, language_code, select_project_files
 from gitlab_radar.services.analysis.diagnostics import PARSE_ERRORS
@@ -62,8 +63,10 @@ class ScanPipeline:
         self._update_lock = asyncio.Lock()
         self._updated_project_ids: list[int] = []
         self.errors: list[str] = []
+        self.options = ScanOptions()
 
     async def run(self, scan: ScanRun) -> None:
+        self.options = ScanOptions.model_validate(scan.options)
         projects, skipped = await self._fetch_projects(scan)
         total_steps = len(projects) * 2 + 1
         await self._update(
@@ -78,7 +81,15 @@ class ScanPipeline:
 
     async def _fetch_projects(self, scan: ScanRun) -> tuple[list[Project], int]:
         blacklist = tuple(await blacklist_patterns())
-        operation = asyncio.create_task(thread_call(self.signal, fetch_projects, self.client, blacklist))
+        operation = asyncio.create_task(
+            thread_call(
+                self.signal,
+                fetch_projects,
+                self.client,
+                blacklist,
+                self.options.project_ids,
+            )
+        )
         try:
             while True:
                 done, _ = await asyncio.wait({operation}, timeout=1)
@@ -138,7 +149,9 @@ class ScanPipeline:
                 errors.append(f'{project.path_with_namespace}: не удалось получить webhooks: {error}')
                 logger.exception('Не удалось получить webhooks проекта %s', project.path_with_namespace)
             fingerprint = analysis_fingerprint(enabled_language_codes)
-            reusable = await find_reusable_project(project.id, revision, fingerprint)
+            reusable = (
+                None if self.options.force_analysis else await find_reusable_project(project.id, revision, fingerprint)
+            )
             if reusable is not None:
                 snapshot = await clone_project(reusable, scan, project, fingerprint)
                 logger.info('Проект %s не изменился; используется прежний анализ', project.path_with_namespace)
@@ -152,7 +165,9 @@ class ScanPipeline:
                 len(selected_paths),
             )
             files = await thread_call(self.signal, collector.collect, project, revision, selected_paths)
-            reusable = await find_reusable_inputs(project.id, files, fingerprint)
+            reusable = (
+                None if self.options.force_analysis else await find_reusable_inputs(project.id, files, fingerprint)
+            )
             if reusable is not None:
                 snapshot = await clone_project(reusable, scan, project, fingerprint)
                 return CollectedSnapshot(snapshot.id, project, True, True)
@@ -285,7 +300,7 @@ class ScanPipeline:
         async with in_transaction() as connection:
             await assert_scan_owner(scan.id, connection)
             blacklist = tuple(await blacklist_patterns())
-            await carry_forward_missing_projects(scan, blacklist)
+            await carry_forward_missing_projects(scan, blacklist, self.options.project_ids)
             completed_at = datetime.now(UTC)
             await self._update(
                 scan,

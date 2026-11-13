@@ -332,6 +332,13 @@
 
       <section id="admin" class="page">
         <div class="intro"><p>Управление</p><h2>Сканирование GitLab</h2></div>
+        <div id="scan-management-tabs" class="language-technology-tabs scan-management-tabs" role="tablist" aria-label="Управление сканированием" hidden>
+          <button id="scan-tab-current" class="language-technology-tab" type="button" role="tab" data-scan-tab="current" aria-controls="scan-panel-current" aria-selected="true">Текущий запуск</button>
+          <button id="scan-tab-schedules" class="language-technology-tab" type="button" role="tab" data-scan-tab="schedules" aria-controls="scan-panel-schedules" aria-selected="false" tabindex="-1">Расписания</button>
+          <button id="scan-tab-history" class="language-technology-tab" type="button" role="tab" data-scan-tab="history" aria-controls="scan-panel-history" aria-selected="false" tabindex="-1">История запусков</button>
+        </div>
+        <div id="scan-panel-current" data-scan-panel="current" role="tabpanel" aria-labelledby="scan-tab-current">
+        <p id="scan-run-metadata" class="muted"></p>
         <div class="admin-grid">
           <article class="scan-card">
             <div class="scan-orbit"><span id="scan-dot"></span></div>
@@ -341,9 +348,11 @@
               <div class="scan-meta"><span id="scan-progress-label">0 из 0 проектов</span><span id="scan-duration">0 сек.</span></div>
               <p id="scan-requests" class="scan-requests">Обращений к GitLab: 0</p>
               <p id="scan-current-project" class="scan-current-project"></p>
+              <div class="scan-current-actions"><button id="scan-current-items" type="button" class="secondary-button" hidden>Показать пункты запуска</button></div>
             </div>
           </article>
           <article class="scan-actions">
+            <fieldset id="manual-scan-options" class="scan-options" hidden><legend>Параметры запуска</legend></fieldset>
             <button id="scan-button" class="primary-button" disabled>Запустить сканирование <span>→</span></button>
             <p>Готовые результаты появятся в каталоге по мере обработки. Повторный запуск доступен после завершения или остановки сканирования.</p>
           </article>
@@ -360,6 +369,58 @@
           <summary>Ошибки сканирования · <span id="scan-errors-count">0</span></summary>
           <div id="scan-errors-list"></div>
         </details>
+        </div>
+        <div id="scan-panel-schedules" data-scan-panel="schedules" role="tabpanel" aria-labelledby="scan-tab-schedules" hidden>
+          <p class="muted">Расписания используют время сервера. Новые расписания выключены. Если исполнитель занят, запуск дождется его освобождения.</p>
+          <div class="scan-management-actions">
+            <button id="schedule-create" type="button" class="primary-button icon-button" title="Добавить расписание" aria-label="Добавить расписание" data-icon="plus"></button>
+            <button id="schedule-refresh" type="button" class="secondary-button icon-button" title="Обновить список" aria-label="Обновить список" data-icon="refresh"></button>
+          </div>
+          <dialog id="schedule-dialog" class="editor-dialog">
+            <article class="dashboard-card">
+              <div class="card-heading"><p id="schedule-editor-title">Новое расписание</p><span>Плановый сбор</span></div>
+              <form id="schedule-form" class="requirement-form schedule-form" hidden>
+            <label>Название<input name="name" required maxlength="100"></label>
+            <div class="visibility-field schedule-time-field"><span id="schedule-time-label">Время запуска</span>
+              <div class="schedule-time-input" role="group" aria-labelledby="schedule-time-label">
+                <select name="hour" aria-label="Часы" required></select><span aria-hidden="true">:</span><select name="minute" aria-label="Минуты" required></select>
+              </div>
+            </div>
+            <fieldset id="schedule-weekdays"><legend class="control-label">Дни недели</legend></fieldset>
+            <fieldset class="scan-options"><legend>Параметры запуска</legend></fieldset>
+            <label class="switch schedule-enabled"><input name="enabled" type="checkbox"><span></span>Расписание включено</label>
+            <div class="scan-management-actions">
+              <button type="submit" class="primary-button icon-button" title="Сохранить расписание" aria-label="Сохранить расписание" data-icon="check"></button>
+              <button id="schedule-cancel" type="button" class="secondary-button icon-button" title="Отменить" aria-label="Отменить" data-icon="close"></button>
+            </div>
+              </form>
+            </article>
+          </dialog>
+          <div id="schedule-list" class="schedule-list"></div>
+        </div>
+        <div id="scan-panel-history" data-scan-panel="history" role="tabpanel" aria-labelledby="scan-tab-history" hidden>
+          <div class="scan-management-actions">
+            <label class="visibility-field">Статус<select id="scan-history-state"><option value="">Все</option><option value="queued">Ожидает</option><option value="running">Выполняется</option><option value="stopping">Останавливается</option><option value="completed">Завершено</option><option value="failed">Ошибка</option><option value="cancelled">Остановлено</option></select></label>
+            <label class="visibility-field">Источник<select id="scan-history-source"><option value="">Все</option><option value="manual">Вручную</option><option value="schedule">По расписанию</option></select></label>
+            <button id="scan-history-refresh" type="button" class="secondary-button icon-button" title="Обновить историю" aria-label="Обновить историю" data-icon="refresh"></button>
+          </div>
+          <div id="scan-history-schedule-filter" class="scan-schedule-filter" hidden><span id="scan-history-schedule"></span><button id="scan-history-clear-schedule" class="secondary-button icon-button" type="button" title="Показать все расписания" aria-label="Показать все расписания" data-icon="close" hidden></button></div>
+          <div class="scan-history-layout">
+            <div class="scan-history-list-wrapper"><div id="scan-history-list" class="project-list"></div><button id="scan-history-more" type="button" class="secondary-button" hidden>Показать еще</button></div>
+            <aside class="dependency-detail scan-history-detail"><p class="empty-state">Выберите запуск, чтобы посмотреть результаты и пункты.</p><div id="scan-run-detail" hidden>
+              <div id="scan-run-summary"></div>
+              <label class="visibility-field scan-items-filter">Пункты<select id="scan-item-state"><option value="">Все</option><option value="failed">Ошибки</option><option value="partial">Частичный анализ</option><option value="success">Готово</option><option value="reused">Повторное использование</option><option value="pending">Ожидают</option><option value="collected">Файлы собраны</option><option value="skipped">Пропущены</option><option value="missing">Не найдены</option></select></label>
+              <div id="scan-run-items"></div>
+              <button id="scan-items-more" type="button" class="secondary-button" hidden>Показать еще пункты</button>
+            </div></aside>
+          </div>
+        </div>
+        <dialog id="scan-item-dialog" class="editor-dialog">
+          <article class="dashboard-card">
+            <div class="card-heading"><p>Пункт запуска</p><button id="scan-item-close" type="button" class="secondary-button icon-button" title="Закрыть" aria-label="Закрыть" data-icon="close"></button></div>
+            <div id="scan-item-detail"></div>
+          </article>
+        </dialog>
       </section>
 
       <dialog id="confirm-dialog" class="editor-dialog confirm-dialog">

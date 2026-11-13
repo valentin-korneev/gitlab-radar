@@ -3,6 +3,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, computed_field
 
+from gitlab_radar.schemas.scan_options import ScanOptions
+
 
 class ScanTargetKind(StrEnum):
     BRANCH = 'branch'
@@ -62,6 +64,10 @@ class ScanStatus(BaseModel):
     started_at: datetime | None = None
     source: ScanSource = ScanSource.MANUAL
     requested_by: str | None = None
+    options: ScanOptions = Field(default_factory=ScanOptions)
+    schedule_id: int | None = None
+    schedule_name: str | None = None
+    retry_of_id: int | None = None
     queue_count: int = 0
     completed_at: datetime | None = None
     projects_count: int = 0

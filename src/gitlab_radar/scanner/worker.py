@@ -8,6 +8,7 @@ from gitlab_radar.database.models import ScanRun
 from gitlab_radar.database.scan_authority import ScanAuthority, scan_authority
 from gitlab_radar.database.scan_jobs import claim_next, finish_scan, heartbeat, recover_expired_scans
 from gitlab_radar.database.scan_lock import acquire_scan_lock, release_scan_lock
+from gitlab_radar.database.scan_schedules import enqueue_due_schedule
 from gitlab_radar.domain.scanning import ScanInterruptedError, StopSignal
 from gitlab_radar.scanner.pipeline import SCAN_ERRORS, ScanPipeline
 from gitlab_radar.scanner.request_guard import request_guard
@@ -69,6 +70,7 @@ class ScannerWorker:
         while not self._shutdown.is_set() and not connection.is_closed():
             await connection.fetchval('SELECT 1')
             await recover_expired_scans()
+            await enqueue_due_schedule()
             scan = await claim_next()
             if scan is None:
                 await self._wait()

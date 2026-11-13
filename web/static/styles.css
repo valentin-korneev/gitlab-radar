@@ -641,3 +641,105 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 
 .page-update-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; margin-bottom: 20px; border: 1px solid var(--line); border-radius: 12px; }
 .page-update-notice[hidden] { display: none; }
+
+.scan-management-tabs { margin-bottom: 24px; }
+.scan-management-actions { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 9px; margin-bottom: 18px; }
+.scan-management-actions > .visibility-field { min-width: 160px; }
+.scan-options { display: grid; gap: 16px; min-width: 0; margin: 0 0 20px; border: 0; padding: 0; }
+.scan-options legend, #schedule-weekdays legend { margin-bottom: 12px; padding: 0; color: var(--muted); font-size: .68rem; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+.scan-options .switch { line-height: 1.5; }
+.scan-options .switch span { flex-shrink: 0; }
+.schedule-form .scan-options, .schedule-form #schedule-weekdays, .schedule-form > .scan-management-actions { grid-column: 1 / -1; }
+.schedule-form .scan-options { margin: 0; }
+.schedule-form > .schedule-enabled { display: inline-flex; grid-column: 1 / -1; justify-self: start; }
+.schedule-form > .scan-management-actions { justify-content: flex-end; margin: 4px 0 0; }
+#schedule-weekdays { display: flex; flex-wrap: wrap; gap: 12px 18px; min-width: 0; margin: 0; border: 0; padding: 0; }
+.schedule-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.schedule-list > .empty-state { grid-column: 1 / -1; }
+.schedule-scope, .scan-run-source, #scan-run-metadata { color: var(--muted); font-size: .74rem; line-height: 1.6; overflow-wrap: anywhere; }
+.schedule-scope { margin: 20px 0; }
+.schedule-card .card-heading > .switch { flex-shrink: 0; }
+.schedule-card .compact-list b { text-align: right; }
+.scan-history-layout { display: grid; flex: 1 1 0; min-height: 0; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); grid-template-rows: minmax(0, 1fr); align-items: stretch; gap: 18px; }
+.scan-history-list-wrapper { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#scan-history-list { flex: 1 1 0; min-height: 0; max-height: none; overflow-y: auto; overscroll-behavior: contain; }
+.scan-history-detail { height: 100%; min-height: 0; max-height: none; overflow-y: auto; overscroll-behavior: contain; }
+.scan-history-detail:has(#scan-run-detail:not([hidden])) > .empty-state { display: none; }
+.scan-history-row small + small { margin-top: 6px; font-size: .68rem; }
+.scan-history-row .scan-state-label, .scan-item-row .scan-state-label { max-width: 130px; text-align: right; }
+.scan-state-label { align-self: start; color: var(--muted); font-size: .68rem; font-weight: 750; line-height: 1.5; }
+.scan-state-label.running, .scan-state-label.stopping { color: var(--accent); }
+.scan-state-label.completed, .scan-state-label.success, .scan-state-label.reused { color: var(--green); }
+.scan-state-label.failed { color: var(--danger); }
+.scan-state-label.partial { color: var(--warning); }
+#scan-run-summary > .scan-management-actions { margin-top: 20px; }
+.scan-items-filter { margin: 24px 0 14px; }
+.scan-item-row { border-bottom: 1px solid var(--line); padding-right: 0; padding-left: 0; }
+.scan-item-row:last-child { border-bottom: 0; }
+.scan-item-row small { white-space: normal; overflow-wrap: anywhere; }
+#scan-run-summary, #scan-item-detail { overflow-wrap: anywhere; }
+#scan-history-more, #scan-items-more { margin-top: 14px; }
+@media (max-width: 900px) {
+  .scan-history-layout, .schedule-list { grid-template-columns: 1fr; }
+  .scan-history-layout { grid-template-rows: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) { .schedule-form { grid-template-columns: 1fr; } }
+
+/* The management page scrolls inside its panel; navigation stays in the viewport. */
+body:has(#admin.page.active) { overflow: hidden; }
+body:has(#admin.page.active) .shell { height: 100dvh; min-height: 0; }
+body:has(#admin.page.active) .content { height: 100%; overflow: hidden; }
+#admin.page.active { display: flex; flex: 1 1 0; flex-direction: column; min-height: 0; overflow: hidden; }
+#admin > .intro, #scan-management-tabs { flex-shrink: 0; }
+#admin > [data-scan-panel] { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 4px 20px 0; }
+#admin > #scan-panel-history { display: flex; flex-direction: column; overflow: hidden; }
+#scan-panel-history > .scan-management-actions, #scan-panel-history > .scan-schedule-filter, #scan-history-more { flex-shrink: 0; }
+.scan-current-actions { margin-top: 16px; }
+.scan-current-actions:has(> [hidden]) { display: none; }
+.error-text { color: var(--danger); }
+.icon-tooltip { position: fixed; inset: auto; z-index: 1000; width: max-content; max-width: min(220px, calc(100vw - 16px)); margin: 0; border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; background: var(--surface-high); color: var(--text); box-shadow: 0 8px 24px rgba(0, 0, 0, .28); font: 600 .7rem/1.4 Inter, ui-sans-serif, system-ui, sans-serif; text-align: left; overflow-wrap: anywhere; pointer-events: none; }
+.icon-tooltip::backdrop { background: transparent; pointer-events: none; }
+:root[data-icon-tooltips] .icon-button::after, :root[data-icon-tooltips] .condition-remove::after { display: none; }
+.schedule-time-input { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.schedule-time-input select { width: 100%; }
+.schedule-time-input > span { color: var(--muted); }
+.scan-schedule-filter { display: flex; align-items: center; gap: 10px; width: max-content; max-width: 100%; margin: 0 0 18px; border: 1px solid var(--line); border-radius: 9px; padding-left: 12px; background: var(--surface-low); color: var(--muted); font-size: .74rem; line-height: 1.5; }
+.scan-schedule-filter > span { min-width: 0; overflow-wrap: anywhere; }
+.scan-schedule-filter > .icon-button { border: 0; border-radius: 0 8px 8px 0; background: transparent; color: var(--muted); }
+.scan-schedule-filter > .icon-button:hover { background: var(--surface-high); color: var(--text); }
+#scan-item-dialog { width: min(760px, calc(100vw - 32px)); }
+#scan-item-dialog > .dashboard-card > .card-heading { align-items: center; }
+.scan-item-title { margin: 0 0 12px; font-size: 1.1rem; line-height: 1.4; overflow-wrap: anywhere; }
+.scan-item-status { margin-bottom: 10px; }
+.scan-item-description { margin: 0; color: var(--muted); font-size: .76rem; line-height: 1.6; }
+.scan-item-properties { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; margin: 22px 0; }
+.scan-item-properties > div { min-width: 0; }
+.scan-item-properties dt { margin-bottom: 6px; color: var(--muted); font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; }
+.scan-item-properties dd { margin: 0; font-size: .8rem; line-height: 1.5; overflow-wrap: anywhere; }
+.scan-item-error { margin: 22px 0; border: 1px solid var(--error-line); border-radius: 12px; padding: 14px 16px; background: var(--error-bg); }
+.scan-item-error strong { color: var(--danger); font-size: .76rem; }
+.scan-item-error p { margin: 8px 0 0; font-size: .78rem; line-height: 1.6; }
+.scan-item-diagnostics { margin: 24px 0; }
+.scan-item-diagnostics h4 { margin: 0 0 12px; font-size: .85rem; }
+.scan-diagnostic { display: grid; gap: 8px; margin-top: 10px; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--surface-low); }
+.scan-diagnostic code { font-size: .74rem; overflow-wrap: anywhere; }
+.scan-diagnostic-status { color: var(--warning); font-size: .68rem; }
+.scan-diagnostic-status.invalid { color: var(--danger); }
+.scan-diagnostic p { margin: 0; font-size: .78rem; line-height: 1.6; }
+.scan-diagnostic small { color: var(--muted); font-size: .68rem; }
+.scan-item-technical { border-top: 1px solid var(--line); padding-top: 16px; }
+.scan-item-technical summary { color: var(--muted); font-size: .74rem; cursor: pointer; }
+.scan-item-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
+@media (max-width: 850px) { body:has(#admin.page.active) .shell { grid-template-rows: auto minmax(0, 1fr); } }
+@media (max-width: 600px) { .scan-item-properties { grid-template-columns: 1fr; } }
+
+.scan-run-skipped { display: flex; width: 100%; text-align: left; cursor: pointer; align-items: center; justify-content: space-between; gap: 16px; margin-top: 16px; border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; background: var(--surface-low); color: var(--muted); font-size: .76rem; }
+.scan-run-skipped b { color: var(--text); font-size: .9rem; }
+.scan-run-error, .scan-run-errors { margin: 16px 0 0; }
+.scan-run-errors summary { color: var(--danger); font-size: .76rem; font-weight: 700; cursor: pointer; }
+.scan-run-errors ul { display: grid; gap: 10px; margin: 14px 0 0; padding-left: 18px; color: var(--error-text); font-size: .76rem; line-height: 1.6; }
+.scan-run-errors li { overflow-wrap: anywhere; }
+
+.scan-run-skipped:hover:not(:disabled), .scan-run-skipped:focus-visible { border-color: var(--accent); }
+.scan-run-skipped:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.scan-run-skipped:disabled { cursor: default; }

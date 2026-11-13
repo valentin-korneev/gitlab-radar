@@ -1,7 +1,7 @@
 import asyncio
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
 
 from gitlab_radar.application.scans import request_scan, scan_status, stop_scan
 from gitlab_radar.auth import (
@@ -11,6 +11,7 @@ from gitlab_radar.auth import (
 )
 from gitlab_radar.database.models import ScanRun
 from gitlab_radar.schemas.scan import ScanStatus, ScanUpdates
+from gitlab_radar.schemas.scan_options import ScanOptions
 
 router = APIRouter()
 
@@ -47,10 +48,12 @@ async def get_scan_status(response: Response) -> ScanStatus:
 
 @router.post('/', status_code=status.HTTP_202_ACCEPTED)
 async def scan(
-    response: Response, claims: Annotated[dict[str, Any], Depends(management_access_dependency)]
+    response: Response,
+    claims: Annotated[dict[str, Any], Depends(management_access_dependency)],
+    options: Annotated[ScanOptions | None, Body()] = None,
 ) -> ScanStatus:
     response.headers['Cache-Control'] = 'no-store'
-    result = await request_scan(claims.get('preferred_username'))
+    result = await request_scan(claims.get('preferred_username'), options)
     if result is None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail='Сканирование уже запущено')
     return result

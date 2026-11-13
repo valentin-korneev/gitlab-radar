@@ -7,14 +7,17 @@ from gitlab_radar.database.models import ScanRun
 from gitlab_radar.database.scan_authority import LEASE_SECONDS, assert_scan_owner
 from gitlab_radar.database.scan_repository import delete_scan_files, fail_pending_items
 from gitlab_radar.schemas.scan import ScanPhase, ScanSource, ScanState
+from gitlab_radar.schemas.scan_options import ScanOptions
 
+SUBMISSION_LOCK = 0x47524C5241444154
 ACTIVE_STATES = (ScanState.RUNNING, ScanState.STOPPING)
 
 
-async def enqueue_scan(requested_by: str | None = None) -> ScanRun | None:
+async def enqueue_scan(
+    requested_by: str | None = None, options: ScanOptions | None = None, *, retry_of_id: int | None = None
+) -> ScanRun | None:
     async with in_transaction() as connection:
-        # Serialize manual submissions even when there is no row to lock yet.
-        await connection.execute_query('SELECT pg_advisory_xact_lock($1)', [0x47524C5241444154])
+        await connection.execute_query('SELECT pg_advisory_xact_lock($1)', [SUBMISSION_LOCK])
         if await ScanRun.filter(state__in=(ScanState.QUEUED, *ACTIVE_STATES)).using_db(connection).exists():
             return None
         return await ScanRun.create(
@@ -22,6 +25,8 @@ async def enqueue_scan(requested_by: str | None = None) -> ScanRun | None:
             phase=ScanPhase.IDLE,
             requested_by=requested_by,
             source=ScanSource.MANUAL,
+            options=(options or ScanOptions()).model_dump(mode='json'),
+            retry_of_id=retry_of_id,
             using_db=connection,
         )
 

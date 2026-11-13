@@ -4,6 +4,7 @@ import { loadProjectBlacklist } from './blacklist.js';
 import { ADMINISTRATOR_ROUTES, AUTHENTICATED_ROUTES, PAGE_ROUTES } from './config.js';
 import { loadDashboard } from './dashboard.js';
 import { loadDependencies } from './dependencies.js';
+import { connectScanStatusSocket } from './navigation.js';
 import { loadProgrammingLanguages } from './languages.js';
 import { editablePages, pageEdit, renderPageNotice } from './page-updates.js';
 import { loadParametersPage } from './parameters.js';
@@ -50,6 +51,7 @@ async function showPage() {
       }
       await loadDependencies();
     } else await ensurePageLoaded(route.page);
+    if (routeName === 'admin') await connectScanStatusSocket();
   } catch (error) { showError(error); }
 }
 async function ensurePageLoaded(pageName) {

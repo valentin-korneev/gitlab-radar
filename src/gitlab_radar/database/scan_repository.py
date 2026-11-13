@@ -211,7 +211,6 @@ async def save_analysis(item_id: int, project: Project, error: str | None = None
 
 
 async def restore_previous_analysis(item_id: int, project: Project, error: str) -> bool:
-    # Failure is an observation too: save its result and the target-local fallback atomically.
     await save_analysis(item_id, project, error)
     item = await ScanItem.get(id=item_id)
     return item.fallback_result_id is not None
@@ -236,7 +235,9 @@ async def delete_scan_files(scan_id: int) -> None:
     await ScanFile.filter(item__scan_id=scan_id).delete()
 
 
-async def carry_forward_missing_projects(scan: ScanRun, blacklist: tuple[str, ...]) -> None:
+async def carry_forward_missing_projects(
+    scan: ScanRun, blacklist: tuple[str, ...], project_ids: list[int] | None = None
+) -> None:
     current_targets = await ScanItem.filter(scan_id=scan.id).values_list('target_id', flat=True)
     targets = (
         await ScanTarget.filter(is_default=True).exclude(id__in=current_targets).select_related('last_completed_item')
@@ -251,17 +252,24 @@ async def carry_forward_missing_projects(scan: ScanRun, blacklist: tuple[str, ..
             else (previous.fallback_result_id or previous.result_id)
         )
         metadata = previous.metadata if result_id == previous.result_id else previous.fallback_metadata
+        values = {'result_id': result_id, 'metadata': metadata, 'state': ScanItemState.MISSING}
+        if project_ids is not None and target.gitlab_id not in project_ids:
+            values = {
+                'result_id': previous.result_id,
+                'fallback_result_id': previous.fallback_result_id,
+                'metadata': previous.metadata,
+                'fallback_metadata': previous.fallback_metadata,
+                'state': previous.state,
+            }
         async with in_transaction() as connection:
             await assert_scan_owner(scan.id, connection)
             item = await ScanItem.create(
                 scan=scan,
                 target=target,
-                result_id=result_id,
-                metadata=metadata,
+                **values,
                 revision=previous.revision,
                 analysis_fingerprint=previous.analysis_fingerprint,
                 input_digest=previous.input_digest,
-                state=ScanItemState.MISSING,
                 error=previous.error,
                 scanned_at=previous.scanned_at,
                 using_db=connection,

@@ -10,8 +10,10 @@ from gitlab_radar.services.project_blacklist import project_is_blacklisted
 logger = logging.getLogger(__name__)
 
 
-def fetch_projects(client: ScanGitLab, blacklist: tuple[str, ...] = ()) -> tuple[list[Project], int]:
-    logger.info('Запрос всех доступных проектов из GitLab')
+def fetch_projects(
+    client: ScanGitLab, blacklist: tuple[str, ...] = (), project_ids: list[int] | None = None
+) -> tuple[list[Project], int]:
+    logger.info('Запрос проектов из GitLab: %s', project_ids if project_ids is not None else 'все доступные')
     common_parameters = {
         'active': True,
         'iterator': settings.gitlab.projects_iterator,
@@ -24,11 +26,24 @@ def fetch_projects(client: ScanGitLab, blacklist: tuple[str, ...] = ()) -> tuple
     projects: list[Project] = []
     seen_project_ids: set[int] = set()
     skipped_projects = 0
-    for query_parameters in project_queries:
-        gitlab_projects = client.projects.list(**query_parameters, **common_parameters)
+    queries = (
+        ((client.projects.get(project_id) for project_id in project_ids),)
+        if project_ids is not None
+        else (client.projects.list(**query_parameters, **common_parameters) for query_parameters in project_queries)
+    )
+    for gitlab_projects in queries:
         for gitlab_project in gitlab_projects:
             client.signal.check()
             project_data = gitlab_project.asdict()
+            if project_ids is not None and (
+                project_data.get('archived')
+                or (
+                    project_data.get('visibility') != 'public'
+                    and _project_access_level(project_data.get('permissions')) < AccessLevel.REPORTER
+                )
+            ):
+                skipped_projects += 1
+                continue
             project_id = int(project_data['id'])
             if project_id in seen_project_ids:
                 continue

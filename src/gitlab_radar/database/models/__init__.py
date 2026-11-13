@@ -17,7 +17,7 @@ from gitlab_radar.database.models.requirements import (
     CompanyRequirementGroup,
     CompanyRequirementLanguage,
 )
-from gitlab_radar.database.models.scanning import ScanFile, ScanFileUsage, ScanItem, ScanRun, ScanTarget
+from gitlab_radar.database.models.scanning import ScanFile, ScanFileUsage, ScanItem, ScanRun, ScanSchedule, ScanTarget
 from gitlab_radar.database.models.settings import (
     ApplicationParameter,
     ApplicationSecret,
@@ -59,6 +59,7 @@ __all__ = [
     'ScanFileUsage',
     'ScanItem',
     'ScanRun',
+    'ScanSchedule',
     'ScanTarget',
     'UserVisibilityGroup',
     'UserVisibilityRule',
@@ -68,6 +69,7 @@ __all__ = [
 
 __models__ = [
     ScanRun,
+    ScanSchedule,
     ScanTarget,
     ScanItem,
     ScanFile,

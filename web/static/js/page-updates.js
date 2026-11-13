@@ -4,7 +4,7 @@ import { showError } from './toasts.js';
 import { confirmAction } from './shared.js';
 import { state } from './state.js';
 
-const editablePages = new Set(['requirements', 'parameters', 'languages', 'users', 'visibility', 'visibility-admin', 'blacklist']);
+const editablePages = new Set(['requirements', 'parameters', 'languages', 'users', 'visibility', 'visibility-admin', 'blacklist', 'admin']);
 const pageEdits = new Map();
 function pageEdit(page) {
   if (!pageEdits.has(page)) pageEdits.set(page, { dirty: false, stale: false });
@@ -23,6 +23,11 @@ function markPagesChanged(pages, external = true) {
   renderPageNotice();
 }
 function invalidateFromMutation(path, external = false) {
+  if (path.startsWith(`${API.scan}schedules`)) {
+    invalidateReads();
+    markPagesChanged(['admin'], external);
+    return;
+  }
   let pages = [];
   if (path.startsWith(API.requirements) || path.startsWith(API.requirementGroups)) {
     pages = ['dashboard', 'projects', 'requirements'];

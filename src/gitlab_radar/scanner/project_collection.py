@@ -238,7 +238,7 @@ class ProjectCollector:
                 contents[file_path] = content.decode('utf-8')
             except UnicodeDecodeError:
                 contents[file_path] = (
-                    '[gitlab-radar:unsupported-encoding]'  # Invalid text marker; reported by analysis preflight.
+                    '[gitlab-radar:unsupported-encoding]'
                 )
                 logger.warning('Файл имеет неподдерживаемую кодировку: %s', file_path)
         return contents

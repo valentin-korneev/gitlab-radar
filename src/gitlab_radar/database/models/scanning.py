@@ -9,6 +9,10 @@ class ScanRun(RadarModel):
     state = fields.CharEnumField(ScanState, max_length=20, default=ScanState.QUEUED)
     source = fields.CharEnumField(ScanSource, max_length=20, default=ScanSource.MANUAL)
     requested_by = fields.CharField(max_length=255, null=True)
+    options = fields.JSONField(default=dict)
+    schedule = fields.ForeignKeyField('models.ScanSchedule', related_name='runs', null=True, on_delete=fields.SET_NULL)
+    schedule_name = fields.CharField(max_length=100, null=True)
+    retry_of = fields.ForeignKeyField('models.ScanRun', related_name=False, null=True, on_delete=fields.SET_NULL)
     created_at = fields.DatetimeField(auto_now_add=True)
     owner_token = fields.UUIDField(null=True)
     lease_expires_at = fields.DatetimeField(null=True)
@@ -101,3 +105,18 @@ class ScanFileUsage(RadarModel):
     class Meta:
         table = 'scan_file_usage'
         unique_together = (('file', 'analyzer_key', 'role', 'language_code'),)
+
+
+class ScanSchedule(RadarModel):
+    id = fields.IntField(primary_key=True)
+    name = fields.CharField(max_length=100)
+    enabled = fields.BooleanField(default=False)
+    time_of_day = fields.CharField(max_length=5)
+    weekdays = fields.JSONField(default=list)
+    options = fields.JSONField(default=dict)
+    next_run_at = fields.DatetimeField(null=True, index=True)
+    last_run_at = fields.DatetimeField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = 'scan_schedule'

@@ -1,6 +1,7 @@
 from gitlab_radar.database.models import ScanRun
 from gitlab_radar.database.scan_jobs import active_scan, enqueue_scan, request_stop
 from gitlab_radar.schemas.scan import ScanState, ScanStatus
+from gitlab_radar.schemas.scan_options import ScanOptions
 
 
 async def scan_status(scan: ScanRun | None = None) -> ScanStatus:
@@ -17,8 +18,8 @@ async def scan_status(scan: ScanRun | None = None) -> ScanStatus:
     )
 
 
-async def request_scan(username: str | None) -> ScanStatus | None:
-    scan = await enqueue_scan(username)
+async def request_scan(username: str | None, options: ScanOptions | None = None) -> ScanStatus | None:
+    scan = await enqueue_scan(username, options)
     return await scan_status(scan) if scan is not None else None
 
 
