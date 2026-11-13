@@ -5,6 +5,7 @@ import json
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from weakref import WeakValueDictionary
 
 import httpx
 import jwt
@@ -28,6 +29,7 @@ WEBSOCKET_TICKET_TTL = timedelta(seconds=30)
 _OIDC_METADATA_CACHE: list[dict[str, Any]] = []
 _OIDC_METADATA_LOCK = asyncio.Lock()
 _JWK_CLIENTS: dict[str, PyJWKClient] = {}
+_SESSION_REFRESH_LOCKS: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 
 
 async def oidc_metadata() -> dict[str, Any]:
@@ -96,7 +98,7 @@ async def clear_web_session(request: Request, response: Response) -> dict[str, A
         if session is not None:
             try:
                 tokens = _decrypt_tokens(session.encrypted_tokens)
-            except (InvalidToken, json.JSONDecodeError):
+            except InvalidToken, json.JSONDecodeError:
                 tokens = {}
             await session.delete()
     response.delete_cookie(SESSION_COOKIE, path='/', httponly=True, samesite='lax')
@@ -202,7 +204,7 @@ async def _web_session(request: Request) -> tuple[WebSession | None, dict[str, A
         return None, {}
     try:
         return session, _decrypt_tokens(session.encrypted_tokens)
-    except (InvalidToken, json.JSONDecodeError):
+    except InvalidToken, json.JSONDecodeError:
         await session.delete()
         return None, {}
 
@@ -211,25 +213,41 @@ async def _refresh_tokens_if_needed(session: WebSession, tokens: dict[str, Any])
     access_token = tokens.get('access_token')
     if isinstance(access_token, str) and not _tokens_expire_soon(tokens):
         return
-    refresh_token = tokens.get('refresh_token')
-    if not isinstance(refresh_token, str):
-        raise _unauthorized()
-    metadata = await oidc_metadata()
-    refreshed = await _post_token_request(
-        _internal_endpoint(metadata['token_endpoint']),
-        {
-            'grant_type': 'refresh_token',
-            'client_id': settings.auth.client_id,
-            'client_secret': settings.auth.client_secret.get_secret_value(),
-            'refresh_token': refresh_token,
-        },
-    )
-    _set_access_expiration(refreshed)
-    if isinstance(refreshed.get('id_token'), str):
-        refreshed['_identity'] = await verify_identity_token(refreshed['id_token'])
-    tokens.update(refreshed)
-    session.encrypted_tokens = _encrypt_tokens(tokens)
-    await session.save(update_fields=['encrypted_tokens'])
+    lock = _SESSION_REFRESH_LOCKS.setdefault(session.token_hash, asyncio.Lock())
+    async with lock:
+        current = await WebSession.filter(
+            token_hash=session.token_hash,
+            expires_at__gt=datetime.now(UTC),
+        ).first()
+        if current is None:
+            raise _unauthorized()
+        try:
+            latest_tokens = _decrypt_tokens(current.encrypted_tokens)
+        except (InvalidToken, json.JSONDecodeError) as error:
+            raise _unauthorized() from error
+        tokens.clear()
+        tokens.update(latest_tokens)
+        if isinstance(tokens.get('access_token'), str) and not _tokens_expire_soon(tokens):
+            return
+        refresh_token = tokens.get('refresh_token')
+        if not isinstance(refresh_token, str):
+            raise _unauthorized()
+        metadata = await oidc_metadata()
+        refreshed = await _post_token_request(
+            _internal_endpoint(metadata['token_endpoint']),
+            {
+                'grant_type': 'refresh_token',
+                'client_id': settings.auth.client_id,
+                'client_secret': settings.auth.client_secret.get_secret_value(),
+                'refresh_token': refresh_token,
+            },
+        )
+        _set_access_expiration(refreshed)
+        if isinstance(refreshed.get('id_token'), str):
+            refreshed['_identity'] = await verify_identity_token(refreshed['id_token'])
+        tokens.update(refreshed)
+        current.encrypted_tokens = _encrypt_tokens(tokens)
+        await current.save(update_fields=['encrypted_tokens'])
 
 
 async def _post_token_request(url: str, values: dict[str, str]) -> dict[str, Any]:
@@ -309,7 +327,7 @@ def _tokens_expire_soon(tokens: dict[str, Any]) -> bool:
     try:
         payload = jwt.decode(token, options={'verify_signature': False})
         return int(payload['exp']) <= int(datetime.now(UTC).timestamp()) + 30
-    except (KeyError, TypeError, ValueError, PyJWTError):
+    except KeyError, TypeError, ValueError, PyJWTError:
         return True
 
 

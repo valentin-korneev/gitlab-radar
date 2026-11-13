@@ -26,6 +26,7 @@ from gitlab_radar.database.repository import (
     trim_old_scans,
 )
 from gitlab_radar.database.scan_lock import acquire_scan_lock, release_scan_lock
+from gitlab_radar.database.webhook_privacy import webhook_masking_key
 from gitlab_radar.schemas.project import Project, ProjectLanguage
 from gitlab_radar.schemas.scan import ScanPhase, ScanState, ScanStatus
 from gitlab_radar.schemas.technology import PackageManager
@@ -178,7 +179,7 @@ class ScanTask:
         errors: list[str],
         request_counter: GitLabRequestCounter,
     ) -> None:
-        collector = ProjectCollector()
+        collector = ProjectCollector(masking_key=await webhook_masking_key())
         analysis_queue: asyncio.Queue[CollectedSnapshot | None] = asyncio.Queue()
         workers = [
             asyncio.create_task(
@@ -431,9 +432,7 @@ class ScanTask:
             await self._save_update(scan, **values)
 
     async def _save_update(self, scan: ScanRun, **values: object) -> None:
-        database_values = {
-            key: value for key, value in values.items() if key != 'updated_project_ids'
-        }
+        database_values = {key: value for key, value in values.items() if key != 'updated_project_ids'}
         for key, value in database_values.items():
             setattr(scan, key, value)
         if database_values:

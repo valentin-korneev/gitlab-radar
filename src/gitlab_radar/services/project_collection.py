@@ -2,7 +2,6 @@ import base64
 import logging
 from http import HTTPStatus
 from pathlib import PurePosixPath
-from urllib.parse import urlsplit, urlunsplit
 
 from gitlab.const import AccessLevel
 from gitlab.exceptions import GitlabError, GitlabGetError
@@ -10,6 +9,7 @@ lazy from gitlab.v4.objects import Project as GitLabProject
 
 from gitlab_radar.clients.gitlab import gitlab_client
 from gitlab_radar.schemas.project import Project, ProjectHook
+from gitlab_radar.services.webhook_privacy import public_webhook_identity, public_webhook_url
 
 logger = logging.getLogger(__name__)
 BATCH_SIZE = 20
@@ -45,7 +45,8 @@ class ProjectNotScannableError(Exception):
 
 
 class ProjectCollector:
-    def __init__(self) -> None:
+    def __init__(self, *, masking_key: bytes) -> None:
+        self._masking_key = masking_key
         self._batch_supported: bool | None = None
 
     def revision(self, project: Project) -> str:
@@ -94,9 +95,7 @@ class ProjectCollector:
             per_page=100,
         )
         paths = {
-            path
-            for entry in entries
-            if entry.get('type') == 'blob' and isinstance((path := entry.get('path')), str)
+            path for entry in entries if entry.get('type') == 'blob' and isinstance((path := entry.get('path')), str)
         }
         result = sorted(paths, key=lambda value: (value.count('/'), value))
         logger.info(
@@ -129,12 +128,12 @@ class ProjectCollector:
             len(project.webhooks),
         )
 
-    @staticmethod
-    def _project_hook(attributes: dict) -> ProjectHook:
+    def _project_hook(self, attributes: dict) -> ProjectHook:
         url = str(attributes.get('url') or '')
         return ProjectHook(
             id=int(attributes['id']),
-            url=_public_hook_url(url),
+            url=public_webhook_url(url, self._masking_key),
+            identity=public_webhook_identity(url, self._masking_key),
             name=attributes.get('name'),
             description=attributes.get('description'),
             events=[field.removesuffix('_events') for field in HOOK_EVENT_FIELDS if attributes.get(field)],
@@ -237,9 +236,3 @@ class ProjectCollector:
             except UnicodeDecodeError:
                 logger.warning('Файл пропущен из-за неподдерживаемой кодировки: %s', file_path)
         return contents
-
-
-def _public_hook_url(value: str) -> str:
-    parsed = urlsplit(value)
-    netloc = parsed.netloc.rsplit('@', maxsplit=1)[-1]
-    return urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, ''))

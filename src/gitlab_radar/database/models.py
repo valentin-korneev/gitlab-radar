@@ -42,9 +42,7 @@ class ProgrammingFramework(RadarModel):
     id = fields.IntField(primary_key=True)
     code = fields.CharField(max_length=100, unique=True)
     name = fields.CharField(max_length=100)
-    language = fields.ForeignKeyField(
-        'models.ProgrammingLanguage', related_name='frameworks', on_delete=fields.CASCADE
-    )
+    language = fields.ForeignKeyField('models.ProgrammingLanguage', related_name='frameworks', on_delete=fields.CASCADE)
     dependency_names = fields.JSONField(default=list)
     enabled = fields.BooleanField(default=True, index=True)
 
@@ -78,9 +76,7 @@ class ProjectSnapshot(RadarModel):
 
 class ProjectSnapshotLanguage(RadarModel):
     id = fields.IntField(primary_key=True)
-    project = fields.ForeignKeyField(
-        'models.ProjectSnapshot', related_name='languages', on_delete=fields.CASCADE
-    )
+    project = fields.ForeignKeyField('models.ProjectSnapshot', related_name='languages', on_delete=fields.CASCADE)
     language = fields.ForeignKeyField(
         'models.ProgrammingLanguage', related_name='project_snapshots', on_delete=fields.RESTRICT
     )
@@ -295,6 +291,14 @@ class ModulePackageManager(RadarModel):
     class Meta:
         table = 'module_package_manager'
         unique_together = (('module', 'package_manager'),)
+
+
+class ApplicationSecret(RadarModel):
+    name = fields.CharField(max_length=100, primary_key=True)
+    value = fields.TextField()
+
+    class Meta:
+        table = 'application_secret'
 
 
 class DataFixture(RadarModel):

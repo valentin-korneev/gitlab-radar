@@ -56,6 +56,7 @@ class GitLabComponent(BaseModel):
 
 class ProjectHook(BaseModel):
     id: int
+    identity: str | None = None
     url: str
     name: str | None = None
     description: str | None = None

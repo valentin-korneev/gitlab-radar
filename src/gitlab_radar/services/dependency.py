@@ -1,7 +1,6 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
-from hashlib import sha256
-from urllib.parse import unquote_plus, urlsplit, urlunsplit
+from urllib.parse import urlsplit, urlunsplit
 lazy from collections.abc import Iterable
 
 from packaging.version import InvalidVersion, Version
@@ -91,39 +90,11 @@ def _webhook_entries(projects: list[Project]) -> Iterable[UsageEntry]:
 
 
 def _safe_webhook_reference(value: str) -> tuple[str, str]:
-    parsed = urlsplit(value if '://' in value else f'https://{value}')
+    parsed = urlsplit(value)
     domain = parsed.hostname or 'unknown-domain'
     if parsed.port:
         domain = f'{domain}:{parsed.port}'
-    path_segments = parsed.path.split('/')
-    hooks_index = next(
-        (index for index, segment in enumerate(path_segments) if segment.casefold() == 'hooks'),
-        None,
-    )
-    if hooks_index is not None:
-        path_segments[hooks_index + 1:] = [
-            _mask_webhook_value(unquote_plus(segment)) if segment else ''
-            for segment in path_segments[hooks_index + 1:]
-        ]
-    path = '/'.join(path_segments) or '/'
-    query = '&'.join(_mask_webhook_query_parameter(parameter) for parameter in parsed.query.split('&'))
-    return domain.lower(), urlunsplit(('', '', path, query, parsed.fragment))
-
-
-def _mask_webhook_query_parameter(parameter: str) -> str:
-    key, separator, value = parameter.partition('=')
-    if separator and _is_sensitive_key(unquote_plus(key)):
-        return f'{key}{separator}{_mask_webhook_value(unquote_plus(value))}'
-    return parameter
-
-
-def _is_sensitive_key(value: str) -> bool:
-    return 'token' in value.casefold() or 'secret' in value.casefold()
-
-
-def _mask_webhook_value(value: str) -> str:
-    digest = sha256(value.encode()).hexdigest()[:10]
-    return f'[masked-{digest}]'
+    return domain.lower(), urlunsplit(('', '', parsed.path or '/', parsed.query, ''))
 
 
 def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
