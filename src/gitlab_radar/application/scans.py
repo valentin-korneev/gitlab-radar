@@ -9,7 +9,12 @@ async def scan_status(scan: ScanRun | None = None) -> ScanStatus:
     if scan is None:
         return ScanStatus()
     status = ScanStatus.model_validate(scan, from_attributes=True)
-    return status.model_copy(update={'queue_count': await ScanRun.filter(state=ScanState.QUEUED).count()})
+    return status.model_copy(
+        update={
+            'queue_count': await ScanRun.filter(state=ScanState.QUEUED).count(),
+            'updates_count': len(scan.updated_project_ids),
+        }
+    )
 
 
 async def request_scan(username: str | None) -> ScanStatus | None:

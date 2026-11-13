@@ -654,20 +654,25 @@ async function loadProjects() {
   if (state.auth.user) await connectScanStatusSocket();
 }
 
-async function upsertScannedProject(projectId) {
-  if (!state.loaded.projects || projectId === null || projectId === undefined) return;
-  const project = await api(`${API.projects}${projectId}`);
-  if (!project) return;
-  const existingIndex = state.projects.findIndex((item) => item.id === project.id);
-  if (existingIndex >= 0) state.projects.splice(existingIndex, 1, project);
-  else state.projects.push(project);
+async function upsertScannedProjects(projectIds, scanId) {
+  if (!state.loaded.projects || !projectIds.length) return;
+  const query = new URLSearchParams({ scan_id: scanId });
+  projectIds.forEach((id) => query.append('project_ids', id));
+  const projects = await api(`${API.projects}?${query}`);
+  const replaced = new Set(projectIds);
+  const incoming = new Map(projects.map((project) => [project.id, project]));
+  const existingIds = new Set(state.projects.map((project) => project.id));
+  state.projects = state.projects
+    .filter((project) => !replaced.has(project.id) || incoming.has(project.id))
+    .map((project) => incoming.get(project.id) || project);
+  state.projects.push(...projects.filter((project) => !existingIds.has(project.id)));
   renderProjects();
-  if (state.selectedId === project.id) {
-    const view = projectView(project);
+  const selected = projects.find((project) => project.id === state.selectedId);
+  if (selected) {
+    const view = projectView(selected);
     const entries = [view.root, ...view.children].filter(Boolean);
     const subproject = entries.find((item) => item.key === state.selectedSubprojectKey) || view.root;
     state.selectedSubprojectKey = subproject?.key || null;
     renderProjectDetail(view, subproject);
   }
 }
-

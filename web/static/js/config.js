@@ -50,7 +50,7 @@ const state = {
   projectFilters: { query: '', rules: new Set(), language: null, version: null },
   selectedDependency: null, dependencyQuery: '', dependencyLanguages: new Set(), dependencyLanguagesInitialized: false, dependencyTreeExpanded: new Set(), showTransitive: false, scanState: null, scanStatus: null,
   scanSubmitting: false, scanSocket: null, scanReconnectTimer: null,
-  scanStreamId: null, streamedProjectIds: new Set(),
+  scanStreamId: null, scanUpdatesCursor: 0, dashboardRefreshTimer: null,
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
   technologyTargetLanguages: new Set(), technologyTargetLanguageOptions: [], technologyTargetLanguagesInitialized: false,
   languageOldestCurrentVersions: {},

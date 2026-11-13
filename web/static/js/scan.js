@@ -65,25 +65,29 @@ async function handleScanStatus(scan) {
   if (streamChanged || began) {
     state.scanStreamId = scan.id;
     if (state.loaded.projects && scan.state !== 'queued') await loadProjects();
-    state.streamedProjectIds = new Set(
-      state.projects
-        .filter((project) => project.data_status === 'current')
-        .map((project) => project.id),
-    );
+    state.scanUpdatesCursor = 0;
   }
-  for (const projectId of scan.updated_project_ids || []) {
-    if (state.streamedProjectIds.has(projectId)) continue;
-    await upsertScannedProject(projectId);
-    state.streamedProjectIds.add(projectId);
+  while (state.loaded.projects && state.scanUpdatesCursor < (scan.updates_count || 0)) {
+    const batch = await api(`${API.scan}${scan.id}/updates?after=${state.scanUpdatesCursor}&limit=100`);
+    await upsertScannedProjects(batch.project_ids, scan.id);
+    state.scanUpdatesCursor = batch.cursor;
+    if (!batch.has_more) break;
   }
   const progressChanged = scan.state === 'running' && scan.completed_steps !== previousCompletedSteps;
   const finished = ['queued', 'running', 'stopping'].includes(previousState) && ['completed', 'failed', 'cancelled'].includes(scan.state);
-  if (progressChanged || finished) {
+  if (finished) {
+    window.clearTimeout(state.dashboardRefreshTimer);
+    state.dashboardRefreshTimer = null;
     state.dependencyCache = {};
     const reloads = [loadDashboard()];
-    if (finished && state.loaded.projects) reloads.push(loadProjects());
-    if (finished && state.loaded.dependencies) reloads.push(loadDependencies());
+    if (state.loaded.projects) reloads.push(loadProjects());
+    if (state.loaded.dependencies) reloads.push(loadDependencies());
     await Promise.all(reloads);
+  } else if (progressChanged && !state.dashboardRefreshTimer) {
+    state.dashboardRefreshTimer = window.setTimeout(() => {
+      state.dashboardRefreshTimer = null;
+      loadDashboard().catch(showError);
+    }, 5000);
   }
 }
 function updateScanDuration() {

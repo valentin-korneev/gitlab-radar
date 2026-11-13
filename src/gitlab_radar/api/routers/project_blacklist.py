@@ -3,6 +3,7 @@ from tortoise.exceptions import IntegrityError
 
 from gitlab_radar.auth import management_access_dependency
 from gitlab_radar.database.models import ProjectBlacklistRule as ProjectBlacklistRuleModel
+from gitlab_radar.database.repository import invalidate_project_cache
 from gitlab_radar.schemas.project_blacklist import ProjectBlacklistRule, ProjectBlacklistRulePayload
 
 router = APIRouter(dependencies=[Depends(management_access_dependency)])
@@ -20,6 +21,7 @@ async def create_project_blacklist_rule(payload: ProjectBlacklistRulePayload) ->
         row = await ProjectBlacklistRuleModel.create(pattern=payload.pattern)
     except IntegrityError as error:
         raise HTTPException(status_code=409, detail='Такой шаблон уже добавлен') from error
+    invalidate_project_cache()
     return ProjectBlacklistRule(id=row.id, pattern=row.pattern)
 
 
@@ -36,6 +38,7 @@ async def update_project_blacklist_rule(
         await row.save(update_fields=['pattern'])
     except IntegrityError as error:
         raise HTTPException(status_code=409, detail='Такой шаблон уже добавлен') from error
+    invalidate_project_cache()
     return ProjectBlacklistRule(id=row.id, pattern=row.pattern)
 
 
@@ -44,3 +47,4 @@ async def delete_project_blacklist_rule(rule_id: int) -> None:
     deleted = await ProjectBlacklistRuleModel.filter(id=rule_id).delete()
     if not deleted:
         raise HTTPException(status_code=404, detail='Правило черного списка не найдено')
+    invalidate_project_cache()

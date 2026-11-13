@@ -1,7 +1,7 @@
 import asyncio
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
 
 from gitlab_radar.application.scans import request_scan, scan_status, stop_scan
 from gitlab_radar.auth import (
@@ -10,7 +10,7 @@ from gitlab_radar.auth import (
     management_access_dependency,
 )
 from gitlab_radar.database.models import ScanRun
-from gitlab_radar.schemas.scan import ScanStatus
+from gitlab_radar.schemas.scan import ScanStatus, ScanUpdates
 
 router = APIRouter()
 
@@ -72,3 +72,23 @@ async def stop_run(scan_id: int, response: Response) -> ScanStatus:
     if result is None:
         raise HTTPException(status_code=404, detail='Запуск не найден')
     return result
+
+
+@router.get('/{scan_id}/updates', response_model=ScanUpdates, dependencies=[Depends(authenticated_access_dependency)])
+async def get_updates(
+    scan_id: int,
+    response: Response,
+    after: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=100)] = 100,
+) -> ScanUpdates:
+    response.headers['Cache-Control'] = 'no-store'
+    run = await ScanRun.filter(id=scan_id).only('id', 'updated_project_ids').first()
+    if run is None:
+        raise HTTPException(status_code=404, detail='Запуск не найден')
+    if after > len(run.updated_project_ids):
+        raise HTTPException(status_code=422, detail='Курсор выходит за границы запуска')
+    project_ids = run.updated_project_ids[after : after + limit]
+    cursor = after + len(project_ids)
+    return ScanUpdates(
+        scan_id=scan_id, project_ids=project_ids, cursor=cursor, has_more=cursor < len(run.updated_project_ids)
+    )

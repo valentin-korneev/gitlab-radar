@@ -9,8 +9,9 @@ async def load_projects(
     visibility_group: str | None = None,
     *,
     scan_id: int | None = None,
+    project_ids: list[int] | None = None,
 ) -> list[Project]:
-    projects = await load_projects_from_database(scan_id=scan_id)
+    projects = await load_projects_from_database(scan_id=scan_id, project_ids=project_ids)
     blacklist = await blacklist_patterns()
     projects = [project for project in projects if not project_is_blacklisted(project.path_with_namespace, blacklist)]
     return await filter_projects_for_user(projects, preferred_username, visibility_group)

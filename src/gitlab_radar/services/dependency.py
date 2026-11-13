@@ -1,3 +1,4 @@
+import asyncio
 from collections import defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -5,7 +6,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from packaging.version import InvalidVersion, Version
 
-from gitlab_radar.database.repository import latest_data_scan
+from gitlab_radar.database.repository import project_cache_version
 from gitlab_radar.schemas.dependency import (
     Dependency,
     DependencyLevel,
@@ -28,6 +29,7 @@ _LEVEL_PRIORITIES = {
 
 @dataclass(slots=True)
 class _DependencyCache:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     version: tuple | None = None
     values: dict[DependencySource, list[DependencyUsage]] = field(default_factory=dict)
 
@@ -41,18 +43,9 @@ async def build_dependency_catalog(
     preferred_username: str | None = None,
     visibility_group: str | None = None,
 ) -> list[DependencyUsage]:
-    cacheable = projects is None and preferred_username is None
-    if cacheable:
-        scan = await latest_data_scan()
-        version = (scan.id, scan.analyzed_projects, scan.state) if scan is not None else None
-        if _DEPENDENCY_CACHE.version != version:
-            _DEPENDENCY_CACHE.version = version
-            _DEPENDENCY_CACHE.values.clear()
-        cached = _DEPENDENCY_CACHE.values.get(source)
-        if cached is not None:
-            return [item.model_copy(deep=True) for item in cached]
-        projects = await load_projects(preferred_username, visibility_group)
-    elif projects is None:
+    if projects is None and preferred_username is None and visibility_group is None:
+        return await _cached_catalog(source)
+    if projects is None:
         projects = await load_projects(preferred_username, visibility_group)
     entries = {
         DependencySource.PYTHON: _python_entries,
@@ -61,9 +54,21 @@ async def build_dependency_catalog(
         DependencySource.WEBHOOK: _webhook_entries,
     }[source](projects)
     catalog = _build_catalog(entries)
-    if cacheable:
-        _DEPENDENCY_CACHE.values[source] = catalog
     return [item.model_copy(deep=True) for item in catalog]
+
+
+async def _cached_catalog(source: DependencySource) -> list[DependencyUsage]:
+    async with _DEPENDENCY_CACHE.lock:
+        version = await project_cache_version()
+        if _DEPENDENCY_CACHE.version != version:
+            _DEPENDENCY_CACHE.version = version
+            _DEPENDENCY_CACHE.values.clear()
+        cached = _DEPENDENCY_CACHE.values.get(source)
+        if cached is None:
+            cached = await build_dependency_catalog(projects=await load_projects(), source=source)
+            if version == await project_cache_version():
+                _DEPENDENCY_CACHE.values[source] = cached
+        return [item.model_copy(deep=True) for item in cached]
 
 
 def _python_entries(projects: list[Project]) -> Iterable[UsageEntry]:

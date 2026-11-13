@@ -130,7 +130,9 @@ class JavaAnalyzer:
                 report(
                     project,
                     manifest,
-                    'Часть версий Maven не разрешена; parent/BOM извне не загружаются',
+                    'Не удалось определить версии некоторых зависимостей Maven по файлам проекта. '
+                    'Они могут задаваться в родительском POM или BOM (наборе версий зависимостей), '
+                    'которые анализатор не скачивает из внешних репозиториев.',
                     language=self.language_code,
                     status=DiagnosticStatus.PARTIAL,
                 )

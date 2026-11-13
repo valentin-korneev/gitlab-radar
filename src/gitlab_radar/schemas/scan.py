@@ -73,7 +73,7 @@ class ScanStatus(BaseModel):
     skipped_projects: int = 0
     gitlab_requests: int = 0
     current_project: str | None = None
-    updated_project_ids: list[int] = Field(default_factory=list)
+    updates_count: int = 0
     error: str | None = None
     errors: list[str] = Field(default_factory=list)
 
@@ -96,3 +96,10 @@ class ScanStatus(BaseModel):
             return 0.0
         end = self.completed_at or datetime.now(UTC)
         return round((end - self.started_at).total_seconds(), 1)
+
+
+class ScanUpdates(BaseModel):
+    scan_id: int
+    project_ids: list[int]
+    cursor: int
+    has_more: bool

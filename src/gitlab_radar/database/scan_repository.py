@@ -70,20 +70,21 @@ async def _item(scan: ScanRun, project: Project, connection: BaseDBAsyncClient) 
 async def find_reusable_project(gitlab_id: int, revision: str | None, fingerprint: str) -> AnalysisResult | None:
     if not revision:
         return None
-    observation = (
-        await ScanItem.filter(
-            target__gitlab_id=gitlab_id,
-            revision=revision,
-            analysis_fingerprint=fingerprint,
-            result__status=ProjectAnalysisStatus.SUCCESS,
-            state__in=[ScanItemState.SUCCESS, ScanItemState.REUSED],
-        )
-        .select_related('result')
-        .order_by('-id')
+    target = (
+        await ScanTarget.filter(gitlab_id=gitlab_id, is_default=True)
+        .select_related('last_completed_item', 'last_completed_item__result')
         .first()
     )
-    if observation is not None:
-        return observation.result
+    previous = target.last_completed_item if target else None
+    result = previous.result if previous else None
+    if (
+        result is not None
+        and previous.revision == revision
+        and previous.analysis_fingerprint == fingerprint
+        and previous.state in {ScanItemState.SUCCESS, ScanItemState.REUSED}
+        and result.status == ProjectAnalysisStatus.SUCCESS
+    ):
+        return result
     return await AnalysisResult.filter(
         gitlab_id=gitlab_id,
         source_revision=revision,
