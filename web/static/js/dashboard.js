@@ -1,3 +1,12 @@
+import { api } from './api.js';
+import { API } from './config.js';
+import { openDependency, openLanguageVersion, openRuleViolations } from './navigation.js';
+import { complianceTone, ensureParameters } from './parameters.js';
+import { readLatest } from './requests.js';
+import { activeRequirements, ensureRequirements } from './requirements.js';
+import { canonicalLanguageCode, element, formatDate, formatDuration, languageDisplayName } from './shared.js';
+import { dashboardState, state } from './state.js';
+
 function compactStatRow(label, value) {
   const row = element('div');
   row.append(element('span', '', label), element('b', '', String(value)));
@@ -6,7 +15,7 @@ function compactStatRow(label, value) {
 function languageVersionLink(language, item) {
   const row = element('button', 'compact-stat-link');
   row.type = 'button';
-  const oldestCurrent = state.languageOldestCurrentVersions[language.code];
+  const oldestCurrent = dashboardState.languageOldestCurrentVersions[language.code];
   if (oldestCurrent) {
     const comparison = compareVersions(item.name, oldestCurrent);
     if (comparison < 0) row.classList.add('language-version-danger');
@@ -15,18 +24,6 @@ function languageVersionLink(language, item) {
   row.append(element('span', '', item.name), element('b', '', String(item.projects_count)));
   row.addEventListener('click', () => openLanguageVersion(language, item.name));
   return row;
-}
-function parameterValue(key) {
-  return state.parameters.find((parameter) => parameter.key === key)?.value || '';
-}
-function parameterRange(key) {
-  return parameterValue(key).split(',').map(Number);
-}
-function complianceTone(value, parameterKey) {
-  const [dangerThreshold, successThreshold] = parameterRange(parameterKey);
-  if (value < dangerThreshold) return 'danger';
-  if (value < successThreshold) return 'warning';
-  return 'success';
 }
 function compareVersions(left, right) {
   const leftParts = left.split('.').map(Number);
@@ -43,7 +40,7 @@ function stableFraction(value) {
 }
 function technologyVisibleForLanguages(item) {
   if (!(item.languages || []).length) return true;
-  return item.languages.some((language) => state.technologyTargetLanguages.has(language));
+  return item.languages.some((language) => dashboardState.technologyTargetLanguages.has(language));
 }
 function renderTechnologyTarget(target) {
   const definitions = [
@@ -53,7 +50,7 @@ function renderTechnologyTarget(target) {
   const markers = document.querySelector('#target-markers');
   const visibleItems = definitions.map(([, sourceItems], categoryIndex) => sourceItems
       .filter((item) => categoryIndex >= 2 || technologyVisibleForLanguages(item))
-      .filter((item) => state.showSingleTechnologies || item.projects_count > 1));
+      .filter((item) => dashboardState.showSingleTechnologies || item.projects_count > 1));
   const maximumTechnologyProjects = Math.max(0, ...visibleItems.flat().map((item) => item.projects_count));
   const scaleMaximum = Math.max(maximumTechnologyProjects * 1.1, 1);
   const markerNodes = definitions.flatMap(([category], categoryIndex) => {
@@ -87,14 +84,14 @@ function renderTechnologyTarget(target) {
   markers.replaceChildren(...markerNodes);
 }
 function renderTargetLanguageFilter(languages) {
-  state.technologyTargetLanguageOptions = languages;
+  dashboardState.technologyTargetLanguageOptions = languages;
   const available = new Set(languages.map((language) => language.code));
-  state.technologyTargetLanguages = new Set(
-    [...state.technologyTargetLanguages].filter((language) => available.has(language)),
+  dashboardState.technologyTargetLanguages = new Set(
+    [...dashboardState.technologyTargetLanguages].filter((language) => available.has(language)),
   );
-  if (!state.technologyTargetLanguagesInitialized) {
-    state.technologyTargetLanguages = new Set(available);
-    state.technologyTargetLanguagesInitialized = true;
+  if (!dashboardState.technologyTargetLanguagesInitialized) {
+    dashboardState.technologyTargetLanguages = new Set(available);
+    dashboardState.technologyTargetLanguagesInitialized = true;
   }
   const container = document.querySelector('#target-language-filter');
   const definitions = [{ code: 'all', name: 'Все' }, ...languages];
@@ -103,15 +100,15 @@ function renderTargetLanguageFilter(languages) {
     const input = element('input');
     input.type = 'checkbox';
     input.checked = language.code === 'all'
-      ? state.technologyTargetLanguages.size === available.size
-      : state.technologyTargetLanguages.has(language.code);
+      ? dashboardState.technologyTargetLanguages.size === available.size
+      : dashboardState.technologyTargetLanguages.has(language.code);
     input.addEventListener('change', () => {
       if (language.code === 'all') {
-        state.technologyTargetLanguages = input.checked ? new Set(available) : new Set();
-      } else if (input.checked) state.technologyTargetLanguages.add(language.code);
-      else state.technologyTargetLanguages.delete(language.code);
+        dashboardState.technologyTargetLanguages = input.checked ? new Set(available) : new Set();
+      } else if (input.checked) dashboardState.technologyTargetLanguages.add(language.code);
+      else dashboardState.technologyTargetLanguages.delete(language.code);
       renderTargetLanguageFilter(languages);
-      renderTechnologyTarget(state.technologyTarget);
+      renderTechnologyTarget(dashboardState.technologyTarget);
     });
     label.append(input, element('span', '', language.name));
     return label;
@@ -166,10 +163,10 @@ function renderLanguageStatistics(languages) {
 }
 function renderLanguageTechnologyCards(statistics) {
   const container = document.querySelector('#language-technology-cards');
-  const selectedLanguage = statistics.find((language) => language.code === state.dashboardLanguageTechnologyCode)
+  const selectedLanguage = statistics.find((language) => language.code === dashboardState.dashboardLanguageTechnologyCode)
     || statistics.find((language) => language.code === 'python')
     || statistics[0];
-  state.dashboardLanguageTechnologyCode = selectedLanguage?.code || null;
+  dashboardState.dashboardLanguageTechnologyCode = selectedLanguage?.code || null;
   const content = [];
   if (statistics.length > 1) {
     const tabs = element('div', 'language-technology-tabs');
@@ -184,7 +181,7 @@ function renderLanguageTechnologyCards(statistics) {
       tab.setAttribute('aria-selected', String(language.code === selectedLanguage.code));
       tab.tabIndex = language.code === selectedLanguage.code ? 0 : -1;
       tab.addEventListener('click', () => {
-        state.dashboardLanguageTechnologyCode = language.code;
+        dashboardState.dashboardLanguageTechnologyCode = language.code;
         renderLanguageTechnologyCards(statistics);
       });
       tab.addEventListener('keydown', (event) => {
@@ -195,7 +192,7 @@ function renderLanguageTechnologyCards(statistics) {
         else if (event.key === 'End') nextIndex = statistics.length - 1;
         else return;
         event.preventDefault();
-        state.dashboardLanguageTechnologyCode = statistics[nextIndex].code;
+        dashboardState.dashboardLanguageTechnologyCode = statistics[nextIndex].code;
         renderLanguageTechnologyCards(statistics);
         container.querySelector('[role="tab"][aria-selected="true"]')?.focus();
       });
@@ -270,13 +267,13 @@ function renderDashboard(dashboard) {
   const total = dashboard.projects_count + dashboard.empty_projects_count || 1;
   document.querySelector('#docker-project-percentage').textContent = `${Math.round(dashboard.docker_projects_count / total * 100)}% проектов`;
   document.querySelector('#gitlab-ci-project-percentage').textContent = `${Math.round(dashboard.gitlab_ci_projects_count / total * 100)}% проектов`;
-  state.languageOldestCurrentVersions = Object.fromEntries(
+  dashboardState.languageOldestCurrentVersions = Object.fromEntries(
     dashboard.enabled_languages
       .filter((language) => language.oldest_current_version)
       .map((language) => [language.code, language.oldest_current_version]),
   );
-  state.technologyTarget = dashboard.technology_target;
-  state.projectsCount = dashboard.projects_count;
+  dashboardState.technologyTarget = dashboard.technology_target;
+  dashboardState.projectsCount = dashboard.projects_count;
   renderTargetLanguageFilter(dashboard.enabled_languages);
   renderTechnologyTarget(dashboard.technology_target);
   renderDependencyCountMatrix(dashboard.dependency_counts);
@@ -317,11 +314,11 @@ function renderCompanyRequirements(dashboardRequirements) {
       .filter(Boolean)
       .map(canonicalLanguageCode),
   )].sort((left, right) => left.localeCompare(right));
-  state.dashboardRequirementLanguage = canonicalLanguageCode(state.dashboardRequirementLanguage);
+  dashboardState.dashboardRequirementLanguage = canonicalLanguageCode(dashboardState.dashboardRequirementLanguage);
   if (
-    !['all', 'global'].includes(state.dashboardRequirementLanguage)
-    && !languages.includes(state.dashboardRequirementLanguage)
-  ) state.dashboardRequirementLanguage = 'all';
+    !['all', 'global'].includes(dashboardState.dashboardRequirementLanguage)
+    && !languages.includes(dashboardState.dashboardRequirementLanguage)
+  ) dashboardState.dashboardRequirementLanguage = 'all';
   const languageFilter = document.querySelector('#company-requirement-language-filter');
   languageFilter.replaceChildren(...[
     { value: 'all', title: 'Все' },
@@ -333,10 +330,10 @@ function renderCompanyRequirements(dashboardRequirements) {
     input.type = 'radio';
     input.name = 'company-requirement-language';
     input.value = option.value;
-    input.checked = state.dashboardRequirementLanguage === option.value;
+    input.checked = dashboardState.dashboardRequirementLanguage === option.value;
     input.addEventListener('change', () => {
       if (!input.checked) return;
-      state.dashboardRequirementLanguage = input.value;
+      dashboardState.dashboardRequirementLanguage = input.value;
       renderCompanyRequirements(dashboardRequirements);
     });
     label.append(input, element('span', '', option.title));
@@ -346,9 +343,9 @@ function renderCompanyRequirements(dashboardRequirements) {
   dashboardRequirements.forEach((item) => {
     const configured = configuredByCode.get(item.code);
     if (!configured) return;
-    if (state.dashboardRequirementLanguage === 'global' && configured.language !== null) return;
-    if (!['all', 'global'].includes(state.dashboardRequirementLanguage)
-      && canonicalLanguageCode(configured.language) !== state.dashboardRequirementLanguage) return;
+    if (dashboardState.dashboardRequirementLanguage === 'global' && configured.language !== null) return;
+    if (!['all', 'global'].includes(dashboardState.dashboardRequirementLanguage)
+      && canonicalLanguageCode(configured.language) !== dashboardState.dashboardRequirementLanguage) return;
     const groupName = state.requirementGroups.find((group) => group.id === configured.group_id)?.name || 'Без группы';
     if (!groups.has(groupName)) groups.set(groupName, []);
     groups.get(groupName).push(item);
@@ -402,7 +399,11 @@ function renderLastScan(scan) {
   } else lastScan.append(element('p', 'empty-state', 'Сканирование еще не запускалось.'));
 }
 async function loadDashboard() {
-  const [dashboard] = await Promise.all([api(API.dashboard), ensureRequirements(), ensureParameters()]);
+  const result = await readLatest('dashboard', (signal) => Promise.all([api(API.dashboard, { signal }), ensureRequirements(), ensureParameters()]));
+  if (!result) return;
+  const [dashboard] = result;
   renderDashboard(dashboard);
   state.loaded.dashboard = true;
 }
+
+export { loadDashboard, renderDataQuality, renderLastScan, renderTechnologyTarget };

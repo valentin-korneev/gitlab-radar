@@ -1,3 +1,12 @@
+import { pageEdit } from './page-updates.js';
+import { api } from './api.js';
+import { API } from './config.js';
+import { bindAsyncInput } from './editors.js';
+import { readLatest } from './requests.js';
+import { showError, showSuccess } from './toasts.js';
+import { element, iconButton } from './shared.js';
+import { state } from './state.js';
+
 function blacklistRuleRow(rule) {
   const row = element('div', 'blacklist-rule-row');
   const input = element('input');
@@ -6,32 +15,18 @@ function blacklistRuleRow(rule) {
   input.required = true;
   input.readOnly = true;
   input.setAttribute('aria-label', 'Путь или шаблон проекта');
-  const save = async () => {
-    const pattern = input.value.trim();
-    if (!pattern || pattern === rule.pattern) {
-      input.value = rule.pattern;
-      input.readOnly = true;
-      return;
-    }
-    input.disabled = true;
-    try {
-      const updated = await api(`${API.projectBlacklist}${rule.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pattern }),
+  bindAsyncInput(input, {
+    scope: row,
+    read: () => rule.pattern,
+    save: (pattern) => {
+      if (!pattern) throw new Error('Введите путь или шаблон проекта');
+      return api(`${API.projectBlacklist}${rule.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pattern }),
       });
-      Object.assign(rule, updated);
-      input.value = rule.pattern;
-      input.readOnly = true;
-      showSuccess('Правило сохранено');
-    } catch (error) {
-      input.value = rule.pattern;
-      showError(error);
-    } finally {
-      input.disabled = false;
-    }
-  };
-  input.addEventListener('change', save);
+    },
+    onSaved: (updated) => { Object.assign(rule, updated); input.readOnly = true; },
+    success: 'Правило сохранено',
+  });
   input.addEventListener('keydown', (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
@@ -54,7 +49,8 @@ function blacklistRuleRow(rule) {
     try {
       await api(`${API.projectBlacklist}${rule.id}`, { method: 'DELETE' });
       state.blacklistRules = state.blacklistRules.filter((item) => item.id !== rule.id);
-      renderProjectBlacklist();
+      row.remove();
+      if (!state.blacklistRules.length) renderProjectBlacklist();
       showSuccess('Правило удалено');
     } catch (error) { showError(error); }
   });
@@ -81,12 +77,18 @@ async function addProjectBlacklistRule() {
   });
   state.blacklistRules.push(rule);
   input.value = '';
-  renderProjectBlacklist();
+  const list = document.querySelector('#blacklist-rules');
+  list.querySelector('.empty-state')?.remove();
+  list.append(blacklistRuleRow(rule));
   showSuccess('Правило добавлено');
 }
 
 async function loadProjectBlacklist() {
-  state.blacklistRules = await api(API.projectBlacklist);
+  const result = await readLatest('blacklist', (signal) => api(API.projectBlacklist, { signal }));
+  if (!result || pageEdit('blacklist').dirty) return;
+  state.blacklistRules = result;
   renderProjectBlacklist();
   state.loaded.blacklist = true;
 }
+
+export { addProjectBlacklistRule, loadProjectBlacklist };

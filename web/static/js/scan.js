@@ -1,10 +1,19 @@
+import { showError } from './toasts.js';
+import { api } from './api.js';
+import { API, PHASE_TITLES } from './config.js';
+import { loadDashboard } from './dashboard.js';
+import { loadDependencies } from './dependencies.js';
+import { loadProjects, upsertScannedProjects } from './projects.js';
+import { element, formatDate, formatDuration } from './shared.js';
+import { scanState, state } from './state.js';
+
 function renderScanStatus(scan) {
   document.querySelector('#scan-state').textContent = scan.state_title;
   const administrator = Boolean(state.auth.user?.is_admin);
   const active = ['running', 'stopping'].includes(scan.state);
   const queued = scan.state === 'queued';
   const button = document.querySelector('#scan-button');
-  button.disabled = state.scanSubmitting || !administrator || scan.state === 'stopping';
+  button.disabled = scanState.scanSubmitting || !administrator || scan.state === 'stopping';
   button.textContent = scan.state === 'stopping' ? 'Останавливается…' : active || queued ? 'Остановить' : 'Запустить сканирование';
   document.querySelector('#scan-dot').className = scan.state;
   let description = 'Сканирование еще не запускалось.';
@@ -36,80 +45,78 @@ function renderScanStatus(scan) {
 async function connectScanStatusSocket() {
   if (!state.auth.user) return;
   const socketProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  window.clearTimeout(state.scanReconnectTimer);
-  if (state.scanSocket?.readyState === WebSocket.OPEN || state.scanSocket?.readyState === WebSocket.CONNECTING) return;
+  window.clearTimeout(scanState.scanReconnectTimer);
+  if (scanState.scanSocket?.readyState === WebSocket.OPEN || scanState.scanSocket?.readyState === WebSocket.CONNECTING) return;
   const ticket = (await api(API.websocketTicket, { method: 'POST' })).ticket;
   const query = `?ticket=${encodeURIComponent(ticket)}`;
   const socket = new WebSocket(`${socketProtocol}//${window.location.host}/api/scan/ws${query}`);
-  state.scanSocket = socket;
+  scanState.scanSocket = socket;
   let messages = Promise.resolve();
   socket.addEventListener('message', (event) => {
     messages = messages.then(() => handleScanStatus(JSON.parse(event.data))).catch(showError);
   });
   socket.addEventListener('close', () => {
-    if (state.scanSocket === socket) state.scanSocket = null;
+    if (scanState.scanSocket === socket) scanState.scanSocket = null;
     if (state.auth.user && ['admin', 'projects'].includes(state.currentRoute)) {
-      state.scanReconnectTimer = window.setTimeout(connectScanStatusSocket, 3000);
+      scanState.scanReconnectTimer = window.setTimeout(connectScanStatusSocket, 3000);
     }
   });
   socket.addEventListener('error', () => socket.close());
 }
-async function handleScanStatus(scan) {
-  const previousState = state.scanState;
-  const previousCompletedSteps = state.scanStatus?.completed_steps;
-  const streamChanged = state.scanStreamId !== scan.id;
-  state.scanState = scan.state;
-  state.scanStatus = scan;
+let scanStatusQueue = Promise.resolve();
+function handleScanStatus(scan) {
+  const update = scanStatusQueue.then(() => applyScanStatus(scan));
+  scanStatusQueue = update.catch(() => {});
+  return update;
+}
+async function applyScanStatus(scan) {
+  const previous = scanState.scanStatus;
+  if (previous?.id && scan.id && scan.id < previous.id) return;
+  if (previous?.id === scan.id) {
+    if (['completed', 'failed', 'cancelled'].includes(previous.state) && ['queued', 'running', 'stopping'].includes(scan.state)) return;
+    if (previous.state === 'stopping' && scan.state === 'running') return;
+    if (scan.completed_steps < previous.completed_steps) return;
+  }
+  const previousState = scanState.scanState;
+  const previousCompletedSteps = scanState.scanStatus?.completed_steps;
+  const streamChanged = scanState.scanStreamId !== scan.id;
+  scanState.scanState = scan.state;
+  scanState.scanStatus = scan;
   renderScanStatus(scan);
   const began = previousState === 'queued' && ['running', 'stopping'].includes(scan.state);
   if (streamChanged || began) {
-    state.scanStreamId = scan.id;
+    scanState.scanStreamId = scan.id;
     if (state.loaded.projects && scan.state !== 'queued') await loadProjects();
-    state.scanUpdatesCursor = 0;
+    scanState.scanUpdatesCursor = 0;
   }
-  while (state.loaded.projects && state.scanUpdatesCursor < (scan.updates_count || 0)) {
-    const batch = await api(`${API.scan}${scan.id}/updates?after=${state.scanUpdatesCursor}&limit=100`);
-    await upsertScannedProjects(batch.project_ids, scan.id);
-    state.scanUpdatesCursor = batch.cursor;
+  while (state.loaded.projects && scanState.scanUpdatesCursor < (scan.updates_count || 0)) {
+    const batch = await api(`${API.scan}${scan.id}/updates?after=${scanState.scanUpdatesCursor}&limit=100`);
+    if (!await upsertScannedProjects(batch.project_ids, scan.id)) return;
+    scanState.scanUpdatesCursor = batch.cursor;
     if (!batch.has_more) break;
   }
   const progressChanged = scan.state === 'running' && scan.completed_steps !== previousCompletedSteps;
   const finished = ['queued', 'running', 'stopping'].includes(previousState) && ['completed', 'failed', 'cancelled'].includes(scan.state);
   if (finished) {
-    window.clearTimeout(state.dashboardRefreshTimer);
-    state.dashboardRefreshTimer = null;
+    window.clearTimeout(scanState.dashboardRefreshTimer);
+    scanState.dashboardRefreshTimer = null;
     state.dependencyCache = {};
     const reloads = [loadDashboard()];
     if (state.loaded.projects) reloads.push(loadProjects());
     if (state.loaded.dependencies) reloads.push(loadDependencies());
     await Promise.all(reloads);
-  } else if (progressChanged && !state.dashboardRefreshTimer) {
-    state.dashboardRefreshTimer = window.setTimeout(() => {
-      state.dashboardRefreshTimer = null;
+  } else if (progressChanged && !scanState.dashboardRefreshTimer) {
+    scanState.dashboardRefreshTimer = window.setTimeout(() => {
+      scanState.dashboardRefreshTimer = null;
       loadDashboard().catch(showError);
     }, 5000);
   }
 }
 function updateScanDuration() {
-  const scan = state.scanStatus;
+  const scan = scanState.scanStatus;
   if (!['running', 'stopping'].includes(scan?.state) || !scan.started_at) return;
   const seconds = Math.max(0, (Date.now() - new Date(scan.started_at).getTime()) / 1000);
   document.querySelector('#scan-duration').textContent = formatDuration(seconds);
 }
-let toastTimer = null;
-function showToast(message, type) {
-  const toast = document.querySelector('#global-error');
-  toast.textContent = message;
-  toast.classList.toggle('success', type === 'success');
-  toast.classList.toggle('error', type === 'error');
-  toast.hidden = false;
-  if (toastTimer) window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => { toast.hidden = true; }, 4000);
-}
-function showSuccess(message) {
-  showToast(message, 'success');
-}
-function showError(error) {
-  showToast(error.message, 'error');
-}
 
+export { connectScanStatusSocket, handleScanStatus, renderScanStatus, updateScanDuration };

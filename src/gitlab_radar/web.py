@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 
 from fastapi import APIRouter
@@ -33,5 +34,16 @@ def index() -> HTMLResponse:
         r'(/static/[^\s"\'<>]+)',
         lambda match: f'{match[1]}?v={STATIC_VERSION}',
         content,
+    )
+    module_root = settings.application.web_dir / 'static' / 'js'
+    module_urls = (
+        f'/static/js/{path.relative_to(module_root).as_posix()}' for path in sorted(module_root.rglob('*.js'))
+    )
+    modules = {url: f'{url}?v={STATIC_VERSION}' for url in module_urls}
+    import_map = json.dumps({'imports': modules}, ensure_ascii=False).replace('<', r'\u003c')
+    content = content.replace(
+        '<script type="module"',
+        f'<script type="importmap">{import_map}</script>\n  <script type="module"',
+        1,
     )
     return HTMLResponse(content, headers={'Cache-Control': 'no-store'})

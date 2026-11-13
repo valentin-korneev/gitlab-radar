@@ -1,3 +1,14 @@
+import { api } from './api.js';
+import { API, HOOK_EVENT_TITLES } from './config.js';
+import { openDependency } from './navigation.js';
+import { complianceTone, ensureParameters } from './parameters.js';
+import { readLatest } from './requests.js';
+import { activeRequirements, ensureRequirements } from './requirements.js';
+import { connectScanStatusSocket } from './navigation.js';
+import { canonicalLanguageCode, element, formatDate, languageDisplayName, maskWebhookUrl, projectPathParts, registryName, webhookDomain } from './shared.js';
+import { projectState, state } from './state.js';
+import { downloadXlsx } from './xlsx.js';
+
 const PROJECT_DATA_STATUS_TITLES = {
   stale: 'Устаревшие данные — проект не обработан в текущем сканировании',
   missing: 'Проект не найден при последнем сканировании',
@@ -57,8 +68,8 @@ function compareProjectsByScanTime(left, right) {
 
 
 function projectMatchesFilters(project) {
-  const query = state.projectFilters.query.trim().toLowerCase();
-  const rules = [...state.projectFilters.rules];
+  const query = projectState.projectFilters.query.trim().toLowerCase();
+  const rules = [...projectState.projectFilters.rules];
   const languageNames = new Map(
     (project.languages || []).map((language) => [language.code, language.name]),
   );
@@ -75,13 +86,13 @@ function projectMatchesFilters(project) {
     .join(' ');
   const languages = (project.languages || []).map((language) => `${language.name} ${language.code}`).join(' ');
   const searchable = `${project.name} ${project.path_with_namespace} ${project.subprojects.map((item) => item.path).join(' ')} ${languageVersions} ${languages}`.toLowerCase();
-  const versionMatches = !state.projectFilters.language || project.subprojects.some((subproject) => (
-    canonicalLanguageCode(subproject.language) === canonicalLanguageCode(state.projectFilters.language)
+  const versionMatches = !projectState.projectFilters.language || project.subprojects.some((subproject) => (
+    canonicalLanguageCode(subproject.language) === canonicalLanguageCode(projectState.projectFilters.language)
     && normalizedRuntimeVersion(
       subproject.runtime_version || subproject.python_version || subproject.python_constraint,
-    ) === state.projectFilters.version
+    ) === projectState.projectFilters.version
   ));
-  const queryMatches = state.projectFilters.language !== null || !query || searchable.includes(query);
+  const queryMatches = projectState.projectFilters.language !== null || !query || searchable.includes(query);
   return queryMatches
     && versionMatches
     && rules.every((rule) => project.company_rule_results?.[rule] === false);
@@ -93,16 +104,16 @@ function normalizedRuntimeVersion(value) {
   return match[3] ? `${match[2]}.${match[3]}` : match[2];
 }
 function syncProjectFilterControls() {
-  document.querySelector('#project-search').value = state.projectFilters.query;
+  document.querySelector('#project-search').value = projectState.projectFilters.query;
   document.querySelectorAll('.rule-switches input').forEach((input) => {
-    input.checked = state.projectFilters.rules.has(input.dataset.rule);
+    input.checked = projectState.projectFilters.rules.has(input.dataset.rule);
   });
 }
 function resetProjectFilters() {
-  state.projectFilters.query = '';
-  state.projectFilters.rules.clear();
-  state.projectFilters.language = null;
-  state.projectFilters.version = null;
+  projectState.projectFilters.query = '';
+  projectState.projectFilters.rules.clear();
+  projectState.projectFilters.language = null;
+  projectState.projectFilters.version = null;
   syncProjectFilterControls();
   if (state.loaded.projects) renderProjects();
 }
@@ -119,7 +130,7 @@ function projectViolationTitles(results, requirements) {
 }
 function exportFilteredProjects() {
   const requirements = new Map(activeRequirements().map((requirement) => [requirement.code, requirement.title]));
-  const projects = state.projects.filter(projectMatchesFilters);
+  const projects = projectState.projects.filter(projectMatchesFilters);
   const rows = projects.map((project) => {
     const root = project.subprojects.find((subproject) => subproject.path === '.');
     const pythonRoot = project.subprojects.find(
@@ -171,30 +182,30 @@ function exportFilteredProjects() {
   );
 }
 function clearProjectSelection() {
-  state.selectedId = null;
-  state.selectedSubprojectKey = null;
+  projectState.selectedId = null;
+  projectState.selectedSubprojectKey = null;
   document.querySelector('#project-detail').replaceChildren(
     element('p', 'empty-state', 'Выберите проект, чтобы посмотреть детали.'),
   );
 }
 function renderProjects() {
-  const projects = state.projects.filter(projectMatchesFilters);
+  const projects = projectState.projects.filter(projectMatchesFilters);
   document.querySelector('#export-projects').disabled = projects.length === 0;
-  if (state.selectedId !== null && !projects.some((project) => project.id === state.selectedId)) {
+  if (projectState.selectedId !== null && !projects.some((project) => project.id === projectState.selectedId)) {
     clearProjectSelection();
   }
   const list = document.querySelector('#project-list');
   list.replaceChildren();
   if (!projects.length) {
-    list.append(element('p', 'empty-state', state.projects.length ? 'Проекты не найдены.' : 'Список проектов пуст. Запустите сканирование.'));
+    list.append(element('p', 'empty-state', projectState.projects.length ? 'Проекты не найдены.' : 'Список проектов пуст. Запустите сканирование.'));
     return;
   }
   projects.forEach((project) => {
     const view = projectView(project);
-    const selectedProject = project.id === state.selectedId;
+    const selectedProject = project.id === projectState.selectedId;
     const tree = element('div', 'project-tree');
     const row = element('button');
-    row.className = `project-row${selectedProject && state.selectedSubprojectKey === (view.root?.key || null) ? ' active' : ''}`;
+    row.className = `project-row${selectedProject && projectState.selectedSubprojectKey === (view.root?.key || null) ? ' active' : ''}`;
     row.type = 'button';
     const identity = element('span');
     identity.append(element('strong', '', project.name), element('small', '', projectPathParts(project.path_with_namespace).join(' › ')));
@@ -230,7 +241,7 @@ function renderProjects() {
       const children = element('div', 'project-children');
       view.children.forEach((subproject) => {
         const child = element('button');
-        child.className = `project-child${selectedProject && state.selectedSubprojectKey === subproject.key ? ' active' : ''}`;
+        child.className = `project-child${selectedProject && projectState.selectedSubprojectKey === subproject.key ? ' active' : ''}`;
         child.type = 'button';
         const childPath = subproject.isRoot
           ? `Корневой модуль · ${subproject.language}`
@@ -630,8 +641,8 @@ function renderProjectDetail(view, subproject) {
   detail.append(link);
 }
 function selectProject(view, subproject, row) {
-  state.selectedId = view.project.id;
-  state.selectedSubprojectKey = subproject?.key || null;
+  projectState.selectedId = view.project.id;
+  projectState.selectedSubprojectKey = subproject?.key || null;
   document.querySelectorAll('.project-row.active, .project-child.active').forEach((node) => node.classList.remove('active'));
   row.classList.add('active');
   renderProjectDetail(view, subproject);
@@ -639,16 +650,18 @@ function selectProject(view, subproject, row) {
 
 
 async function loadProjects() {
-  const [projects] = await Promise.all([api(API.projects), ensureRequirements(), ensureParameters()]);
-  state.projects = projects.sort(compareProjectsByScanTime);
+  const result = await readLatest('projects', (signal) => Promise.all([api(API.projects, { signal }), ensureRequirements(), ensureParameters()]));
+  if (!result) return;
+  const [projects] = result;
+  projectState.projects = projects.sort(compareProjectsByScanTime);
   state.loaded.projects = true;
   renderProjects();
-  const selected = state.projects.find((project) => project.id === state.selectedId);
+  const selected = projectState.projects.find((project) => project.id === projectState.selectedId);
   if (selected) {
     const view = projectView(selected);
     const entries = [view.root, ...view.children].filter(Boolean);
-    const subproject = entries.find((item) => item.key === state.selectedSubprojectKey) || view.root;
-    state.selectedSubprojectKey = subproject?.key || null;
+    const subproject = entries.find((item) => item.key === projectState.selectedSubprojectKey) || view.root;
+    projectState.selectedSubprojectKey = subproject?.key || null;
     renderProjectDetail(view, subproject);
   }
   if (state.auth.user) await connectScanStatusSocket();
@@ -658,21 +671,25 @@ async function upsertScannedProjects(projectIds, scanId) {
   if (!state.loaded.projects || !projectIds.length) return;
   const query = new URLSearchParams({ scan_id: scanId });
   projectIds.forEach((id) => query.append('project_ids', id));
-  const projects = await api(`${API.projects}?${query}`);
+  const projects = await readLatest('projects', (signal) => api(`${API.projects}?${query}`, { signal }));
+  if (!projects) return false;
   const replaced = new Set(projectIds);
   const incoming = new Map(projects.map((project) => [project.id, project]));
-  const existingIds = new Set(state.projects.map((project) => project.id));
-  state.projects = state.projects
+  const existingIds = new Set(projectState.projects.map((project) => project.id));
+  projectState.projects = projectState.projects
     .filter((project) => !replaced.has(project.id) || incoming.has(project.id))
     .map((project) => incoming.get(project.id) || project);
-  state.projects.push(...projects.filter((project) => !existingIds.has(project.id)));
+  projectState.projects.push(...projects.filter((project) => !existingIds.has(project.id)));
   renderProjects();
-  const selected = projects.find((project) => project.id === state.selectedId);
+  const selected = projects.find((project) => project.id === projectState.selectedId);
   if (selected) {
     const view = projectView(selected);
     const entries = [view.root, ...view.children].filter(Boolean);
-    const subproject = entries.find((item) => item.key === state.selectedSubprojectKey) || view.root;
-    state.selectedSubprojectKey = subproject?.key || null;
+    const subproject = entries.find((item) => item.key === projectState.selectedSubprojectKey) || view.root;
+    projectState.selectedSubprojectKey = subproject?.key || null;
     renderProjectDetail(view, subproject);
   }
+  return true;
 }
+
+export { appendDetail, exportFilteredProjects, loadProjects, renderProjects, resetProjectFilters, syncProjectFilterControls, upsertScannedProjects };

@@ -1,3 +1,5 @@
+import { CATALOG_ADAPTERS } from './catalog-adapters.js';
+
 const API = {
   authConfig: '/api/auth/config',
   authSession: '/api/auth/session',
@@ -19,10 +21,10 @@ const ADMINISTRATOR_ROUTES = new Set(['requirements', 'parameters', 'languages',
 const PAGE_ROUTES = {
   dashboard: { page: 'dashboard' },
   projects: { page: 'projects' },
-  dependencies: { page: 'dependencies', source: 'python', title: 'Зависимости', search: 'Найти зависимость' },
-  images: { page: 'dependencies', source: 'docker', title: 'Образы контейнеров', search: 'Найти образ' },
-  components: { page: 'dependencies', source: 'ci', title: 'CI-компоненты', search: 'Найти компонент' },
-  webhooks: { page: 'dependencies', source: 'webhook', title: 'Webhooks', search: 'Найти webhook' },
+  dependencies: { page: 'dependencies', source: 'python', ...CATALOG_ADAPTERS.python },
+  images: { page: 'dependencies', source: 'docker', ...CATALOG_ADAPTERS.docker },
+  components: { page: 'dependencies', source: 'ci', ...CATALOG_ADAPTERS.ci },
+  webhooks: { page: 'dependencies', source: 'webhook', ...CATALOG_ADAPTERS.webhook },
   requirements: { page: 'requirements' },
   parameters: { page: 'parameters' },
   languages: { page: 'languages' },
@@ -45,27 +47,7 @@ const PHASE_TITLES = {
   idle: 'Ожидание запуска', collecting: 'Сбор файлов из GitLab', analyzing: 'Локальный анализ файлов',
   publishing: 'Публикация результатов', completed: 'Результаты опубликованы',
 };
-const state = {
-  projects: [], dependencies: [], dependencyCache: {}, dependencySource: 'python', selectedId: null, selectedSubprojectKey: null,
-  projectFilters: { query: '', rules: new Set(), language: null, version: null },
-  selectedDependency: null, dependencyQuery: '', dependencyLanguages: new Set(), dependencyLanguagesInitialized: false, dependencyTreeExpanded: new Set(), showTransitive: false, scanState: null, scanStatus: null,
-  scanSubmitting: false, scanSocket: null, scanReconnectTimer: null,
-  scanStreamId: null, scanUpdatesCursor: 0, dashboardRefreshTimer: null,
-  technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
-  technologyTargetLanguages: new Set(), technologyTargetLanguageOptions: [], technologyTargetLanguagesInitialized: false,
-  languageOldestCurrentVersions: {},
-  dashboardRequirementLanguage: 'all',
-  dashboardLanguageTechnologyCode: null,
-  requirements: [], requirementGroups: [], requirementCatalog: null,
-  parameters: [], programmingLanguages: [], programmingFrameworks: [], selectedProgrammingLanguageCode: null, authorizedUsers: [],
-  visibilityGroups: [], selectedVisibilityGroup: null, visibilityPolicies: [], visibilityAdminUser: null, blacklistRules: [],
-  auth: { config: null, user: null },
-  currentRoute: null,
-  selectedRequirementGroupId: null,
-  loaded: {
-    dashboard: false, projects: false, dependencies: false, requirements: false, parameters: false, languages: false,
-    users: false, visibility: false, 'visibility-admin': false, blacklist: false, admin: false,
-  }, loading: {},
-};
 const STATE_CHANNEL = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('gitlab-radar-state');
 
+
+export { ADMINISTRATOR_ROUTES, API, AUTHENTICATED_ROUTES, HOOK_EVENT_TITLES, LEVEL_TITLES, PAGE_ROUTES, PHASE_TITLES, SOURCE_ROUTES, STATE_CHANNEL };

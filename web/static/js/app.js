@@ -1,3 +1,22 @@
+import { api } from './api.js';
+import { initializeAuth, logout, startLogin } from './auth.js';
+import { addProjectBlacklistRule } from './blacklist.js';
+import { API, PAGE_ROUTES } from './config.js';
+import { renderTechnologyTarget } from './dashboard.js';
+import { renderDependencies, renderDependencyDetail, resetDependencyPage } from './dependencies.js';
+import { bindEditorForm } from './editors.js';
+import { initializePageUpdates } from './page-updates.js';
+import { saveParameters } from './parameters.js';
+import { exportFilteredProjects, renderProjects, resetProjectFilters } from './projects.js';
+import { addRequirementCondition, addRequirementConditionGroup, groupPayload, moveRequirement, reloadRequirements, requirementPayload, resetGroupForm, resetRequirementForm, saveRequirementGroupOrder, saveRequirementOrder } from './requirements.js';
+import { showPage } from './router.js';
+import { showError, showSuccess } from './toasts.js';
+import { handleScanStatus, renderScanStatus, updateScanDuration } from './scan.js';
+import { initializeIcons } from './shared.js';
+import { catalogState, dashboardState, projectState, scanState, state } from './state.js';
+import { addAuthorizedUser } from './users.js';
+import { invalidateVisibilityData, loadVisibilityGroups, visibilityEditorCard } from './visibility.js';
+
 document.querySelectorAll('.nav-item').forEach((item) => {
   item.addEventListener('click', () => {
     if (item.dataset.route === 'projects' && state.currentRoute === 'projects') {
@@ -19,21 +38,22 @@ document.querySelector('#auth-button').addEventListener('click', async () => {
   } catch (error) { showError(error); }
 });
 window.addEventListener('hashchange', () => { showPage().catch(showError); });
+window.addEventListener('radar-project-filters', renderProjects);
 document.querySelector('#project-search').addEventListener('input', (event) => {
-  state.projectFilters.query = event.target.value;
-  state.projectFilters.language = null;
-  state.projectFilters.version = null;
+  projectState.projectFilters.query = event.target.value;
+  projectState.projectFilters.language = null;
+  projectState.projectFilters.version = null;
   renderProjects();
 });
 document.querySelector('#export-projects').addEventListener('click', exportFilteredProjects);
 document.querySelector('#dependency-search').addEventListener('input', (event) => {
-  state.dependencyQuery = event.target.value;
+  catalogState.dependencyQuery = event.target.value;
   renderDependencies();
 });
 document.querySelector('#show-transitive').addEventListener('change', (event) => {
-  state.showTransitive = event.target.checked;
+  catalogState.showTransitive = event.target.checked;
   renderDependencies();
-  const selected = state.dependencies.find((dependency) => dependency.name === state.selectedDependency);
+  const selected = catalogState.dependencies.find((dependency) => dependency.name === catalogState.selectedDependency);
   if (selected) renderDependencyDetail(selected);
 });
 document.querySelector('#active-visibility-group').addEventListener('change', async (event) => {
@@ -58,59 +78,9 @@ document.querySelector('#create-visibility-policy').addEventListener('click', ()
 document.querySelector('#close-visibility-user-dialog').addEventListener('click', () => {
   document.querySelector('#visibility-user-dialog').close();
 });
-STATE_CHANNEL?.addEventListener('message', (event) => {
-  const path = event.data?.path || '';
-  const invalidatedPages = new Set();
-  if (path.startsWith(API.requirements) || path.startsWith(API.requirementGroups)) {
-    state.requirements = [];
-    state.requirementGroups = [];
-    state.requirementCatalog = null;
-    ['dashboard', 'projects', 'requirements'].forEach((page) => {
-      state.loaded[page] = false;
-      invalidatedPages.add(page);
-    });
-  }
-  if (path.startsWith(API.parameters)) {
-    state.parameters = [];
-    state.requirementCatalog = null;
-    ['dashboard', 'projects', 'requirements', 'parameters'].forEach((page) => {
-      state.loaded[page] = false;
-      invalidatedPages.add(page);
-    });
-  }
-  if (path.startsWith(API.programmingLanguages)) {
-    state.programmingLanguages = [];
-    state.programmingFrameworks = [];
-    state.requirementCatalog = null;
-    state.dependencyCache = {};
-    state.technologyTargetLanguages = new Set();
-    state.technologyTargetLanguagesInitialized = false;
-    ['dashboard', 'projects', 'dependencies', 'requirements', 'languages'].forEach((page) => {
-      state.loaded[page] = false;
-      invalidatedPages.add(page);
-    });
-  }
-  if (path.startsWith(API.authorizedUsers)) {
-    state.loaded.users = false;
-    invalidatedPages.add('users');
-  }
-  if (path.startsWith(API.visibility)) {
-    invalidateVisibilityData();
-    state.loaded.visibility = false;
-    state.loaded['visibility-admin'] = false;
-    invalidatedPages.add('visibility');
-    invalidatedPages.add('visibility-admin');
-    invalidatedPages.add('dashboard');
-    invalidatedPages.add('projects');
-    invalidatedPages.add('dependencies');
-    loadVisibilityGroups().catch(showError);
-  }
-  const activePage = PAGE_ROUTES[state.currentRoute]?.page;
-  if (invalidatedPages.has(activePage)) showPage().catch(showError);
-});
 document.querySelector('#target-show-single').addEventListener('change', (event) => {
-  state.showSingleTechnologies = event.target.checked;
-  if (state.technologyTarget) renderTechnologyTarget(state.technologyTarget, state.projectsCount);
+  dashboardState.showSingleTechnologies = event.target.checked;
+  if (dashboardState.technologyTarget) renderTechnologyTarget(dashboardState.technologyTarget, dashboardState.projectsCount);
 });
 const themeToggle = document.querySelector('#theme-toggle');
 themeToggle.checked = document.documentElement.dataset.theme === 'dark';
@@ -120,10 +90,10 @@ themeToggle.addEventListener('change', () => {
   try { localStorage.setItem('radar-theme', theme); } catch (error) { /* Тема сохранится до перезагрузки. */ }
 });
 document.querySelector('#scan-button').addEventListener('click', async () => {
-  if (!state.auth.user?.is_admin || state.scanSubmitting || state.scanStatus?.state === 'stopping') return;
-  const stopping = ['queued', 'running'].includes(state.scanStatus?.state);
-  const url = stopping ? `${API.scan}${state.scanStatus.id}/stop` : API.scan;
-  state.scanSubmitting = true;
+  if (!state.auth.user?.is_admin || scanState.scanSubmitting || scanState.scanStatus?.state === 'stopping') return;
+  const stopping = ['queued', 'running'].includes(scanState.scanStatus?.state);
+  const url = stopping ? `${API.scan}${scanState.scanStatus.id}/stop` : API.scan;
+  scanState.scanSubmitting = true;
   document.querySelector('#scan-button').disabled = true;
   try {
     const scan = await api(url, { method: 'POST' });
@@ -131,19 +101,19 @@ document.querySelector('#scan-button').addEventListener('click', async () => {
     if (!stopping) showSuccess(`Запуск №${scan.id} принят`);
   } catch (error) { showError(error); }
   finally {
-    state.scanSubmitting = false;
-    if (state.scanStatus) renderScanStatus(state.scanStatus);
+    scanState.scanSubmitting = false;
+    if (scanState.scanStatus) renderScanStatus(scanState.scanStatus);
   }
 });
-document.querySelector('#parameters-form').addEventListener('submit', async (event) => {
+bindEditorForm('#parameters-form', async (event) => {
   event.preventDefault();
   try { await saveParameters(); } catch (error) { showError(error); }
 });
-document.querySelector('#authorized-user-form').addEventListener('submit', async (event) => {
+bindEditorForm('#authorized-user-form', async (event) => {
   event.preventDefault();
   try { await addAuthorizedUser(); } catch (error) { showError(error); }
 });
-document.querySelector('#blacklist-form').addEventListener('submit', async (event) => {
+bindEditorForm('#blacklist-form', async (event) => {
   event.preventDefault();
   try { await addProjectBlacklistRule(); } catch (error) { showError(error); }
 });
@@ -227,7 +197,7 @@ requirementGroupDetail.addEventListener('dragend', () => {
   draggedRequirement?.classList.remove('requirement-dragging');
   draggedRequirement = null;
 });
-document.querySelector('#requirement-group-form').addEventListener('submit', async (event) => {
+bindEditorForm('#requirement-group-form', async (event) => {
   event.preventDefault();
   const groupId = document.querySelector('#requirement-group-id').value;
   try {
@@ -241,7 +211,7 @@ document.querySelector('#requirement-group-form').addEventListener('submit', asy
     showSuccess(groupId ? 'Группа сохранена' : 'Группа создана');
   } catch (error) { showError(error); }
 });
-document.querySelector('#move-requirement-form').addEventListener('submit', async (event) => {
+bindEditorForm('#move-requirement-form', async (event) => {
   event.preventDefault();
   try {
     await moveRequirement(
@@ -251,7 +221,7 @@ document.querySelector('#move-requirement-form').addEventListener('submit', asyn
     document.querySelector('#move-requirement-dialog').close();
   } catch (error) { showError(error); }
 });
-document.querySelector('#requirement-form').addEventListener('submit', async (event) => {
+bindEditorForm('#requirement-form', async (event) => {
   event.preventDefault();
   const requirementId = document.querySelector('#requirement-id').value;
   try {
@@ -266,6 +236,8 @@ document.querySelector('#requirement-form').addEventListener('submit', async (ev
   } catch (error) { showError(error); }
 });
 async function startApplication() {
+  initializeIcons();
+  initializePageUpdates();
   try {
     await initializeAuth();
     await loadVisibilityGroups();

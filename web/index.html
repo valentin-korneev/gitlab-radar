@@ -13,25 +13,9 @@
       document.documentElement.dataset.theme = 'dark';
     }
   </script>
+  <script type="module" src="/static/js/app.js"></script>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/styles.css">
-  <script src="/static/js/config.js" defer></script>
-  <script src="/static/js/auth.js" defer></script>
-  <script src="/static/js/shared.js" defer></script>
-  <script src="/static/js/router.js" defer></script>
-  <script src="/static/js/xlsx.js" defer></script>
-  <script src="/static/js/projects.js" defer></script>
-  <script src="/static/js/dashboard.js" defer></script>
-  <script src="/static/js/requirements.js" defer></script>
-  <script src="/static/js/parameters.js" defer></script>
-  <script src="/static/js/languages.js" defer></script>
-  <script src="/static/js/users.js" defer></script>
-  <script src="/static/js/visibility.js" defer></script>
-  <script src="/static/js/blacklist.js" defer></script>
-  <script src="/static/js/admin.js" defer></script>
-  <script src="/static/js/dependencies.js" defer></script>
-  <script src="/static/js/scan.js" defer></script>
-  <script src="/static/js/app.js" defer></script>
 </head>
 <body>
   <div class="shell">
@@ -74,6 +58,10 @@
     </aside>
 
     <main class="content">
+      <aside id="page-update-notice" class="page-update-notice" role="status" hidden>
+        <span>Данные изменились. Обновите страницу, чтобы увидеть актуальное состояние. Введенные данные сохранены на экране.</span>
+        <button id="page-update-reload" class="secondary-button" type="button">Обновить страницу</button>
+      </aside>
       <section id="dashboard" class="page active">
         <div class="intro"><p>Сводка</p><h2>Портфель проектов</h2></div>
         <div class="cards">

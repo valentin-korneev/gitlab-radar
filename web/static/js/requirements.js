@@ -1,9 +1,18 @@
+import { api } from './api.js';
+import { API } from './config.js';
+import { pageEdit } from './page-updates.js';
+import { ensureResource, readLatest } from './requests.js';
+import { showError, showSuccess } from './toasts.js';
+import { confirmAction, element, iconButton, iconElement } from './shared.js';
+import { projectState, requirementState, state } from './state.js';
+
 function activeRequirements() { return state.requirements.filter((requirement) => requirement.enabled); }
 async function ensureRequirements(includeCatalog = false) {
-  const requests = [];
-  if (!state.requirements.length) requests.push(api(API.requirements).then((items) => { state.requirements = items; }));
-  if (!state.requirementGroups.length) requests.push(api(API.requirementGroups).then((items) => { state.requirementGroups = items; }));
-  if (includeCatalog && !state.requirementCatalog) requests.push(api(API.requirementCatalog).then((catalog) => { state.requirementCatalog = catalog; }));
+  const requests = [
+    ensureResource('requirements', API.requirements, (items) => { state.requirements = items; }),
+    ensureResource('requirementGroups', API.requirementGroups, (items) => { state.requirementGroups = items; }),
+  ];
+  if (includeCatalog) requests.push(ensureResource('requirementCatalog', API.requirementCatalog, (catalog) => { state.requirementCatalog = catalog; }));
   await Promise.all(requests);
   renderRuleFilters();
 }
@@ -13,8 +22,8 @@ function renderRuleFilters() {
   container.replaceChildren(heading);
   const active = activeRequirements();
   const activeCodes = new Set(active.map((requirement) => requirement.code));
-  state.projectFilters.rules.forEach((code) => {
-    if (!activeCodes.has(code)) state.projectFilters.rules.delete(code);
+  projectState.projectFilters.rules.forEach((code) => {
+    if (!activeCodes.has(code)) projectState.projectFilters.rules.delete(code);
   });
   const grouped = state.requirementGroups
     .map((group) => active.filter((requirement) => requirement.group_id === group.id))
@@ -25,11 +34,11 @@ function renderRuleFilters() {
     const input = element('input');
     input.type = 'checkbox';
     input.dataset.rule = requirement.code;
-    input.checked = state.projectFilters.rules.has(requirement.code);
+    input.checked = projectState.projectFilters.rules.has(requirement.code);
     input.addEventListener('change', () => {
-      if (input.checked) state.projectFilters.rules.add(requirement.code);
-      else state.projectFilters.rules.delete(requirement.code);
-      renderProjects();
+      if (input.checked) projectState.projectFilters.rules.add(requirement.code);
+      else projectState.projectFilters.rules.delete(requirement.code);
+      window.dispatchEvent(new Event('radar-project-filters'));
     });
     label.append(input, element('span'), document.createTextNode(requirement.title));
     container.append(label);
@@ -140,12 +149,12 @@ function requirementPayload() {
   return {
     code: document.querySelector('#requirement-code').value.trim(),
     title: document.querySelector('#requirement-title').value.trim(),
-    group_id: current?.group_id || state.selectedRequirementGroupId,
+    group_id: current?.group_id || requirementState.selectedRequirementGroupId,
     description: document.querySelector('#requirement-description').value.trim(),
     language: document.querySelector('#requirement-language').value || null,
     enabled: current?.enabled ?? true,
     sort_order: current?.sort_order || (
-      state.requirements.filter((requirement) => requirement.group_id === state.selectedRequirementGroupId).length + 1
+      state.requirements.filter((requirement) => requirement.group_id === requirementState.selectedRequirementGroupId).length + 1
     ) * 10,
     condition: {
       logic: document.querySelector('#requirement-condition-logic').value,
@@ -214,7 +223,7 @@ async function removeRequirementGroup(group) {
   );
   if (!confirmed) return;
   await api(`${API.requirementGroups}${group.id}`, { method: 'DELETE' });
-  if (state.selectedRequirementGroupId === group.id) state.selectedRequirementGroupId = null;
+  if (requirementState.selectedRequirementGroupId === group.id) requirementState.selectedRequirementGroupId = null;
   await reloadRequirements();
   showSuccess('Группа удалена');
 }
@@ -226,7 +235,7 @@ function renderRequirementGroups() {
   state.requirementGroups.forEach((group) => {
     const node = element(
       'button',
-      `requirement-group-list-item${group.id === state.selectedRequirementGroupId ? ' active' : ''}`,
+      `requirement-group-list-item${group.id === requirementState.selectedRequirementGroupId ? ' active' : ''}`,
     );
     node.type = 'button';
     node.dataset.groupId = group.id;
@@ -243,7 +252,7 @@ function renderRequirementGroups() {
     );
     node.append(handle, summary, element('span', 'group-open-mark', '›'));
     node.addEventListener('click', () => {
-      state.selectedRequirementGroupId = group.id;
+      requirementState.selectedRequirementGroupId = group.id;
       renderRequirementGroups();
     });
     container.append(node);
@@ -253,7 +262,7 @@ function renderRequirementGroups() {
 }
 function renderRequirementGroupDetail() {
   const detail = document.querySelector('#requirement-group-detail');
-  const group = state.requirementGroups.find((item) => item.id === state.selectedRequirementGroupId);
+  const group = state.requirementGroups.find((item) => item.id === requirementState.selectedRequirementGroupId);
   detail.replaceChildren();
   delete detail.dataset.groupId;
   if (!group) {
@@ -394,11 +403,13 @@ async function saveRequirementOrder(groupNode) {
   showSuccess('Порядок требований сохранен');
 }
 async function reloadRequirements() {
-  [state.requirements, state.requirementGroups] = await Promise.all([
-    api(API.requirements), api(API.requirementGroups),
-  ]);
-  if (!state.requirementGroups.some((group) => group.id === state.selectedRequirementGroupId)) {
-    state.selectedRequirementGroupId = null;
+  const result = await readLatest('requirements', (signal) => Promise.all([
+    api(API.requirements, { signal }), api(API.requirementGroups, { signal }),
+  ]));
+  if (!result) return;
+  [state.requirements, state.requirementGroups] = result;
+  if (!state.requirementGroups.some((group) => group.id === requirementState.selectedRequirementGroupId)) {
+    requirementState.selectedRequirementGroupId = null;
   }
   state.loaded.dashboard = false;
   state.loaded.projects = false;
@@ -411,6 +422,7 @@ async function reloadRequirements() {
 
 async function loadRequirementsPage() {
   await ensureRequirements(true);
+  if (!state.requirementCatalog || pageEdit('requirements').stale || pageEdit('requirements').dirty) return;
   const language = document.querySelector('#requirement-language');
   language.replaceChildren(...state.requirementCatalog.languages.map((item) => {
     const option = element('option', '', item.title);
@@ -421,3 +433,5 @@ async function loadRequirementsPage() {
   if (!document.querySelector('.requirement-condition')) addRequirementCondition();
   state.loaded.requirements = true;
 }
+
+export { activeRequirements, addRequirementCondition, addRequirementConditionGroup, ensureRequirements, groupPayload, loadRequirementsPage, moveRequirement, reloadRequirements, requirementPayload, resetGroupForm, resetRequirementForm, saveRequirementGroupOrder, saveRequirementOrder };

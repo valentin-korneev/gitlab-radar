@@ -1,5 +1,13 @@
+import { api } from './api.js';
+import { API } from './config.js';
+import { pageEdit } from './page-updates.js';
+import { ensureResource } from './requests.js';
+import { showSuccess } from './toasts.js';
+import { element } from './shared.js';
+import { state } from './state.js';
+
 async function ensureParameters() {
-  if (!state.parameters.length) state.parameters = await api(API.parameters);
+  await ensureResource('parameters', API.parameters, (items) => { state.parameters = items; });
 }
 function renderParameters() {
   const fields = document.querySelector('#parameter-fields');
@@ -92,6 +100,7 @@ function percentageParameterField(parameter) {
 }
 async function loadParametersPage() {
   await ensureParameters();
+  if (pageEdit('parameters').stale || pageEdit('parameters').dirty) return;
   renderParameters();
   state.loaded.parameters = true;
 }
@@ -112,3 +121,18 @@ async function saveParameters() {
   renderParameters();
   showSuccess('Параметры сохранены');
 }
+
+function parameterValue(key) {
+  return state.parameters.find((parameter) => parameter.key === key)?.value || '';
+}
+function parameterRange(key) {
+  return parameterValue(key).split(',').map(Number);
+}
+function complianceTone(value, parameterKey) {
+  const [dangerThreshold, successThreshold] = parameterRange(parameterKey);
+  if (value < dangerThreshold) return 'danger';
+  if (value < successThreshold) return 'warning';
+  return 'success';
+}
+
+export { complianceTone, parameterRange, ensureParameters, loadParametersPage, saveParameters };

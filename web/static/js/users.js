@@ -1,3 +1,13 @@
+import { pageEdit } from './page-updates.js';
+import { api } from './api.js';
+import { API } from './config.js';
+import { runEditorAction } from './editors.js';
+import { readLatest } from './requests.js';
+import { showError, showSuccess } from './toasts.js';
+import { confirmAction, element, iconButton } from './shared.js';
+import { state } from './state.js';
+import { openAdminUserVisibility } from './visibility.js';
+
 function renderAuthorizedUsers() {
   const list = document.querySelector('#authorized-user-list');
   list.replaceChildren();
@@ -19,13 +29,13 @@ function renderAuthorizedUsers() {
     adminInput.type = 'checkbox';
     adminInput.checked = user.is_admin;
     adminInput.disabled = user.source === 'environment';
-    adminInput.addEventListener('change', () => updateAuthorizedUser(user, { is_admin: adminInput.checked }).catch(showError));
+    adminInput.addEventListener('change', () => runEditorAction(actions, () => updateAuthorizedUser(user, { is_admin: adminInput.checked })).catch(showError));
     adminLabel.append(adminInput, element('span'), document.createTextNode('Админ'));
     const blockedLabel = element('label', 'switch');
     const blockedInput = element('input');
     blockedInput.type = 'checkbox';
     blockedInput.checked = user.is_blocked;
-    blockedInput.addEventListener('change', () => updateAuthorizedUser(user, { is_blocked: blockedInput.checked }).catch(showError));
+    blockedInput.addEventListener('change', () => runEditorAction(actions, () => updateAuthorizedUser(user, { is_blocked: blockedInput.checked })).catch(showError));
     blockedLabel.append(blockedInput, element('span'), document.createTextNode('Заблокирован'));
     actions.append(adminLabel, blockedLabel);
     const visibility = iconButton('filter', 'secondary-button', 'Настроить фильтры пользователя');
@@ -41,7 +51,9 @@ function renderAuthorizedUsers() {
   });
 }
 async function loadAuthorizedUsersPage() {
-  state.authorizedUsers = await api(API.authorizedUsers);
+  const result = await readLatest('users', (signal) => api(API.authorizedUsers, { signal }));
+  if (!result || pageEdit('users').dirty) return;
+  state.authorizedUsers = result;
   renderAuthorizedUsers();
   state.loaded.users = true;
 }
@@ -94,3 +106,5 @@ async function removeAuthorizedUser(user) {
   renderAuthorizedUsers();
   showSuccess('Пользователь удален');
 }
+
+export { addAuthorizedUser, loadAuthorizedUsersPage };

@@ -107,3 +107,5 @@ function downloadXlsx(filename, columns, rows, sheetName = 'Проекты') {
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
+
+export { downloadXlsx };

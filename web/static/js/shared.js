@@ -64,7 +64,9 @@ function iconButton(icon, className, title) {
   button.append(iconElement(icon));
   return button;
 }
-document.querySelectorAll('[data-icon]').forEach((button) => button.append(iconElement(button.dataset.icon)));
+function initializeIcons() {
+  document.querySelectorAll('[data-icon]').forEach((button) => button.append(iconElement(button.dataset.icon)));
+}
 function confirmAction(title, message, confirmLabel = 'Подтвердить действие') {
   const dialog = document.querySelector('#confirm-dialog');
   const submit = document.querySelector('#confirm-dialog-submit');
@@ -78,3 +80,5 @@ function confirmAction(title, message, confirmLabel = 'Подтвердить д
     dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
   });
 }
+
+export { canonicalLanguageCode, confirmAction, element, formatDate, formatDuration, iconButton, iconElement, initializeIcons, languageDisplayName, maskWebhookText, maskWebhookUrl, projectPathParts, registryName, webhookDomain };

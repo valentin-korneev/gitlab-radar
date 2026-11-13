@@ -1,37 +1,46 @@
+import { api } from './api.js';
+import { catalogAdapter } from './catalog-adapters.js';
+import { API, LEVEL_TITLES, SOURCE_ROUTES } from './config.js';
+import { appendDetail, renderProjects, syncProjectFilterControls } from './projects.js';
+import { readLatest } from './requests.js';
+import { ensurePageLoaded } from './navigation.js';
+import { canonicalLanguageCode, element, languageDisplayName, maskWebhookText } from './shared.js';
+import { activateCatalog, catalogState, projectState, state } from './state.js';
+
 function renderDependencies() {
-  if (['docker', 'ci', 'webhook'].includes(state.dependencySource)) {
+  if (catalogAdapter(catalogState.source).tree) {
     renderEndpointDependencies();
     return;
   }
-  const query = state.dependencyQuery.trim().toLowerCase();
-  const dependencies = state.dependencies
+  const query = catalogState.dependencyQuery.trim().toLowerCase();
+  const dependencies = catalogState.dependencies
     .map((dependency) => ({ dependency, visible: visibleDependencyData(dependency) }))
     .filter(({ dependency, visible }) => {
-      const searchable = state.dependencySource === 'webhook'
+      const searchable = catalogState.source === 'webhook'
         ? [dependency.name, ...dependency.versions.map((version) => version.version || '')]
         : [dependency.name];
       return searchable.some((value) => (
-        state.dependencySource === 'webhook' ? maskWebhookText(value) : value
+        catalogState.source === 'webhook' ? maskWebhookText(value) : value
       ).toLowerCase().includes(query)) && visible.projectsCount;
     });
-  if (state.selectedDependency && !dependencies.some(({ dependency }) => dependency.name === state.selectedDependency)) {
+  if (catalogState.selectedDependency && !dependencies.some(({ dependency }) => dependency.name === catalogState.selectedDependency)) {
     clearDependencySelection();
   }
   const list = document.querySelector('#dependency-list');
   list.replaceChildren();
   if (!dependencies.length) {
-    list.append(element('p', 'empty-state', state.dependencies.length ? 'Элементы не найдены.' : 'Список пуст.'));
+    list.append(element('p', 'empty-state', catalogState.dependencies.length ? 'Элементы не найдены.' : 'Список пуст.'));
     return;
   }
   dependencies.forEach(({ dependency, visible }) => {
     const row = element('button');
     row.type = 'button';
-    row.className = `dependency-row${dependency.name === state.selectedDependency ? ' active' : ''}`;
+    row.className = `dependency-row${dependency.name === catalogState.selectedDependency ? ' active' : ''}`;
     const identity = element('span');
     const levels = visible.levels.map((level) => LEVEL_TITLES[level]).join(', ');
-    const metadata = state.dependencySource === 'python'
+    const metadata = catalogState.source === 'python'
       ? `${visible.languages.map((language) => languageDisplayName(language)).join(', ') || 'язык не указан'} · ${levels} · вариантов версий: ${visible.versions.length}`
-      : state.dependencySource === 'webhook'
+      : catalogState.source === 'webhook'
         ? `хуков: ${visible.versions.length}`
         : `вариантов версий: ${visible.versions.length}`;
     identity.append(element('strong', '', dependency.name), element('small', '', metadata));
@@ -41,17 +50,16 @@ function renderDependencies() {
   });
 }
 function renderEndpointDependencies() {
-  const source = state.dependencySource;
-  const query = state.dependencyQuery.trim().toLowerCase();
+  const source = catalogState.source;
+  const query = catalogState.dependencyQuery.trim().toLowerCase();
   const roots = new Map();
   const nodes = new Map();
-  state.dependencies.forEach((dependency) => {
-    const domainMatches = source === 'webhook' && maskWebhookText(dependency.name).toLowerCase().includes(query);
+  catalogState.dependencies.forEach((dependency) => {
+    const adapter = catalogAdapter(source);
     dependency.versions.forEach((version) => {
-      const matchesQuery = !query || (source === 'webhook'
-        ? domainMatches || maskWebhookText(version.version || '').toLowerCase().includes(query)
-        : dependency.name.toLowerCase().includes(query));
-      const { domain, endpoint } = endpointPath(source, dependency, version);
+      const matchesQuery = !query || adapter.searchTerms(dependency, version)
+        .some((value) => value.toLowerCase().includes(query));
+      const { domain, endpoint } = adapter.path(dependency, version);
       if (!domain) return;
       let node = roots.get(domain);
       if (!node) {
@@ -69,7 +77,7 @@ function renderEndpointDependencies() {
         }
         node = child;
       });
-      addEndpointTreeEntry(node, source === 'webhook' ? null : version.version, version.projects, matchesQuery);
+      addEndpointTreeEntry(node, adapter.entryVersion(version), version.projects, matchesQuery);
     });
   });
   roots.forEach((node) => {
@@ -80,8 +88,8 @@ function renderEndpointDependencies() {
   const list = document.querySelector('#dependency-list');
   list.replaceChildren();
   if (!orderedRoots.length) {
-    list.append(element('p', 'empty-state', state.dependencies.length ? 'Элементы не найдены.' : 'Список пуст.'));
-    if (state.selectedDependency) clearDependencySelection();
+    list.append(element('p', 'empty-state', catalogState.dependencies.length ? 'Элементы не найдены.' : 'Список пуст.'));
+    if (catalogState.selectedDependency) clearDependencySelection();
     return;
   }
   const registerNodes = (node) => {
@@ -90,45 +98,24 @@ function renderEndpointDependencies() {
     node.visibleChildren.forEach(registerNodes);
   };
   orderedRoots.forEach(registerNodes);
-  let selectedNode = nodes.get(state.selectedDependency);
-  if (!selectedNode && state.selectedDependency) {
+  let selectedNode = nodes.get(catalogState.selectedDependency);
+  if (!selectedNode && catalogState.selectedDependency) {
     selectedNode = [...nodes.values()].find((node) => (
-      node.fullPath === state.selectedDependency
-      || (!node.parent && node.segment === state.selectedDependency)
+      node.fullPath === catalogState.selectedDependency
+      || (!node.parent && node.segment === catalogState.selectedDependency)
     ));
     if (selectedNode) {
-      state.selectedDependency = selectedNode.key;
+      catalogState.selectedDependency = selectedNode.key;
       for (let parent = selectedNode.parent; parent; parent = parent.parent) {
-        state.dependencyTreeExpanded.add(parent.key);
+        catalogState.dependencyTreeExpanded.add(parent.key);
       }
     }
   }
-  if (state.selectedDependency && !selectedNode) clearDependencySelection();
+  if (catalogState.selectedDependency && !selectedNode) clearDependencySelection();
   const selectedPath = new Set();
   for (let node = selectedNode; node; node = node.parent) selectedPath.add(node.key);
   orderedRoots.forEach((node) => renderEndpointTreeNode(node, list, source, selectedPath));
   if (selectedNode) renderDependencyDetail(endpointTreeDependency(selectedNode, source));
-}
-function endpointPath(source, dependency, version) {
-  if (source === 'webhook') {
-    const endpoint = String(version.version || '');
-    const suffixIndex = [endpoint.indexOf('?'), endpoint.indexOf('#')]
-      .filter((index) => index >= 0)
-      .reduce((left, right) => Math.min(left, right), endpoint.length);
-    const path = endpoint.slice(0, suffixIndex);
-    const suffix = endpoint.slice(suffixIndex);
-    const segments = path.split('/').filter(Boolean);
-    if (suffix) {
-      if (segments.length) segments[segments.length - 1] += suffix;
-      else segments.push(suffix);
-    }
-    return { domain: dependency.name || 'unknown-domain', endpoint: segments };
-  }
-  const parts = String(dependency.name || '')
-    .replace(/^[a-z][a-z\d+.-]*:\/\//i, '')
-    .split('/')
-    .filter(Boolean);
-  return { domain: parts.shift() || 'unknown-domain', endpoint: parts };
 }
 function createEndpointTreeNode(source, path) {
   return {
@@ -188,7 +175,7 @@ function endpointTreeDependency(node, source) {
     projects: record.projects,
   }));
   return {
-    name: source === 'webhook' ? maskWebhookText(node.fullPath) : node.fullPath,
+    name: node.fullPath,
     level: 'direct',
     levels: ['direct'],
     projects_count: endpointTreeProjectCount(node),
@@ -202,48 +189,48 @@ function renderEndpointTreeNode(node, container, source, selectedPath) {
   const row = element('div', 'dependency-tree-row');
   const hasChildren = node.visibleChildren.length > 0;
   if (hasChildren) {
-    const toggle = element('button', 'dependency-tree-toggle', state.dependencyTreeExpanded.has(node.key) ? '−' : '+');
+    const toggle = element('button', 'dependency-tree-toggle', catalogState.dependencyTreeExpanded.has(node.key) ? '−' : '+');
     toggle.type = 'button';
-    toggle.setAttribute('aria-label', `${state.dependencyTreeExpanded.has(node.key) ? 'Свернуть' : 'Раскрыть'} ${maskWebhookText(node.segment)}`);
-    toggle.setAttribute('aria-expanded', String(state.dependencyTreeExpanded.has(node.key)));
+    toggle.setAttribute('aria-label', `${catalogState.dependencyTreeExpanded.has(node.key) ? 'Свернуть' : 'Раскрыть'} ${maskWebhookText(node.segment)}`);
+    toggle.setAttribute('aria-expanded', String(catalogState.dependencyTreeExpanded.has(node.key)));
     toggle.addEventListener('click', () => {
-      if (state.dependencyTreeExpanded.has(node.key)) state.dependencyTreeExpanded.delete(node.key);
-      else state.dependencyTreeExpanded.add(node.key);
+      if (catalogState.dependencyTreeExpanded.has(node.key)) catalogState.dependencyTreeExpanded.delete(node.key);
+      else catalogState.dependencyTreeExpanded.add(node.key);
       renderDependencies();
     });
     row.append(toggle);
   } else row.append(element('span', 'dependency-tree-spacer'));
-  const isSelected = state.selectedDependency === node.key;
+  const isSelected = catalogState.selectedDependency === node.key;
   const select = element('button', `dependency-tree-select${isSelected ? ' active' : ''}${inSelectionPath ? ' in-selection-path' : ''}`);
   select.type = 'button';
   select.setAttribute('aria-pressed', String(isSelected));
-  select.append(element('span', '', source === 'webhook' ? maskWebhookText(node.segment) : node.segment));
+  select.append(element('span', '', node.segment));
   select.append(element('b', '', String(endpointTreeProjectCount(node))));
   select.addEventListener('click', () => {
-    state.selectedDependency = node.key;
+    catalogState.selectedDependency = node.key;
     renderDependencies();
   });
   row.append(select);
   wrapper.append(row);
   if (hasChildren) {
     const children = element('div', 'dependency-tree-children');
-    children.hidden = !state.dependencyTreeExpanded.has(node.key);
+    children.hidden = !catalogState.dependencyTreeExpanded.has(node.key);
     node.visibleChildren.forEach((child) => renderEndpointTreeNode(child, children, source, selectedPath));
     wrapper.append(children);
   }
   container.append(wrapper);
 }
 function clearDependencySelection() {
-  state.selectedDependency = null;
+  catalogState.selectedDependency = null;
   document.querySelector('#dependency-detail').replaceChildren(
     element('p', 'empty-state', 'Выберите элемент, чтобы посмотреть версии и проекты.'),
   );
 }
 function resetDependencyPage() {
-  state.dependencyQuery = '';
-  state.showTransitive = false;
-  state.dependencyLanguages.clear();
-  state.dependencyLanguagesInitialized = false;
+  catalogState.dependencyQuery = '';
+  catalogState.showTransitive = false;
+  catalogState.dependencyLanguages.clear();
+  catalogState.dependencyLanguagesInitialized = false;
   document.querySelector('#dependency-search').value = '';
   document.querySelector('#show-transitive').checked = false;
   clearDependencySelection();
@@ -253,9 +240,9 @@ function visibleDependencyData(dependency) {
     .map((version) => ({
       ...version,
       projects: version.projects.filter((project) => (
-        (state.dependencySource !== 'python' || state.showTransitive || project.level !== 'transitive')
-        && (state.dependencySource !== 'python'
-          || state.dependencyLanguages.has(canonicalLanguageCode(project.language)))
+        (catalogState.source !== 'python' || catalogState.showTransitive || project.level !== 'transitive')
+        && (catalogState.source !== 'python'
+          || catalogState.dependencyLanguages.has(canonicalLanguageCode(project.language)))
       )),
     }))
     .filter((version) => version.projects.length);
@@ -275,17 +262,15 @@ function renderDependencyDetail(dependency) {
   detail.replaceChildren();
   const visible = visibleDependencyData(dependency);
   detail.append(element('h3', '', dependency.name));
-  if (state.dependencySource === 'python') appendDetail(detail, 'Типы использования', visible.levels.map((level) => LEVEL_TITLES[level]).join(', '));
-  if (state.dependencySource === 'python') {
+  if (catalogState.source === 'python') appendDetail(detail, 'Типы использования', visible.levels.map((level) => LEVEL_TITLES[level]).join(', '));
+  if (catalogState.source === 'python') {
     appendDetail(detail, 'Языки', visible.languages.map((language) => languageDisplayName(language)).join(', '));
   }
   appendDetail(detail, 'Используется в проектах', String(visible.projectsCount));
   const versions = element('div', 'dependency-versions');
   visible.versions.forEach((version) => {
     const group = element('section', 'dependency-version');
-    const versionTitle = state.dependencySource === 'webhook'
-      ? maskWebhookText(version.version || 'Webhook')
-      : version.version || 'Версия не указана';
+    const versionTitle = catalogAdapter(catalogState.source).versionTitle(version);
     group.append(element('h4', '', versionTitle));
     const projects = element('div', 'dependency-projects');
     version.projects.forEach((project) => {
@@ -295,7 +280,7 @@ function renderDependencyDetail(dependency) {
       link.rel = 'noreferrer';
       link.append(
         element('strong', '', project.path_with_namespace),
-        element('small', '', `${project.subproject_path === '.' ? 'Корень репозитория' : project.subproject_path}${state.dependencySource === 'python' ? ` · ${languageDisplayName(project.language || '', project.language || 'язык не указан')} · ${LEVEL_TITLES[project.level]}` : ''}`),
+        element('small', '', `${project.subproject_path === '.' ? 'Корень репозитория' : project.subproject_path}${catalogState.source === 'python' ? ` · ${languageDisplayName(project.language || '', project.language || 'язык не указан')} · ${LEVEL_TITLES[project.level]}` : ''}`),
       );
       projects.append(link);
     });
@@ -305,45 +290,47 @@ function renderDependencyDetail(dependency) {
   detail.append(versions);
 }
 function selectDependency(dependency, row) {
-  state.selectedDependency = dependency.name;
+  catalogState.selectedDependency = dependency.name;
   document.querySelector('.dependency-row.active')?.classList.remove('active');
   row.classList.add('active');
   renderDependencyDetail(dependency);
 }
 let dependencyLoadId = 0;
 async function loadDependencies() {
-  const source = state.dependencySource;
+  const source = catalogState.source;
+  const version = state.dataVersion;
   const loadId = ++dependencyLoadId;
   let cache = state.dependencyCache;
   while (!cache[source]) {
     let dependencies;
     try {
-      dependencies = await api(`${API.dependencies}?source=${source}`);
+      dependencies = await readLatest('dependencies', (signal) => api(`${API.dependencies}?source=${source}`, { signal }));
+      if (!dependencies) return;
     } catch (error) {
-      if (loadId !== dependencyLoadId || source !== state.dependencySource) return;
+      if (loadId !== dependencyLoadId || source !== catalogState.source || version !== state.dataVersion) return;
       if (cache !== state.dependencyCache) {
         cache = state.dependencyCache;
         continue;
       }
       throw error;
     }
-    if (loadId !== dependencyLoadId || source !== state.dependencySource) return;
+    if (loadId !== dependencyLoadId || source !== catalogState.source || version !== state.dataVersion) return;
     if (cache !== state.dependencyCache) {
       cache = state.dependencyCache;
       continue;
     }
     cache[source] = dependencies;
   }
-  state.dependencies = cache[source];
+  catalogState.dependencies = cache[source];
   const languages = [...new Set(
-    state.dependencies.flatMap((dependency) => dependency.languages || []).map(canonicalLanguageCode),
+    catalogState.dependencies.flatMap((dependency) => dependency.languages || []).map(canonicalLanguageCode),
   )].sort();
-  if (!state.dependencyLanguagesInitialized) {
-    state.dependencyLanguages = new Set(languages);
-    state.dependencyLanguagesInitialized = true;
+  if (!catalogState.dependencyLanguagesInitialized) {
+    catalogState.dependencyLanguages = new Set(languages);
+    catalogState.dependencyLanguagesInitialized = true;
   } else {
-    state.dependencyLanguages = new Set(
-      [...state.dependencyLanguages]
+    catalogState.dependencyLanguages = new Set(
+      [...catalogState.dependencyLanguages]
         .map(canonicalLanguageCode)
         .filter((language) => languages.includes(language)),
     );
@@ -351,7 +338,7 @@ async function loadDependencies() {
   renderDependencyLanguageOptions(languages);
   state.loaded.dependencies = true;
   renderDependencies();
-  const selected = state.dependencies.find((dependency) => dependency.name === state.selectedDependency);
+  const selected = catalogState.dependencies.find((dependency) => dependency.name === catalogState.selectedDependency);
   if (selected) renderDependencyDetail(selected);
 }
 function renderDependencyLanguageOptions(languages) {
@@ -360,12 +347,12 @@ function renderDependencyLanguageOptions(languages) {
     const label = element('label', 'requirement-language-option');
     const input = element('input');
     input.type = 'checkbox';
-    input.checked = state.dependencyLanguages.has(language);
+    input.checked = catalogState.dependencyLanguages.has(language);
     input.addEventListener('change', () => {
-      if (input.checked) state.dependencyLanguages.add(language);
-      else state.dependencyLanguages.delete(language);
+      if (input.checked) catalogState.dependencyLanguages.add(language);
+      else catalogState.dependencyLanguages.delete(language);
       renderDependencies();
-      const selected = state.dependencies.find((dependency) => dependency.name === state.selectedDependency);
+      const selected = catalogState.dependencies.find((dependency) => dependency.name === catalogState.selectedDependency);
       if (selected) renderDependencyDetail(selected);
     });
     label.append(input, element('span', '', languageDisplayName(language)));
@@ -374,9 +361,9 @@ function renderDependencyLanguageOptions(languages) {
   if (!languages.length) options.append(element('small', 'muted', 'Нет языков'));
 }
 async function openDependency(name, source = 'python') {
-  state.dependencySource = source;
+  activateCatalog(source);
   document.querySelector('#transitive-filter').classList.toggle('control-placeholder', source !== 'python');
-  state.selectedDependency = name;
+  catalogState.selectedDependency = name;
   const route = SOURCE_ROUTES[source];
   if (window.location.hash !== `#${route}`) {
     window.location.hash = route;
@@ -385,20 +372,20 @@ async function openDependency(name, source = 'python') {
   await loadDependencies();
 }
 async function openRuleViolations(code) {
-  state.projectFilters.query = '';
-  state.projectFilters.rules = new Set([code]);
-  state.projectFilters.language = null;
-  state.projectFilters.version = null;
+  projectState.projectFilters.query = '';
+  projectState.projectFilters.rules = new Set([code]);
+  projectState.projectFilters.language = null;
+  projectState.projectFilters.version = null;
   syncProjectFilterControls();
   window.location.hash = 'projects';
   await ensurePageLoaded('projects');
   renderProjects();
 }
 async function openLanguageVersion(language, version) {
-  state.projectFilters.rules.clear();
-  state.projectFilters.query = `${language.name} ${version}`;
-  state.projectFilters.language = language.code;
-  state.projectFilters.version = version;
+  projectState.projectFilters.rules.clear();
+  projectState.projectFilters.query = `${language.name} ${version}`;
+  projectState.projectFilters.language = language.code;
+  projectState.projectFilters.version = version;
   syncProjectFilterControls();
   if (window.location.hash !== '#projects') {
     window.location.hash = 'projects';
@@ -407,3 +394,5 @@ async function openLanguageVersion(language, version) {
   renderProjects();
 }
 
+
+export { loadDependencies, openDependency, openLanguageVersion, openRuleViolations, renderDependencies, renderDependencyDetail, resetDependencyPage };

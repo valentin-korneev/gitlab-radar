@@ -1,8 +1,17 @@
+import { pageEdit } from './page-updates.js';
+import { api } from './api.js';
+import { API } from './config.js';
+import { bindAsyncInput, bindEditorChange } from './editors.js';
+import { readLatest } from './requests.js';
+import { showError, showSuccess } from './toasts.js';
+import { canonicalLanguageCode, element } from './shared.js';
+import { dashboardState, state } from './state.js';
+
 function invalidateLanguageDependentData() {
   state.requirementCatalog = null;
   state.dependencyCache = {};
-  state.technologyTargetLanguages = new Set();
-  state.technologyTargetLanguagesInitialized = false;
+  dashboardState.technologyTargetLanguages = new Set();
+  dashboardState.technologyTargetLanguagesInitialized = false;
   ['dashboard', 'projects', 'dependencies', 'requirements'].forEach((page) => {
     state.loaded[page] = false;
   });
@@ -50,14 +59,15 @@ function languageRow(language) {
   versionInput.dataset.languageCode = language.code;
   versionInput.placeholder = 'Все версии актуальны';
   versionInput.maxLength = 50;
-  versionInput.addEventListener('change', async () => {
-    versionInput.disabled = true;
-    try {
-      const updated = await api(`${API.programmingLanguages}${language.id}/oldest-current-version`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ oldest_current_version: versionInput.value.trim() || null }),
-      });
+  bindAsyncInput(versionInput, {
+    scope: row,
+    read: () => language.oldest_current_version || null,
+    normalize: (value) => value.trim() || null,
+    save: (value) => api(`${API.programmingLanguages}${language.id}/oldest-current-version`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldest_current_version: value }),
+    }),
+    onSaved: (updated) => {
       Object.assign(language, updated);
       state.programmingLanguages
         .filter((item) => canonicalLanguageCode(item.code) === canonicalLanguageCode(language.code))
@@ -67,15 +77,9 @@ function languageRow(language) {
           input.value = updated.oldest_current_version || '';
         }
       });
-      versionInput.value = language.oldest_current_version || '';
       invalidateLanguageDependentData();
-      showSuccess('Версия сохранена');
-    } catch (error) {
-      versionInput.value = language.oldest_current_version || '';
-      showError(error);
-    } finally {
-      versionInput.disabled = false;
-    }
+    },
+    success: 'Версия сохранена',
   });
   version.append(versionInput);
   const toggle = element('label', 'switch programming-language-switch');
@@ -83,7 +87,7 @@ function languageRow(language) {
   input.type = 'checkbox';
   input.dataset.languageCode = language.code;
   input.checked = language.enabled;
-  input.addEventListener('change', async () => {
+  bindEditorChange(input, row, async () => {
     input.disabled = true;
     try {
       const updated = await api(`${API.programmingLanguages}${language.id}/enabled`, {
@@ -137,7 +141,7 @@ function frameworkRow(framework) {
   const input = element('input');
   input.type = 'checkbox';
   input.checked = framework.enabled;
-  input.addEventListener('change', async () => {
+  bindEditorChange(input, row, async () => {
     input.disabled = true;
     try {
       const updated = await api(`${API.programmingLanguages}frameworks/${framework.id}/enabled`, {
@@ -176,10 +180,11 @@ function renderProgrammingFrameworks() {
   }
 }
 async function loadProgrammingLanguages() {
-  [state.programmingLanguages, state.programmingFrameworks] = await Promise.all([
-    api(API.programmingLanguages),
-    api(`${API.programmingLanguages}frameworks`),
-  ]);
+  const result = await readLatest('languages', (signal) => Promise.all([
+    api(API.programmingLanguages, { signal }), api(`${API.programmingLanguages}frameworks`, { signal }),
+  ]));
+  if (!result || pageEdit('languages').dirty) return;
+  [state.programmingLanguages, state.programmingFrameworks] = result;
   if (!state.programmingLanguages.some((language) => language.code === state.selectedProgrammingLanguageCode)) {
     state.selectedProgrammingLanguageCode = state.programmingLanguages[0]?.code || null;
   }
@@ -187,3 +192,5 @@ async function loadProgrammingLanguages() {
   renderProgrammingFrameworks();
   state.loaded.languages = true;
 }
+
+export { loadProgrammingLanguages };

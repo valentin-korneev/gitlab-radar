@@ -1,3 +1,12 @@
+import { api } from './api.js';
+import { API } from './config.js';
+import { bindEditorAction } from './editors.js';
+import { invalidateReads, readLatest } from './requests.js';
+import { pageEdit } from './page-updates.js';
+import { showError, showSuccess } from './toasts.js';
+import { canonicalLanguageCode, confirmAction, element, iconButton, languageDisplayName } from './shared.js';
+import { catalogPages, catalogState, projectState, state } from './state.js';
+
 function visibilityRuleRow(rule = { action: 'include', target: 'path', pattern: '' }) {
   const row = element('div', 'visibility-rule-row');
   const action = document.createElement('select');
@@ -61,6 +70,8 @@ function visibilityRulesPayload(container) {
 
 function visibilityEditorCard(item, kind) {
   const card = element('article', 'dashboard-card visibility-editor-card');
+  card.dataset.visibilityKind = kind;
+  card.dataset.visibilityId = item.id || '';
   const fields = element('div', 'visibility-editor-fields');
   const nameLabel = element('label', 'visibility-field', 'Название');
   const name = document.createElement('input');
@@ -75,7 +86,7 @@ function visibilityEditorCard(item, kind) {
   const add = iconButton('plus', 'secondary-button', 'Добавить правило');
   add.addEventListener('click', () => appendVisibilityRule(rules));
   const save = iconButton('check', 'primary-button', 'Сохранить');
-  save.addEventListener('click', async () => {
+  bindEditorAction(save, async () => {
     try {
       if (!name.value.trim()) {
         name.focus();
@@ -84,7 +95,7 @@ function visibilityEditorCard(item, kind) {
       const path = kind === 'policy'
         ? `${API.visibilityAdmin}policy${item.id ? `/${item.id}` : ''}`
         : `${API.visibility}${item.id || ''}`;
-      await api(path, {
+      const updated = await api(path, {
         method: item.id ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -92,12 +103,16 @@ function visibilityEditorCard(item, kind) {
           rules: visibilityRulesPayload(rules),
         }),
       });
-      if (kind === 'policy') await reloadVisibilityPolicies();
-      else await reloadVisibilityGroups();
+      const key = kind === 'policy' ? 'visibilityPolicies' : 'visibilityGroups';
+      const index = state[key].findIndex((entry) => entry.id === updated.id);
+      if (index < 0) state[key].push(updated);
+      else state[key][index] = updated;
+      card.replaceWith(visibilityEditorCard(updated, kind));
+      renderVisibilitySwitcher();
       invalidateVisibilityData();
       showSuccess(kind === 'policy' ? 'Политика сохранена' : 'Группа фильтров сохранена');
     } catch (error) { showError(error); }
-  });
+  }, card);
   actions.append(add, save);
   if (kind === 'group' && item.id) {
     const defaultButton = iconButton(
@@ -105,37 +120,51 @@ function visibilityEditorCard(item, kind) {
       item.is_default ? 'primary-button' : 'secondary-button',
       item.is_default ? 'Снять фильтр по умолчанию' : 'Сделать фильтром по умолчанию',
     );
-    defaultButton.addEventListener('click', async () => {
+    defaultButton.dataset.visibilityDefault = '';
+    bindEditorAction(defaultButton, async () => {
       try {
-        const groupId = item.is_default ? null : item.id;
+        const current = state.visibilityGroups.find((group) => group.id === item.id);
+        const groupId = current?.is_default ? null : item.id;
         await api(`${API.visibility}default`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ group_id: groupId }),
         });
         state.selectedVisibilityGroup = groupId === null ? 'all' : String(groupId);
-        await reloadVisibilityGroups();
+        state.visibilityGroups.forEach((group) => { group.is_default = group.id === groupId; });
+        document.querySelectorAll('[data-visibility-kind="group"]').forEach((entry) => {
+          const button = entry.querySelector('[data-visibility-default]');
+          if (!button) return;
+          const selected = Number(entry.dataset.visibilityId) === groupId;
+          button.classList.toggle('primary-button', selected);
+          button.classList.toggle('secondary-button', !selected);
+          button.title = selected ? 'Снять фильтр по умолчанию' : 'Сделать фильтром по умолчанию';
+          button.setAttribute('aria-label', button.title);
+        });
+        renderVisibilitySwitcher();
         invalidateVisibilityData();
-        await showPage();
         showSuccess(groupId === null ? 'Фильтр по умолчанию снят' : 'Фильтр по умолчанию сохранен');
       } catch (error) { showError(error); }
-    });
+    }, card);
     actions.append(defaultButton);
   }
   if (item.id) {
     const remove = iconButton('trash', 'danger-button', kind === 'policy' ? 'Удалить политику' : 'Удалить группу');
-    remove.addEventListener('click', async () => {
+    bindEditorAction(remove, async () => {
       try {
         const title = kind === 'policy' ? 'Удалить политику' : 'Удалить группу';
         if (!await confirmAction(title, `«${item.name}» будет удалена.`, title)) return;
         const base = kind === 'policy' ? `${API.visibilityAdmin}policy/` : API.visibility;
         await api(`${base}${item.id}`, { method: 'DELETE' });
-        if (kind === 'policy') await reloadVisibilityPolicies();
-        else await reloadVisibilityGroups();
+        const key = kind === 'policy' ? 'visibilityPolicies' : 'visibilityGroups';
+        state[key] = state[key].filter((entry) => entry.id !== item.id);
+        card.remove();
+        if (kind === 'group' && state.selectedVisibilityGroup === String(item.id)) state.selectedVisibilityGroup = 'all';
+        renderVisibilitySwitcher();
         invalidateVisibilityData();
         showSuccess(kind === 'policy' ? 'Политика удалена' : 'Группа фильтров удалена');
       } catch (error) { showError(error); }
-    });
+    }, card);
     actions.append(remove);
   }
   card.append(fields, rules, actions);
@@ -169,7 +198,9 @@ async function loadVisibilityGroups() {
     renderVisibilitySwitcher();
     return;
   }
-  state.visibilityGroups = await api(API.visibility);
+  const groups = await readLatest('visibility-groups', (signal) => api(API.visibility, { signal }));
+  if (!groups) return;
+  state.visibilityGroups = groups;
   const selectedExists = state.selectedVisibilityGroup === 'all' || state.visibilityGroups.some(
     (group) => String(group.id) === String(state.selectedVisibilityGroup)
   );
@@ -177,10 +208,12 @@ async function loadVisibilityGroups() {
     state.selectedVisibilityGroup = String(state.visibilityGroups.find((group) => group.is_default)?.id || 'all');
   }
   renderVisibilitySwitcher();
+  return true;
 }
 
 async function reloadVisibilityGroups() {
-  await loadVisibilityGroups();
+  const loaded = await loadVisibilityGroups();
+  if (!loaded || pageEdit('visibility').dirty || pageEdit('visibility').stale) return;
   renderVisibilityGroups();
   state.loaded.visibility = true;
 }
@@ -198,17 +231,23 @@ function renderVisibilityPolicies() {
 }
 
 async function reloadVisibilityPolicies() {
-  state.visibilityPolicies = await api(`${API.visibilityAdmin}policy`);
+  const policies = await readLatest('visibility-policies', (signal) => api(`${API.visibilityAdmin}policy`, { signal }));
+  if (!policies) return;
+  state.visibilityPolicies = policies;
   renderVisibilityPolicies();
 }
 
 async function openAdminUserVisibility(preferredUsername) {
   state.visibilityAdminUser = preferredUsername;
   await ensureVisibilityProgrammingLanguages();
-  state.visibilityPolicies = await api(`${API.visibilityAdmin}policy`);
+  const policies = await readLatest('visibility-policies', (signal) => api(`${API.visibilityAdmin}policy`, { signal }));
+  if (!policies) return;
+  state.visibilityPolicies = policies;
   document.querySelector('#visibility-user-dialog-name').textContent = preferredUsername;
-  await renderAdminUserVisibility(preferredUsername);
-  document.querySelector('#visibility-user-dialog').showModal();
+  const rendered = await renderAdminUserVisibility(preferredUsername);
+  if (!rendered || preferredUsername !== state.visibilityAdminUser) return;
+  const dialog = document.querySelector('#visibility-user-dialog');
+  if (!dialog.open) dialog.showModal();
 }
 
 async function renderAdminUserVisibility(preferredUsername) {
@@ -218,7 +257,8 @@ async function renderAdminUserVisibility(preferredUsername) {
     editor.append(element('p', 'empty-state', 'Добавьте пользователя, чтобы настроить видимость.'));
     return;
   }
-  const config = await api(`${API.visibilityAdmin}user/${encodeURIComponent(preferredUsername)}`);
+  const config = await readLatest('visibility-user', (signal) => api(`${API.visibilityAdmin}user/${encodeURIComponent(preferredUsername)}`, { signal }));
+  if (!config || preferredUsername !== state.visibilityAdminUser) return;
   const policies = element('div', 'visibility-policy-assignments');
   policies.append(element('strong', '', 'Назначенные политики'));
   state.visibilityPolicies.forEach((policy) => {
@@ -235,7 +275,7 @@ async function renderAdminUserVisibility(preferredUsername) {
   const add = iconButton('plus', 'secondary-button', 'Добавить индивидуальное правило');
   add.addEventListener('click', () => appendVisibilityRule(rules));
   const save = iconButton('check', 'primary-button', 'Сохранить настройки пользователя');
-  save.addEventListener('click', async () => {
+  bindEditorAction(save, async () => {
     try {
       save.disabled = true;
       await api(`${API.visibilityAdmin}user/${encodeURIComponent(preferredUsername)}`, {
@@ -263,11 +303,15 @@ async function renderAdminUserVisibility(preferredUsername) {
     rules,
     actions,
   );
+  return true;
 }
 
 async function loadAdminVisibilityPage() {
   await ensureVisibilityProgrammingLanguages();
-  state.visibilityPolicies = await api(`${API.visibilityAdmin}policy`);
+  const policies = await readLatest('visibility-policies', (signal) => api(`${API.visibilityAdmin}policy`, { signal }));
+  if (!policies) return;
+  if (pageEdit('visibility-admin').dirty || pageEdit('visibility-admin').stale) return;
+  state.visibilityPolicies = policies;
   renderVisibilityPolicies();
   state.loaded['visibility-admin'] = true;
 }
@@ -279,10 +323,13 @@ async function ensureVisibilityProgrammingLanguages() {
 }
 
 function invalidateVisibilityData() {
+  invalidateReads();
   ['dashboard', 'projects', 'dependencies'].forEach((page) => { state.loaded[page] = false; });
-  state.projects = [];
-  state.dependencies = [];
+  projectState.projects = [];
+  catalogPages.forEach((page) => { page.dependencies = []; page.selectedDependency = null; });
   state.dependencyCache = {};
-  state.selectedId = null;
-  state.selectedDependency = null;
+  projectState.selectedId = null;
+  catalogState.selectedDependency = null;
 }
+
+export { invalidateVisibilityData, loadAdminVisibilityPage, loadVisibilityGroups, loadVisibilityPage, openAdminUserVisibility, visibilityEditorCard };

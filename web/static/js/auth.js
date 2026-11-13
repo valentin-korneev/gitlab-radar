@@ -1,8 +1,7 @@
-function cookieValue(name) {
-  const prefix = `${encodeURIComponent(name)}=`;
-  const entry = document.cookie.split('; ').find((value) => value.startsWith(prefix));
-  return entry ? decodeURIComponent(entry.slice(prefix.length)) : null;
-}
+import { API } from './config.js';
+import { renderScanStatus } from './scan.js';
+import { scanState, state } from './state.js';
+
 async function startLogin(routeName = window.location.hash.slice(1) || 'dashboard') {
   const url = new URL(state.auth.config.login_url, window.location.origin);
   url.searchParams.set('return_to', routeName);
@@ -21,7 +20,7 @@ function renderAuth() {
   document.querySelectorAll('.personal-visibility-navigation').forEach((item) => {
     item.hidden = !authenticated;
   });
-  if (state.scanStatus) renderScanStatus(state.scanStatus);
+  if (scanState.scanStatus) renderScanStatus(scanState.scanStatus);
   document.querySelector('#auth-panel').hidden = false;
   document.querySelector('#auth-user').textContent = authenticated
     ? state.auth.user.preferred_username || state.auth.user.name || 'Пользователь'
@@ -37,22 +36,5 @@ async function initializeAuth() {
   renderAuth();
 }
 
-async function api(path, options = {}) {
-  const headers = new Headers(options.headers || {});
-  const method = (options.method || 'GET').toUpperCase();
-  if (method !== 'GET') {
-    const csrfToken = cookieValue('radar_csrf');
-    if (csrfToken) headers.set('X-CSRF-Token', csrfToken);
-  }
-  if (state.auth.user && state.selectedVisibilityGroup !== null) {
-    headers.set('X-Radar-Visibility-Group', String(state.selectedVisibilityGroup));
-  }
-  const response = await fetch(path, { cache: 'no-store', ...options, headers });
-  if (!response.ok) {
-    const payload = await response.json().catch(() => ({}));
-    throw new Error(payload.detail || `HTTP ${response.status}`);
-  }
-  const payload = response.status === 204 ? null : await response.json();
-  if (method !== 'GET') STATE_CHANNEL?.postMessage({ path });
-  return payload;
-}
+
+export { initializeAuth, logout, startLogin };

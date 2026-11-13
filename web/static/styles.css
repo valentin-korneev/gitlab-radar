@@ -638,3 +638,6 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
   .visibility-editor-fields, .visibility-rule-row { grid-template-columns: 1fr; }
   .programming-language-row, .programming-framework-row { grid-template-columns: 1fr; }
 }
+
+.page-update-notice { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; margin-bottom: 20px; border: 1px solid var(--line); border-radius: 12px; }
+.page-update-notice[hidden] { display: none; }
