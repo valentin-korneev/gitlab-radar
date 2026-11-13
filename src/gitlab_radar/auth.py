@@ -186,7 +186,7 @@ async def issue_websocket_ticket() -> str:
 
 async def consume_websocket_ticket(ticket: str) -> bool:
     rows = await connections.get('default').execute_query_dict(
-        'DELETE FROM "websocketticket" WHERE "token_hash" = $1 AND "expires_at" > NOW() RETURNING "token_hash"',
+        'DELETE FROM "websocket_ticket" WHERE "token_hash" = $1 AND "expires_at" > NOW() RETURNING "token_hash"',
         [_hash(ticket)],
     )
     return bool(rows)
