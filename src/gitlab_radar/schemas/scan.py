@@ -4,6 +4,22 @@ from enum import StrEnum
 from pydantic import BaseModel, Field, computed_field
 
 
+class ScanTargetKind(StrEnum):
+    BRANCH = 'branch'
+    MERGE_REQUEST = 'merge_request'
+
+
+class ScanItemState(StrEnum):
+    PENDING = 'pending'
+    COLLECTED = 'collected'
+    SUCCESS = 'success'
+    PARTIAL = 'partial'
+    FAILED = 'failed'
+    REUSED = 'reused'
+    MISSING = 'missing'
+    SKIPPED = 'skipped'
+
+
 class ScanState(StrEnum):
     IDLE = 'idle'
     RUNNING = 'running'

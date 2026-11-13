@@ -3,6 +3,7 @@ import json
 import re
 from pathlib import PurePosixPath
 
+from gitlab_radar.config import settings
 from gitlab_radar.services.analysis.base import FileSelection, LanguageAnalyzer
 from gitlab_radar.services.analysis.languages import (
     JavaAnalyzer,
@@ -53,7 +54,7 @@ def select_project_files(repository_paths: list[str], language_codes: list[str])
 
 def analysis_fingerprint(enabled_language_codes: list[str] | None = None) -> str:
     configuration = {
-        'project': {'version': PROJECT_ANALYZER_VERSION},
+        'project': {'version': PROJECT_ANALYZER_VERSION, 'gitlab_url': settings.gitlab.url},
         'languages': {
             code: {
                 'key': analyzer.key,

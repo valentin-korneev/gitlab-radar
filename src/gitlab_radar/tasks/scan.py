@@ -4,7 +4,9 @@ import os
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-lazy from asyncpg import Connection
+from asyncpg import Connection, PostgresError
+from gitlab.exceptions import GitlabError
+from tortoise.exceptions import BaseORMException
 
 from gitlab_radar.clients.gitlab import GitLabRequestCounter
 from gitlab_radar.database.models import ScanRun
@@ -13,15 +15,18 @@ from gitlab_radar.database.repository import (
     clone_project,
     delete_project_files,
     delete_scan_files,
+    fail_pending_items,
+    find_reusable_inputs,
     find_reusable_project,
     invalidate_project_cache,
     latest_scan,
+    prepare_scan,
     project_files,
     recover_stale_scans,
     restore_previous_analysis,
     save_analysis,
     save_collected_project,
-    set_project_scanned_at,
+    skip_project,
     sync_programming_languages,
     trim_old_scans,
 )
@@ -31,6 +36,7 @@ from gitlab_radar.schemas.project import LanguageAnalysisStatus, Project, Projec
 from gitlab_radar.schemas.scan import ScanPhase, ScanState, ScanStatus
 from gitlab_radar.schemas.technology import PackageManager
 from gitlab_radar.services.analysis import analysis_fingerprint, language_code, select_project_files
+from gitlab_radar.services.analysis.diagnostics import PARSE_ERRORS
 from gitlab_radar.services.application_parameters import application_parameter_values
 from gitlab_radar.services.project import fetch_projects
 from gitlab_radar.services.project_analysis import analyze_project
@@ -38,6 +44,7 @@ from gitlab_radar.services.project_blacklist import blacklist_patterns
 from gitlab_radar.services.project_collection import ProjectCollector, ProjectNotScannableError
 
 logger = logging.getLogger(__name__)
+SCAN_ERRORS = (*PARSE_ERRORS, GitlabError, BaseORMException, PostgresError, OSError, RuntimeError)
 LOCAL_ANALYSIS_CONCURRENCY = max(1, min(8, os.cpu_count() or 1))
 
 
@@ -113,6 +120,7 @@ class ScanTask:
         except asyncio.CancelledError:
             completed_at = datetime.now(UTC)
             if self._status.id is not None:
+                await fail_pending_items(self._status.id, 'Сканирование остановлено вместе с приложением')
                 await delete_scan_files(self._status.id)
                 await ScanRun.filter(id=self._status.id).update(
                     state=ScanState.FAILED,
@@ -145,7 +153,7 @@ class ScanTask:
                 )
                 await self._scan_projects(scan, projects, errors, request_counter)
                 await self._publish(scan, len(projects), total_steps, errors, request_counter.count)
-            except Exception as error:
+            except SCAN_ERRORS as error:
                 logger.exception('Сканирование проектов завершилось из-за ошибки')
                 await self._fail(scan, errors, error, request_counter.count)
             finally:
@@ -179,6 +187,7 @@ class ScanTask:
         errors: list[str],
         request_counter: GitLabRequestCounter,
     ) -> None:
+        await prepare_scan(scan, projects)
         collector = ProjectCollector(masking_key=await webhook_masking_key())
         analysis_queue: asyncio.Queue[CollectedSnapshot | None] = asyncio.Queue()
         workers = [
@@ -218,30 +227,12 @@ class ScanTask:
         try:
             revision = await asyncio.to_thread(collector.revision, project)
             project.revision = revision
-            language_statistics = await asyncio.to_thread(collector.languages, project)
-            project.languages = [
-                ProjectLanguage(
-                    code=language_code(name),
-                    name=name,
-                    percentage=percentage,
-                )
-                for name, percentage in sorted(language_statistics.items())
-            ]
-            project.is_empty = not project.languages
-            language_rows = await sync_programming_languages(project.languages)
-            for language in project.languages:
-                if not language_rows[language.code].enabled:
-                    language.analysis_status = LanguageAnalysisStatus.DISABLED
+            enabled_language_codes = await _collect_languages(collector, project)
             try:
                 await asyncio.to_thread(collector.collect_hooks, project)
-            except Exception as error:
+            except SCAN_ERRORS as error:
                 errors.append(f'{project.path_with_namespace}: не удалось получить webhooks: {error}')
                 logger.exception('Не удалось получить webhooks проекта %s', project.path_with_namespace)
-            enabled_language_codes = [
-                language.code
-                for language in project.languages
-                if language.analysis_status != LanguageAnalysisStatus.DISABLED
-            ]
             fingerprint = analysis_fingerprint(enabled_language_codes)
             reusable = await find_reusable_project(project.id, revision, fingerprint)
             if reusable is not None:
@@ -257,19 +248,23 @@ class ScanTask:
                 len(selected_paths),
             )
             files = await asyncio.to_thread(collector.collect, project, revision, selected_paths)
+            reusable = await find_reusable_inputs(project.id, files, fingerprint)
+            if reusable is not None:
+                snapshot = await clone_project(reusable, scan, project, fingerprint)
+                return CollectedSnapshot(snapshot.id, project, True, True)
             snapshot = await save_collected_project(
                 scan,
                 project,
-                revision,
-                files,
-                selections,
-                fingerprint,
+                files=files,
+                selections=selections,
+                fingerprint=fingerprint,
             )
             return CollectedSnapshot(snapshot.id, project, False, True)
         except ProjectNotScannableError as error:
+            await skip_project(scan, project, str(error))
             logger.info('Проект %s пропущен: %s', project.path_with_namespace, error)
             return CollectedSnapshot(None, project, False, False)
-        except Exception as error:
+        except SCAN_ERRORS as error:
             errors.append(f'{project.path_with_namespace}: {error}')
             project.analysis_status = ProjectAnalysisStatus.FAILED
             project.scan_error = f'Ошибка сбора ({type(error).__name__})'
@@ -277,13 +272,11 @@ class ScanTask:
             snapshot = await save_collected_project(
                 scan,
                 project,
-                project.revision,
-                {},
-                [],
-                fingerprint,
-                str(error),
+                files={},
+                selections=[],
+                fingerprint=fingerprint,
             )
-            await restore_previous_analysis(snapshot.id, project, str(error))
+            await restore_previous_analysis(snapshot.id, project, project.scan_error)
             logger.exception('Не удалось собрать файлы проекта %s', project.path_with_namespace)
             return CollectedSnapshot(snapshot.id, project, False, False)
 
@@ -336,10 +329,6 @@ class ScanTask:
                 values['reused_projects'] = scan.reused_projects + 1
             elif result == 'skipped':
                 values['skipped_projects'] = scan.skipped_projects + 1
-            if item.snapshot_id is not None:
-                scanned_at = datetime.now(UTC)
-                item.project.scanned_at = scanned_at
-                await set_project_scanned_at(item.snapshot_id, scanned_at)
             invalidate_project_cache()
             if item.snapshot_id is not None:
                 self._updated_project_ids.append(item.project.id)
@@ -367,7 +356,7 @@ class ScanTask:
                 await save_analysis(item.snapshot_id, project, project.scan_error)
             if project.scan_error:
                 return f'{project.path_with_namespace}: {project.scan_error}'
-        except Exception as error:
+        except SCAN_ERRORS as error:
             project.analysis_status = ProjectAnalysisStatus.FAILED
             project.scan_error = f'Ошибка анализа ({type(error).__name__})'
             project.package_manager = PackageManager.UNKNOWN
@@ -408,7 +397,7 @@ class ScanTask:
         try:
             parameter_values = await application_parameter_values()
             await trim_old_scans(int(parameter_values['retained_scan_count']))
-        except Exception:
+        except SCAN_ERRORS:
             logger.exception('Не удалось удалить старые снимки сканирования')
         logger.info(
             'Сканирование завершено: проектов %d, обращений к GitLab %d, ошибок %d, длительность %.2f секунды',
@@ -425,6 +414,7 @@ class ScanTask:
         error: Exception,
         gitlab_requests: int,
     ) -> None:
+        await fail_pending_items(scan.id, str(error))
         await delete_scan_files(scan.id)
         await self._update(
             scan,
@@ -453,6 +443,22 @@ class ScanTask:
             }
             status_values.setdefault('projects_count', scan.projects_count)
             self._status = self._status.model_copy(update=status_values)
+
+
+async def _collect_languages(collector: ProjectCollector, project: Project) -> list[str]:
+    statistics = await asyncio.to_thread(collector.languages, project)
+    project.languages = [
+        ProjectLanguage(code=language_code(name), name=name, percentage=percentage)
+        for name, percentage in sorted(statistics.items())
+    ]
+    project.is_empty = not project.languages
+    rows = await sync_programming_languages(project.languages)
+    for language in project.languages:
+        if not rows[language.code].enabled:
+            language.analysis_status = LanguageAnalysisStatus.DISABLED
+    return [
+        language.code for language in project.languages if language.analysis_status != LanguageAnalysisStatus.DISABLED
+    ]
 
 
 def _scan_status(scan: ScanRun) -> ScanStatus:

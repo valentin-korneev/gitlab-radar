@@ -26,29 +26,40 @@ FastAPI обслуживает API и статические файлы. Fronten
 
 ```mermaid
 erDiagram
-    ScanRun ||--o{ ProjectSnapshot : projects
-    ProjectSnapshot ||--o{ ProjectSnapshotLanguage : languages
-    ProgrammingLanguage ||--o{ ProjectSnapshotLanguage : catalog
-    ProjectSnapshotLanguage ||--o{ ProjectModule : modules
-    ProjectModule ||--o{ ModulePackageManager : managers
-    PackageManagerCatalog ||--o{ ModulePackageManager : catalog
-    ProjectSnapshot ||--o{ ProjectFile : temporary_files
-    ProjectFile ||--o{ ProjectFileUsage : usages
-    ProjectSnapshotLanguage o|--o{ ProjectFileUsage : analyzer_input
-    ProgrammingLanguage ||--o{ ProgrammingFramework : frameworks
-    CompanyRequirementGroup ||--o{ CompanyRequirement : requirements
-    CompanyRequirement ||--o{ CompanyRequirementLanguage : language_links
-    ProgrammingLanguage ||--o{ CompanyRequirementLanguage : catalog
+    ScanRun ||--o{ ScanItem : observations
+    ScanTarget ||--o{ ScanItem : attempts
+    AnalysisResult o|--o{ ScanItem : result
+    AnalysisResult o|--o{ ScanItem : fallback
+    AnalysisResult o|--o{ ScanTarget : last_successful
+    AnalysisResult ||--o{ ResultLanguage : languages
+    ProgrammingLanguage ||--o{ ResultLanguage : catalog
+    ResultLanguage ||--o{ ResultModule : modules
+    ResultModule ||--o{ ResultModulePackageManager : managers
+    PackageManagerCatalog ||--o{ ResultModulePackageManager : catalog
+    ScanItem ||--o{ ScanFile : temporary_files
+    ScanFile ||--o{ ScanFileUsage : analyzer_inputs
 ```
 
-`ScanRun` содержит состояние и счетчики запуска. `ProjectSnapshot` связан с GitLab-проектом,
-revision и fingerprint анализа; уникальность сейчас задана парой «запуск + GitLab ID».
-Пользовательский каталог собирается из JSON `payload` снимков. Языки, модули и пакетные менеджеры
-дополнительно представлены связанными таблицами. Это текущая схема, а не модель будущих неизменяемых артефактов.
+`ScanTarget` задает цель: GitLab-проект, тип и ref. Сейчас собирается только основная ветка;
+модель допускает отдельные цели для других веток и MR. При смене основной ветки прежняя цель
+сохраняется в истории, а каталог переключается на новую.
 
-`ProjectFile` и `ProjectFileUsage` описывают временные входные файлы. Справочники языков,
-фреймворков, требований и параметры хранятся независимо от снимков.
-Сессии, одноразовые WebSocket-билеты, пользователи и правила видимости — отдельные сущности.
+`AnalysisResult` хранит неизменяемый результат разбора: модули, зависимости, статусы и диагностику.
+У него есть fingerprint анализаторов и отпечаток входных файлов. Одинаковый результат для одинаковых
+входов хранится один раз; новый запуск ссылается на него. Языки, модули и менеджеры дополнительно
+сохранены в связанных таблицах на уровне результата, а не копируются для каждого запуска.
+
+`ScanItem` — наблюдение цели в конкретном запуске: revision, метаданные, статус, ошибка и ссылки
+на результат попытки и fallback. Поэтому неудачная попытка не заменяет прошлый успешный анализ,
+а история не зависит от сегодняшних указателей. GitLab-метаданные, языковые проценты и webhook
+обновляются отдельно от результата разбора.
+
+Цель хранит указатели на последнюю попытку, завершенное наблюдение и последний успешный результат.
+Результат, его связанные записи и указатели сохраняются одной транзакцией. Временные `ScanFile`
+и `ScanFileUsage` удаляются после анализа. Используемый результат не удаляется при очистке старых запусков.
+
+Справочники языков, фреймворков, требований и параметры независимы от результатов.
+Сессии, WebSocket-билеты, пользователи и правила видимости — отдельные сущности.
 `ApplicationSecret` хранит ключ маскирования webhook; `DataFixture` отмечает применение fixtures.
 
 Актуальность, fallback и очистка истории: [сканирование](scanning.md).
@@ -71,6 +82,8 @@ revision и fingerprint анализа; уникальность сейчас з
 
 API начинается с `/api/`. Интерактивное описание FastAPI доступно по `/docs`, OpenAPI — `/openapi.json`.
 Основные группы: проекты, зависимости, dashboard, scan, справочники, пользователи, auth и visibility.
+`/api/project/?scan_id=<id>` и `/api/project/<project_id>?scan_id=<id>` читают данные выбранного запуска.
+Без `scan_id` возвращается текущий каталог. Видимость и требования применяются по текущим настройкам.
 Контракты и права конкретных операций задаются router и схемами; общая модель доступа описана
 в [авторизации](access.md).
 
