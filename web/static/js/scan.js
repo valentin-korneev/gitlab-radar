@@ -1,9 +1,16 @@
 function renderScanStatus(scan) {
   document.querySelector('#scan-state').textContent = scan.state_title;
   const administrator = Boolean(state.auth.user?.is_admin);
-  document.querySelector('#scan-button').disabled = scan.state === 'running' || !administrator;
+  const active = ['running', 'stopping'].includes(scan.state);
+  const queued = scan.state === 'queued';
+  const button = document.querySelector('#scan-button');
+  button.disabled = state.scanSubmitting || !administrator || scan.state === 'stopping';
+  button.textContent = scan.state === 'stopping' ? 'Останавливается…' : active || queued ? 'Остановить' : 'Запустить сканирование';
   document.querySelector('#scan-dot').className = scan.state;
   let description = 'Сканирование еще не запускалось.';
+  if (scan.state === 'queued') description = `Ожидает свободного исполнителя · создано ${formatDate(scan.created_at)}`;
+  if (scan.state === 'stopping') description = 'Ожидание завершения текущей операции; новые запросы не начинаются.';
+  if (scan.state === 'cancelled') description = `Остановлено ${formatDate(scan.completed_at)} · ${scan.error || 'запуск отменён'}`;
   if (scan.state === 'running') description = `${PHASE_TITLES[scan.phase]} · запущено ${formatDate(scan.started_at)}`;
   if (scan.state === 'completed') description = `Завершено ${formatDate(scan.completed_at)} · проектов: ${scan.projects_count}`;
   if (scan.state === 'failed') description = `Завершено ${formatDate(scan.completed_at)} · ${scan.error || 'неизвестная ошибка'}`;
@@ -35,8 +42,9 @@ async function connectScanStatusSocket() {
   const query = `?ticket=${encodeURIComponent(ticket)}`;
   const socket = new WebSocket(`${socketProtocol}//${window.location.host}/api/scan/ws${query}`);
   state.scanSocket = socket;
+  let messages = Promise.resolve();
   socket.addEventListener('message', (event) => {
-    handleScanStatus(JSON.parse(event.data)).catch(showError);
+    messages = messages.then(() => handleScanStatus(JSON.parse(event.data))).catch(showError);
   });
   socket.addEventListener('close', () => {
     if (state.scanSocket === socket) state.scanSocket = null;
@@ -53,9 +61,10 @@ async function handleScanStatus(scan) {
   state.scanState = scan.state;
   state.scanStatus = scan;
   renderScanStatus(scan);
-  if (streamChanged) {
+  const began = previousState === 'queued' && ['running', 'stopping'].includes(scan.state);
+  if (streamChanged || began) {
     state.scanStreamId = scan.id;
-    if (state.loaded.projects && scan.state === 'running') await loadProjects();
+    if (state.loaded.projects && scan.state !== 'queued') await loadProjects();
     state.streamedProjectIds = new Set(
       state.projects
         .filter((project) => project.data_status === 'current')
@@ -64,11 +73,11 @@ async function handleScanStatus(scan) {
   }
   for (const projectId of scan.updated_project_ids || []) {
     if (state.streamedProjectIds.has(projectId)) continue;
-    state.streamedProjectIds.add(projectId);
     await upsertScannedProject(projectId);
+    state.streamedProjectIds.add(projectId);
   }
   const progressChanged = scan.state === 'running' && scan.completed_steps !== previousCompletedSteps;
-  const finished = previousState === 'running' && ['completed', 'failed'].includes(scan.state);
+  const finished = ['queued', 'running', 'stopping'].includes(previousState) && ['completed', 'failed', 'cancelled'].includes(scan.state);
   if (progressChanged || finished) {
     state.dependencyCache = {};
     const reloads = [loadDashboard()];
@@ -79,7 +88,7 @@ async function handleScanStatus(scan) {
 }
 function updateScanDuration() {
   const scan = state.scanStatus;
-  if (scan?.state !== 'running' || !scan.started_at) return;
+  if (!['running', 'stopping'].includes(scan?.state) || !scan.started_at) return;
   const seconds = Math.max(0, (Date.now() - new Date(scan.started_at).getTime()) / 1000);
   document.querySelector('#scan-duration').textContent = formatDuration(seconds);
 }

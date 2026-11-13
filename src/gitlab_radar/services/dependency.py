@@ -1,11 +1,11 @@
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit, urlunsplit
-lazy from collections.abc import Iterable
 
 from packaging.version import InvalidVersion, Version
 
-from gitlab_radar.database.repository import latest_published_scan
+from gitlab_radar.database.repository import latest_data_scan
 from gitlab_radar.schemas.dependency import (
     Dependency,
     DependencyLevel,
@@ -19,11 +19,16 @@ from gitlab_radar.services.programming_languages import canonical_language_code
 from gitlab_radar.services.project import load_projects
 
 UsageEntry = tuple[Project, str, Dependency, DependencyLevel, str | None]
+_LEVEL_PRIORITIES = {
+    DependencyLevel.DIRECT: 0,
+    DependencyLevel.OPTIONAL: 1,
+    DependencyLevel.TRANSITIVE: 2,
+}
 
 
 @dataclass(slots=True)
 class _DependencyCache:
-    scan_id: int | None = None
+    version: tuple | None = None
     values: dict[DependencySource, list[DependencyUsage]] = field(default_factory=dict)
 
 
@@ -38,10 +43,10 @@ async def build_dependency_catalog(
 ) -> list[DependencyUsage]:
     cacheable = projects is None and preferred_username is None
     if cacheable:
-        scan = await latest_published_scan()
-        scan_id = scan.id if scan is not None else None
-        if _DEPENDENCY_CACHE.scan_id != scan_id:
-            _DEPENDENCY_CACHE.scan_id = scan_id
+        scan = await latest_data_scan()
+        version = (scan.id, scan.analyzed_projects, scan.state) if scan is not None else None
+        if _DEPENDENCY_CACHE.version != version:
+            _DEPENDENCY_CACHE.version = version
             _DEPENDENCY_CACHE.values.clear()
         cached = _DEPENDENCY_CACHE.values.get(source)
         if cached is not None:
@@ -102,11 +107,6 @@ def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
         str,
         dict[str | None, dict[tuple[int, str, str | None], DependencyProject]],
     ] = defaultdict(lambda: defaultdict(dict))
-    priorities = {
-        DependencyLevel.DIRECT: 0,
-        DependencyLevel.OPTIONAL: 1,
-        DependencyLevel.TRANSITIVE: 2,
-    }
     for project, path, dependency, level, language in entries:
         reference = DependencyProject(
             id=project.id,
@@ -118,15 +118,14 @@ def _build_catalog(entries: Iterable[UsageEntry]) -> list[DependencyUsage]:
             language=language,
         )
         projects_by_version = usage[dependency.name][dependency.version]
-        reference_key = (project.id, path, language)
-        existing = projects_by_version.get(reference_key)
-        if existing is None or priorities[level] < priorities[existing.level]:
-            projects_by_version[reference_key] = reference
+        existing = projects_by_version.get((project.id, path, language))
+        if existing is None or _LEVEL_PRIORITIES[level] < _LEVEL_PRIORITIES[existing.level]:
+            projects_by_version[project.id, path, language] = reference
 
     catalog: list[DependencyUsage] = []
     for name, versions in usage.items():
         references = [reference for values in versions.values() for reference in values.values()]
-        levels = sorted({reference.level for reference in references}, key=priorities.__getitem__)
+        levels = sorted({reference.level for reference in references}, key=_LEVEL_PRIORITIES.__getitem__)
         catalog.append(
             DependencyUsage(
                 name=name,

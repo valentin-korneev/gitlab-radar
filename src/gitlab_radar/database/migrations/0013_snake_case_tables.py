@@ -3,8 +3,6 @@ from tortoise.migrations import operations as ops
 
 
 class RenameTable(ops.AlterModelOptions):
-    """Keep migration state and PostgreSQL table names in sync without recreating tables."""
-
     def __init__(self, name, table):
         super().__init__(name=name, options={'table': table})
 

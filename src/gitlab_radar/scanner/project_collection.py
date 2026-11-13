@@ -7,7 +7,7 @@ from gitlab.const import AccessLevel
 from gitlab.exceptions import GitlabError, GitlabGetError
 lazy from gitlab.v4.objects import Project as GitLabProject
 
-from gitlab_radar.clients.gitlab import gitlab_client
+from gitlab_radar.clients.gitlab import ScanGitLab
 from gitlab_radar.schemas.project import Project, ProjectHook
 from gitlab_radar.services.webhook_privacy import public_webhook_identity, public_webhook_url
 
@@ -45,7 +45,8 @@ class ProjectNotScannableError(Exception):
 
 
 class ProjectCollector:
-    def __init__(self, *, masking_key: bytes) -> None:
+    def __init__(self, client: ScanGitLab, *, masking_key: bytes) -> None:
+        self._client = client
         self._masking_key = masking_key
         self._batch_supported: bool | None = None
 
@@ -94,9 +95,11 @@ class ProjectCollector:
             iterator=True,
             per_page=100,
         )
-        paths = {
-            path for entry in entries if entry.get('type') == 'blob' and isinstance((path := entry.get('path')), str)
-        }
+        paths = set()
+        for entry in entries:
+            self._client.signal.check()
+            if entry.get('type') == 'blob' and isinstance((path := entry.get('path')), str):
+                paths.add(path)
         result = sorted(paths, key=lambda value: (value.count('/'), value))
         logger.info(
             'Структура проекта %s получена: файлов %d',
@@ -141,10 +144,9 @@ class ProjectCollector:
             alert_status=attributes.get('alert_status'),
         )
 
-    @staticmethod
-    def _gitlab_project(project: Project) -> GitLabProject:
+    def _gitlab_project(self, project: Project) -> GitLabProject:
         ProjectCollector._default_branch(project)
-        return gitlab_client.projects.get(project.id, lazy=True)
+        return self._client.projects.get(project.id, lazy=True)
 
     @staticmethod
     def _default_branch(project: Project) -> str:
@@ -187,8 +189,9 @@ class ProjectCollector:
             (len(paths) + BATCH_SIZE - 1) // BATCH_SIZE,
         )
         for offset in range(0, len(paths), BATCH_SIZE):
+            self._client.signal.check()
             chunk = paths[offset : offset + BATCH_SIZE]
-            response = gitlab_client.http_post(
+            response = self._client.http_post(
                 f'/projects/{project.id}/repository/blobs/batch',
                 post_data={
                     'files': [{'path': path, 'ref': default_branch} for path in chunk],
@@ -215,8 +218,8 @@ class ProjectCollector:
                 files[path] = self._read_file(project, path, default_branch)
         return files
 
-    @staticmethod
-    def _read_file(project: GitLabProject, file_path: str, default_branch: str) -> bytes:
+    def _read_file(self, project: GitLabProject, file_path: str, default_branch: str) -> bytes:
+        self._client.signal.check()
         content = project.files.raw(file_path=file_path, ref=default_branch)
         if not isinstance(content, bytes):
             msg = f'GitLab вернул неожиданный тип содержимого файла: {type(content).__name__}'

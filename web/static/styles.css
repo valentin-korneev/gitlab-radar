@@ -558,8 +558,9 @@ h2 { margin-bottom: 0; font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1; lett
 .scan-status-content { flex: 1; min-width: 0; }
 .scan-orbit { display: grid; place-items: center; flex: 0 0 76px; height: 76px; border: 1px solid var(--line); border-radius: 50%; }
 .scan-orbit span { width: 13px; height: 13px; border-radius: 50%; background: var(--muted); }
-.scan-orbit span.running { background: var(--accent); box-shadow: 0 0 0 8px rgba(239,49,36,.16); animation: pulse 1.3s infinite; }
+.scan-orbit span.running, .scan-orbit span.stopping { background: var(--accent); box-shadow: 0 0 0 8px rgba(239,49,36,.16); animation: pulse 1.3s infinite; }
 .scan-orbit span.completed { background: var(--green); box-shadow: 0 0 18px var(--green); }
+.scan-orbit span.queued, .scan-orbit span.cancelled { background: var(--muted); }
 .scan-orbit span.failed { background: var(--danger); }
 @keyframes pulse { 50% { transform: scale(.65); } }
 .muted, #scan-description, .scan-actions p { color: var(--muted); }

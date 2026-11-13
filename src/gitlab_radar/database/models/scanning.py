@@ -1,14 +1,22 @@
 from tortoise import fields
 
 from gitlab_radar.database.models.base import RadarModel
-from gitlab_radar.schemas.scan import ScanItemState, ScanTargetKind
+from gitlab_radar.schemas.scan import ScanItemState, ScanSource, ScanState, ScanTargetKind
 
 
 class ScanRun(RadarModel):
     id = fields.IntField(primary_key=True)
-    state = fields.CharField(max_length=20)
+    state = fields.CharEnumField(ScanState, max_length=20, default=ScanState.QUEUED)
+    source = fields.CharEnumField(ScanSource, max_length=20, default=ScanSource.MANUAL)
+    requested_by = fields.CharField(max_length=255, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+    owner_token = fields.UUIDField(null=True)
+    lease_expires_at = fields.DatetimeField(null=True)
+    heartbeat_at = fields.DatetimeField(null=True)
+    stop_requested_at = fields.DatetimeField(null=True)
+    updated_project_ids = fields.JSONField(default=list)
     phase = fields.CharField(max_length=20, default='idle')
-    started_at = fields.DatetimeField()
+    started_at = fields.DatetimeField(null=True)
     completed_at = fields.DatetimeField(null=True)
     projects_count = fields.IntField(default=0)
     total_steps = fields.IntField(default=0)

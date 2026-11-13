@@ -13,7 +13,6 @@ from gitlab_radar.database.scan_repository import (
     find_reusable_project,
     prepare_scan,
     project_files,
-    recover_stale_scans,
     restore_previous_analysis,
     save_analysis,
     save_collected_project,
@@ -48,7 +47,6 @@ __all__ = [
     'load_projects',
     'prepare_scan',
     'project_files',
-    'recover_stale_scans',
     'restore_previous_analysis',
     'save_analysis',
     'save_collected_project',
@@ -64,9 +62,11 @@ class ProjectCache:
     def __init__(self) -> None:
         self.scan_id: int | None = None
         self.projects: list[Project] = []
+        self.version: tuple | None = None
 
     def invalidate(self) -> None:
         self.scan_id = None
+        self.version = None
 
 
 PROJECT_CACHE = ProjectCache()
@@ -81,14 +81,15 @@ async def latest_scan() -> ScanRun | None:
 
 
 async def latest_data_scan() -> ScanRun | None:
-    return await latest_scan()
+    return await ScanRun.filter(started_at__isnull=False).order_by('-id').first()
 
 
 async def load_projects(scan_id: int | None = None) -> list[Project]:
     scan = await latest_data_scan() if scan_id is None else await ScanRun.get_or_none(id=scan_id)
     if scan is None:
         return []
-    if scan_id is not None or PROJECT_CACHE.scan_id != scan.id:
+    version = (scan.id, scan.analyzed_projects, scan.state, scan.published)
+    if scan_id is not None or PROJECT_CACHE.version != version:
         requirements, parameter_values, language_versions, framework_rows = await asyncio.gather(
             load_company_requirements(),
             application_parameter_values(),
@@ -118,6 +119,7 @@ async def load_projects(scan_id: int | None = None) -> list[Project]:
         if scan_id is not None:
             return projects
         PROJECT_CACHE.scan_id = scan.id
+        PROJECT_CACHE.version = version
         PROJECT_CACHE.projects = projects
         logger.info('Снимок %d загружен из PostgreSQL: проектов %d', scan.id, len(projects))
     return [project.model_copy(deep=True) for project in PROJECT_CACHE.projects]

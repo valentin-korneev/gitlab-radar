@@ -120,11 +120,20 @@ themeToggle.addEventListener('change', () => {
   try { localStorage.setItem('radar-theme', theme); } catch (error) { /* Тема сохранится до перезагрузки. */ }
 });
 document.querySelector('#scan-button').addEventListener('click', async () => {
+  if (!state.auth.user?.is_admin || state.scanSubmitting || state.scanStatus?.state === 'stopping') return;
+  const stopping = ['queued', 'running'].includes(state.scanStatus?.state);
+  const url = stopping ? `${API.scan}${state.scanStatus.id}/stop` : API.scan;
+  state.scanSubmitting = true;
+  document.querySelector('#scan-button').disabled = true;
   try {
-    const scan = await api(API.scan, { method: 'POST' });
+    const scan = await api(url, { method: 'POST' });
     await handleScanStatus(scan);
-    showSuccess('Сканирование запущено');
+    if (!stopping) showSuccess(`Запуск №${scan.id} принят`);
   } catch (error) { showError(error); }
+  finally {
+    state.scanSubmitting = false;
+    if (state.scanStatus) renderScanStatus(state.scanStatus);
+  }
 });
 document.querySelector('#parameters-form').addEventListener('submit', async (event) => {
   event.preventDefault();

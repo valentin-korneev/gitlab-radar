@@ -49,7 +49,7 @@ const state = {
   projects: [], dependencies: [], dependencyCache: {}, dependencySource: 'python', selectedId: null, selectedSubprojectKey: null,
   projectFilters: { query: '', rules: new Set(), language: null, version: null },
   selectedDependency: null, dependencyQuery: '', dependencyLanguages: new Set(), dependencyLanguagesInitialized: false, dependencyTreeExpanded: new Set(), showTransitive: false, scanState: null, scanStatus: null,
-  scanSocket: null, scanReconnectTimer: null,
+  scanSubmitting: false, scanSocket: null, scanReconnectTimer: null,
   scanStreamId: null, streamedProjectIds: new Set(),
   technologyTarget: null, projectsCount: 0, showSingleTechnologies: false,
   technologyTargetLanguages: new Set(), technologyTargetLanguageOptions: [], technologyTargetLanguagesInitialized: false,

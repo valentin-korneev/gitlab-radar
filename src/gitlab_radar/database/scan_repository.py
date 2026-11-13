@@ -6,8 +6,9 @@ lazy from tortoise.backends.base.client import BaseDBAsyncClient
 from gitlab_radar.database.models import AnalysisResult, ScanFile, ScanFileUsage, ScanItem, ScanRun, ScanTarget
 from gitlab_radar.database.result_payload import input_digest, project_metadata, result_cache_key
 from gitlab_radar.database.results import create_result
+from gitlab_radar.database.scan_authority import assert_scan_owner
 from gitlab_radar.schemas.project import Project, ProjectAnalysisStatus
-from gitlab_radar.schemas.scan import ScanItemState, ScanState, ScanTargetKind
+from gitlab_radar.schemas.scan import ScanItemState, ScanTargetKind
 from gitlab_radar.services.analysis import FileSelection
 from gitlab_radar.services.project_blacklist import project_is_blacklisted
 
@@ -39,6 +40,7 @@ async def _target(project: Project, connection: BaseDBAsyncClient) -> ScanTarget
 async def prepare_scan(scan: ScanRun, projects: list[Project]) -> None:
     for project in projects:
         async with in_transaction() as connection:
+            await assert_scan_owner(scan.id, connection)
             await _item(scan, project, connection)
 
 
@@ -99,6 +101,7 @@ async def find_reusable_inputs(gitlab_id: int, files: dict[str, str], fingerprin
 
 async def clone_project(source: AnalysisResult, scan: ScanRun, project: Project, fingerprint: str) -> ScanItem:
     async with in_transaction() as connection:
+        await assert_scan_owner(scan.id, connection)
         item = await _item(scan, project, connection)
         project.scanned_at = datetime.now(UTC)
         await (
@@ -132,6 +135,7 @@ async def save_collected_project(
 ) -> ScanItem:
     error = project.scan_error
     async with in_transaction() as connection:
+        await assert_scan_owner(scan.id, connection)
         item = await _item(scan, project, connection)
         await (
             ScanItem.filter(id=item.id)
@@ -173,6 +177,7 @@ async def _save_files(
 async def save_analysis(item_id: int, project: Project, error: str | None = None) -> None:
     async with in_transaction() as connection:
         item = await ScanItem.get(id=item_id).using_db(connection)
+        await assert_scan_owner(item.scan_id, connection)
         if item.state in FINAL_STATES and item.result_id is not None:
             return
         result = await create_result(item, project, connection)
@@ -213,6 +218,7 @@ async def restore_previous_analysis(item_id: int, project: Project, error: str) 
 
 async def skip_project(scan: ScanRun, project: Project, error: str) -> None:
     async with in_transaction() as connection:
+        await assert_scan_owner(scan.id, connection)
         item = await _item(scan, project, connection)
         await ScanItem.filter(id=item.id).using_db(connection).update(state=ScanItemState.SKIPPED, error=error)
 
@@ -245,6 +251,7 @@ async def carry_forward_missing_projects(scan: ScanRun, blacklist: tuple[str, ..
         )
         metadata = previous.metadata if result_id == previous.result_id else previous.fallback_metadata
         async with in_transaction() as connection:
+            await assert_scan_owner(scan.id, connection)
             item = await ScanItem.create(
                 scan=scan,
                 target=target,
@@ -277,16 +284,3 @@ async def fail_pending_items(scan_id: int, error: str) -> None:
         state=ScanItemState.FAILED,
         error=error,
     )
-
-
-async def recover_stale_scans() -> None:
-    scan_ids = await ScanRun.filter(state=ScanState.RUNNING).values_list('id', flat=True)
-    for scan_id in scan_ids:
-        await delete_scan_files(scan_id)
-        await fail_pending_items(scan_id, 'Приложение остановлено до завершения обработки')
-    if scan_ids:
-        await ScanRun.filter(id__in=scan_ids).update(
-            state=ScanState.FAILED,
-            completed_at=datetime.now(UTC),
-            error='Приложение было остановлено до завершения сканирования',
-        )

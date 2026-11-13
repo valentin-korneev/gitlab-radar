@@ -20,9 +20,17 @@ class ScanItemState(StrEnum):
     SKIPPED = 'skipped'
 
 
+class ScanSource(StrEnum):
+    MANUAL = 'manual'
+    SCHEDULE = 'schedule'
+
+
 class ScanState(StrEnum):
     IDLE = 'idle'
+    QUEUED = 'queued'
     RUNNING = 'running'
+    STOPPING = 'stopping'
+    CANCELLED = 'cancelled'
     COMPLETED = 'completed'
     FAILED = 'failed'
 
@@ -37,7 +45,10 @@ class ScanPhase(StrEnum):
 
 SCAN_STATE_TITLES = {
     ScanState.IDLE: 'Ожидание',
+    ScanState.QUEUED: 'В очереди',
     ScanState.RUNNING: 'Выполняется',
+    ScanState.STOPPING: 'Останавливается',
+    ScanState.CANCELLED: 'Остановлено',
     ScanState.COMPLETED: 'Завершено',
     ScanState.FAILED: 'Ошибка',
 }
@@ -47,7 +58,11 @@ class ScanStatus(BaseModel):
     id: int | None = None
     state: ScanState = ScanState.IDLE
     phase: ScanPhase = ScanPhase.IDLE
+    created_at: datetime | None = None
     started_at: datetime | None = None
+    source: ScanSource = ScanSource.MANUAL
+    requested_by: str | None = None
+    queue_count: int = 0
     completed_at: datetime | None = None
     projects_count: int = 0
     total_steps: int = 0
